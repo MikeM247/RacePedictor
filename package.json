@@ -1,0 +1,9 @@
+{
+  "name": "racepredictor",
+  "private": true,
+  "packageManager": "npm@10.9.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

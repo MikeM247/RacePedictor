@@ -75,3 +75,17 @@ Work is delivered in vertical slices. Each slice has explicit acceptance criteri
 - Regression suite passes.
 - Performance sanity checks completed.
 - Final doc review completed for all files in `docs/`.
+
+## Epic 6 — Authentication (Post-MVP)
+**Goal:** add account authentication after single-profile local MVP is stable.
+
+### Acceptance Criteria
+- Email/password registration and login flows are implemented.
+- JWT-based auth is issued and stored in HTTP-only secure cookies.
+- API authorization middleware protects user-scoped endpoints.
+- Session lifecycle behavior (logout, token rotation/expiry handling) is documented and tested.
+
+### Checks
+- Auth integration tests cover signup/login/logout and unauthorized access behavior.
+- Cookie/security settings validated for local + production environments.
+- Backward compatibility verified for non-auth MVP slices where applicable.

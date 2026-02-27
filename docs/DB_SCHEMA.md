@@ -1,7 +1,7 @@
 # DB_SCHEMA
 
 ## Overview
-The data model separates **staging ingestion** from **normalized domain storage** to ensure traceability, idempotency, and clean downstream querying.
+The data model separates **staging ingestion** from **normalized domain storage** to ensure traceability, idempotency, and clean downstream querying. MVP runs in a single local athlete profile mode, but schema remains user-extensible for later authenticated multi-user support.
 
 ## Schema Layers
 
@@ -12,6 +12,7 @@ Suggested tables:
 - `staging_activity`
   - `id` (pk)
   - `athlete_id` (fk/reference)
+  - `profile_scope` (text, default `local_single_profile`; reserved for future multi-user partitioning)
   - `source` (text)
   - `source_type` (text; normalized source/provider discriminator)
   - `source_activity_id` (text, nullable for weak sources)
@@ -59,6 +60,7 @@ Suggested tables:
 - `athlete`
   - `id` (pk)
   - `external_ref`
+  - `owner_user_id` (nullable fk placeholder for future auth users table)
   - `display_name`
   - `created_at`
 
@@ -130,3 +132,8 @@ Primary strategy:
 - All schema changes via migrations in `packages/db`.
 - Backfills are explicit and idempotent.
 - Any index or dedupe change must be documented here and in release notes.
+
+## MVP Runtime + Future Multi-User Compatibility
+- MVP assumes exactly one local athlete profile and does not require auth tables or login/session flows.
+- Keep `athlete_id` FKs and dedupe/index keys as first-class identifiers so data can later be scoped to authenticated users without table redesign.
+- Nullable ownership placeholders (e.g., `owner_user_id`) are permitted now, but should not be enforced by runtime auth logic until the auth epic is delivered.

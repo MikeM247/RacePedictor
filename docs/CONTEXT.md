@@ -18,6 +18,7 @@ This document is the **source of truth** for:
 - Versioned REST API under `/api/v1`.
 - Zod-backed request/response contracts.
 - Data ingestion pipeline with deduplication and normalized storage.
+- Weekly feature aggregation as the MVP default; daily feature computations are deferred or computed on-demand when enabled.
 - Desktop-first dashboard information architecture and baseline responsive behavior.
 - Slice-based delivery process with checks and doc updates per story.
 

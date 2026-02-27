@@ -3,7 +3,7 @@ import type {
   FeatureTrendPoint,
   ImportProgress,
   PredictionSummary,
-} from "@racepredictor/core/contracts";
+} from "../../../packages/core/src/contracts";
 
 export type DashboardData = {
   predictionSummary: PredictionSummary;

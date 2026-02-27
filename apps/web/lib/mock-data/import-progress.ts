@@ -1,7 +1,7 @@
 import {
   importProgressSchema,
   type ImportProgress,
-} from "@racepredictor/core/contracts";
+} from "../../../../packages/core/src/contracts";
 
 export const importProgressFixture: ImportProgress = importProgressSchema.parse({
   importId: "imp_20260220_001",

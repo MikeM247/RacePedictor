@@ -3,7 +3,7 @@ import type {
   FeatureTrendPoint,
   ImportProgress,
   PredictionSummary,
-} from "@racepredictor/core/contracts";
+} from "../../../../packages/core/src/contracts";
 import "./dashboard.css";
 
 type DashboardShellProps = {

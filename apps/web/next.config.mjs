@@ -1,10 +1,18 @@
+import path from "node:path";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    // Required because the web app imports from the monorepo package at ../../packages/core.
     externalDir: true,
   },
-  transpilePackages: ["@racepredictor/core"],
+  webpack: (config) => {
+    config.resolve.modules = [
+      ...(config.resolve.modules ?? []),
+      path.resolve("./node_modules"),
+    ];
+
+    return config;
+  },
 };
 
 export default nextConfig;

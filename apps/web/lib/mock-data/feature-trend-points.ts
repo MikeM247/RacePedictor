@@ -1,7 +1,7 @@
 import {
   featureTrendPointListSchema,
   type FeatureTrendPoint,
-} from "@racepredictor/core/contracts";
+} from "../../../../packages/core/src/contracts";
 
 export const featureTrendPointsFixture: FeatureTrendPoint[] =
   featureTrendPointListSchema.parse([

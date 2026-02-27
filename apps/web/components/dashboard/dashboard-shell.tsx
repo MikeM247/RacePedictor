@@ -1,24 +1,7 @@
-import type {
-  DriverContribution,
-  FeatureTrendPoint,
-  ImportProgress,
-} from "../../../../packages/core/src/contracts";
+import type { DashboardData } from "../../lib/dashboard-data-source";
 import "./dashboard.css";
 
-type PredictionSummaryView = {
-  predictedTimeS: number;
-  predictedPaceSecPerKm: number;
-  bandLowS: number;
-  bandHighS: number;
-  modelVersion: string;
-};
-
-type DashboardShellProps = {
-  predictionSummary: PredictionSummaryView;
-  driverContributions: DriverContribution[];
-  featureTrendPoints: FeatureTrendPoint[];
-  importProgress: ImportProgress;
-};
+type DashboardShellProps = DashboardData;
 
 const formatDuration = (seconds: number) => {
   const min = Math.floor(seconds / 60);

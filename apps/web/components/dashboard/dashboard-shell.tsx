@@ -2,12 +2,19 @@ import type {
   DriverContribution,
   FeatureTrendPoint,
   ImportProgress,
-  PredictionSummary,
 } from "../../../../packages/core/src/contracts";
 import "./dashboard.css";
 
+type PredictionSummaryView = {
+  predictedTimeS: number;
+  predictedPaceSecPerKm: number;
+  bandLowS: number;
+  bandHighS: number;
+  modelVersion: string;
+};
+
 type DashboardShellProps = {
-  predictionSummary: PredictionSummary;
+  predictionSummary: PredictionSummaryView;
   driverContributions: DriverContribution[];
   featureTrendPoints: FeatureTrendPoint[];
   importProgress: ImportProgress;

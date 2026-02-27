@@ -62,3 +62,29 @@
 - Additive evolution strategy for v1 contracts.
 - Ingestion pipeline writes to staging first, then normalization + dedupe pass.
 - Documentation-first changes for architecture-impacting decisions.
+
+## Dashboard Data Source Strategy (App Layer)
+
+### Interface definition
+- Define a `DashboardDataSource` interface in `apps/web` (app layer), not in UI packages.
+- The interface is the only contract consumed by dashboard composition logic.
+- Keep methods focused on dashboard use-cases (e.g., loading race cards, predictions, and related metadata).
+
+### Planned implementations (in order)
+1. `mockDashboardDataSource` (first)
+   - Used for early UI development, local demos, and deterministic flows.
+   - Must implement the same `DashboardDataSource` interface as production.
+2. `apiDashboardDataSource` (later)
+   - Calls real `/api/v1` endpoints.
+   - Added once backend routes and contracts are stable.
+
+### Runtime toggle
+- Select implementation through an environment toggle such as `NEXT_PUBLIC_USE_MOCKS`.
+- Toggle handling belongs to app composition/bootstrap code, not inside UI components.
+
+### UI/business-logic rule
+- UI components (especially in `packages/ui`) must not contain business logic.
+- UI should receive prepared data and callbacks via props; data-source decisions and transformations stay in app/core layers.
+
+### Acceptance criterion
+- Switching between `mockDashboardDataSource` and `apiDashboardDataSource` requires no dashboard component refactor.

@@ -19,10 +19,32 @@
   - Response: `{ ok: true, version: string, timestamp: string }`
 
 ### Ingestion
-- `POST /api/v1/activities:ingest`
-  - Purpose: submit one or more source activities into staging.
-  - Request: `{ source: string, activities: SourceActivityInput[] }`
-  - Response: `{ accepted: number, duplicates: number, rejected: number }`
+- `POST /api/v1/imports/upload`
+  - Purpose: MVP import entrypoint that creates an import job, parses the uploaded payload, and writes staged rows in one request.
+  - Request: `multipart/form-data` with:
+    - `file`: uploaded source file.
+    - `source`: source provider key (for parser selection).
+    - `idempotencyKey?`: optional client-supplied key for upload-level deduplication/retry safety.
+  - Response:
+    - `{ importId: string, status: "staged" | "partial", stagedCount: number, duplicateCount: number, rejectedCount: number, parseWarnings: string[] }`
+  - Notes:
+    - This endpoint replaces split MVP upload/parse/write flows.
+    - Any finer-grained upload-step endpoints are deferred until post-MVP unless required by implementation constraints.
+
+- `POST /api/v1/imports/:id/normalize`
+  - Purpose: run heavier normalization from staging into canonical activity records.
+  - Request:
+    - `{ cursor?: string, batchSize?: number }`
+    - `cursor`: opaque resume token from prior normalize response; omitted to start at first staging row.
+    - `batchSize`: optional server-bounded page size for normalization work.
+  - Response:
+    - `{ importId: string, normalizedCount: number, skippedCount: number, errorCount: number, nextCursor?: string, hasMore: boolean }`
+    - `nextCursor`: opaque token for the next batch when `hasMore` is `true`.
+    - `hasMore`: whether additional normalize calls are required to complete the import.
+  - Idempotency guarantees:
+    - Repeating the same request for a fully processed batch MUST NOT create duplicate canonical activities.
+    - A completed normalize call can be safely retried with the same `cursor` and produce equivalent final state.
+    - When `hasMore` is `false`, additional normalize calls are no-op and return zero additional writes.
 
 ### Activities
 - `GET /api/v1/activities`

@@ -1,7 +1,7 @@
 import {
   predictionSummarySchema,
   type PredictionSummary,
-} from "../../../../packages/core/src/contracts";
+} from "@racepredictor/core/contracts";
 
 export const predictionSummaryFixture: PredictionSummary = predictionSummarySchema.parse({
   athleteId: "athlete_001",

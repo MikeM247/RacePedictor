@@ -1,7 +1,7 @@
 import {
   driverContributionListSchema,
   type DriverContribution,
-} from "../../../../packages/core/src/contracts";
+} from "@racepredictor/core/contracts";
 
 export const driverContributionsFixture: DriverContribution[] =
   driverContributionListSchema.parse([

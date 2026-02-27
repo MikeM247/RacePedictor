@@ -20,6 +20,13 @@ Suggested tables:
   - `parse_status` (enum/text)
   - `parse_error` (text, nullable)
 
+Staging payload policy (v1/MVP):
+- `payload_json` stores **minimal ingestion metadata only** by default:
+  - source file checksum/hash
+  - parser version used
+  - parser/ingestion summaries (counts, warnings, bounds)
+- Full raw payload/body storage is excluded from MVP default behavior.
+
 ### 2) Normalized Layer
 Purpose: canonical relational model used by APIs and analytics.
 
@@ -52,6 +59,18 @@ Suggested tables:
   - `display_name`
   - `created_at`
 
+- `activity_track` (optional, default OFF in MVP)
+  - `activity_id` (pk/fk)
+  - `track_encoding` (text, e.g. `encoded_polyline`)
+  - `track_blob` (bytea/text; compressed per-activity geometry payload)
+  - `point_count` (int)
+  - `bounding_box` (jsonb, nullable)
+  - `created_at`
+
+Track storage policy:
+- Row-per-point storage is **explicitly excluded from MVP**.
+- Future route/track persistence should use a per-activity encoded/compressed blob format (encoded polyline + compression).
+
 ## Dedupe Strategy
 Primary strategy:
 1. Attempt uniqueness via (`source`, `source_activity_id`) when `source_activity_id` exists.
@@ -80,6 +99,7 @@ Primary strategy:
 - Index: (`athlete_id`, `started_at desc`) for timeline queries.
 - Index: (`activity_type`, `started_at desc`) for filtered analytics.
 - Optional BRIN index on `started_at` for large append-heavy datasets.
+- Optional index on `activity_track(activity_id)` only when track storage is enabled.
 
 ## Data Flow
 1. Receive payload → write to `staging_activity`.

@@ -27,6 +27,9 @@ This document is the **source of truth** for:
 - **Traceability:** every delivered slice updates related docs and acceptance criteria.
 - **Boundary enforcement:** apps cannot directly bypass package boundaries.
 - **Check discipline:** every slice must run and pass required checks before merge.
+- **Ingestion limits (MVP):**
+  - GPX/TCX ingestion supports a single file containing a single activity per ingest operation.
+  - CSV bulk ingestion is supported only via bounded batches with explicit batch sizing controls.
 
 ## Non-Goals (v1)
 - Mobile-first or native mobile UX.

@@ -1,0 +1,7 @@
+{
+  "name": "zod",
+  "version": "3.23.8",
+  "private": true,
+  "main": "index.js",
+  "types": "index.d.ts"
+}

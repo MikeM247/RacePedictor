@@ -30,6 +30,10 @@
   - Notes:
     - This endpoint replaces split MVP upload/parse/write flows.
     - Any finer-grained upload-step endpoints are deferred until post-MVP unless required by implementation constraints.
+    - Dedupe behavior during staging:
+      - If `source_activity_id` is available, staging upsert uniqueness is keyed by (`athlete_id`, `source_type`, `source_activity_id`).
+      - If `source_activity_id` is missing/unreliable, staging upsert falls back to (`athlete_id`, `dedupe_hash`).
+      - `dedupe_hash` is computed from a canonical signature: rounded start time, duration, distance, elevation gain, and optional route fingerprint sample.
 
 - `POST /api/v1/imports/:id/normalize`
   - Purpose: run heavier normalization from staging into canonical activity records.
@@ -45,6 +49,11 @@
     - Repeating the same request for a fully processed batch MUST NOT create duplicate canonical activities.
     - A completed normalize call can be safely retried with the same `cursor` and produce equivalent final state.
     - When `hasMore` is `false`, additional normalize calls are no-op and return zero additional writes.
+  - Dedupe + idempotent normalize semantics:
+    - Normalize MUST upsert canonical activities using source-first dedupe keys.
+    - When a source identifier is present, uniqueness is enforced by (`athlete_id`, `source_type`, `source_activity_id`).
+    - When a source identifier is unavailable, uniqueness falls back to (`athlete_id`, `dedupe_hash`).
+    - Retried normalize calls for the same staging rows MUST converge on the same canonical records and only update mutable normalized fields (e.g. enrichment fields), not create duplicates.
 
 ### Activities
 - `GET /api/v1/activities`

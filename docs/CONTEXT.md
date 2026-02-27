@@ -31,10 +31,12 @@ This document is the **source of truth** for:
 - **Ingestion limits (MVP):**
   - GPX/TCX ingestion supports a single file containing a single activity per ingest operation.
   - CSV bulk ingestion is supported only via bounded batches with explicit batch sizing controls.
+- **Runtime mode (MVP):** single local athlete profile only; authentication and account flows are intentionally not implemented yet.
 
 ## Non-Goals (v1)
 - Mobile-first or native mobile UX.
 - Multi-tenant customization and white-labeling.
+- Authentication UX and account lifecycle flows (signup/login/password reset/session management).
 - Real-time streaming guarantees (websocket/SSE-first architecture).
 - ML-driven predictive model tuning in production.
 - Public plugin ecosystem.

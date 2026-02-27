@@ -9,6 +9,11 @@
 2. **Run checks**
    - Execute required quality gates for touched scope (at minimum lint, typecheck, tests).
    - Confirm contracts and schema validations where relevant.
+   - Use a docs-sync checklist for behavior/contract/schema changes:
+     - [ ] `docs/CONTEXT.md`
+     - [ ] `docs/API_CONTRACT.md`
+     - [ ] `docs/DB_SCHEMA.md`
+     - [ ] `docs/ROADMAP.md`
 
 3. **Diff-first review**
    - Review the patch before merge/commit with a diff-first mindset:
@@ -16,10 +21,12 @@
      - boundary compliance
      - contract compatibility
      - accidental churn
+   - Apply docs-drift gate: do not merge when implementation intent and documentation diverge.
 
 4. **Commit / merge**
    - Commit coherent slice changes with clear message.
-   - Merge only after checks pass and docs are updated.
+   - PR summary must include a `Docs updated` section naming each touched document (or explicitly `None`).
+   - Merge only after checks pass, docs are updated, and docs-drift gate is clear.
 
 ## Required Documentation Updates Per Slice
 When a slice changes any of the following, update the corresponding doc in the same PR/commit window:

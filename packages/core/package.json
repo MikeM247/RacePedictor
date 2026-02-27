@@ -1,0 +1,11 @@
+{
+  "name": "@racepredictor/core",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "zod": "3.23.8"
+  },
+  "exports": {
+    "./contracts": "./src/contracts/index.ts"
+  }
+}

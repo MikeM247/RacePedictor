@@ -11,7 +11,9 @@ Purpose: preserve raw source payloads and ingestion metadata before normalizatio
 Suggested tables:
 - `staging_activity`
   - `id` (pk)
+  - `athlete_id` (fk/reference)
   - `source` (text)
+  - `source_type` (text; normalized source/provider discriminator)
   - `source_activity_id` (text, nullable for weak sources)
   - `dedupe_hash` (text)
   - `payload_json` (jsonb)
@@ -35,6 +37,7 @@ Suggested tables:
   - `id` (pk)
   - `athlete_id` (fk)
   - `source`
+  - `source_type`
   - `source_activity_id` (nullable)
   - `dedupe_hash`
   - `activity_type`
@@ -87,29 +90,31 @@ Track storage policy:
 
 ## Dedupe Strategy
 Primary strategy:
-1. Attempt uniqueness via (`source`, `source_activity_id`) when `source_activity_id` exists.
-2. Fallback uniqueness via (`source`, `dedupe_hash`) when source identifiers are missing or unreliable.
+1. Attempt uniqueness via (`athlete_id`, `source_type`, `source_activity_id`) when `source_activity_id` exists.
+2. Fallback uniqueness via (`athlete_id`, `dedupe_hash`) when source identifiers are missing or unreliable.
 
 ### `dedupe_hash` guidance
-- Deterministic hash of selected stable fields, e.g.:
-  - source
-  - activity start timestamp (normalized)
-  - duration
-  - distance
-  - athlete external reference
+- Deterministic hash of a canonical activity signature when source identifiers are absent/unreliable.
+- Canonical signature inputs SHOULD include:
+  - athlete identifier (`athlete_id` or stable external athlete ref)
+  - rounded activity start time (e.g. nearest minute)
+  - normalized duration (seconds)
+  - normalized distance (meters)
+  - normalized elevation gain (meters)
+  - optional route fingerprint sample (e.g. sparse lat/lng sample hash) when track data exists
 - Exclude volatile fields (sync timestamps, mutable annotations).
 
 ## Key Indexes
 
 ### Staging
-- Unique partial index: (`source`, `source_activity_id`) where `source_activity_id` is not null.
-- Unique index: (`source`, `dedupe_hash`).
+- Unique partial index: (`athlete_id`, `source_type`, `source_activity_id`) where `source_activity_id` is not null.
+- Unique index: (`athlete_id`, `dedupe_hash`).
 - Index: `ingested_at` for batch windows.
 - Index: `parse_status` for retry workflows.
 
 ### Normalized
-- Unique partial index: (`source`, `source_activity_id`) where `source_activity_id` is not null.
-- Unique index: (`source`, `dedupe_hash`).
+- Unique partial index: (`athlete_id`, `source_type`, `source_activity_id`) where `source_activity_id` is not null.
+- Unique index: (`athlete_id`, `dedupe_hash`).
 - Index: (`athlete_id`, `started_at desc`) for timeline queries.
 - Index: (`activity_type`, `started_at desc`) for filtered analytics.
 - Optional BRIN index on `started_at` for large append-heavy datasets.

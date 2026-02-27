@@ -1,98 +1,83 @@
 # ROADMAP
 
-## Delivery Strategy
-Work is delivered in vertical slices. Each slice has explicit acceptance criteria and required checks.
+## Status key
+- [ ] Not started
+- [~] In progress
+- [x] Done
 
-## Slice 0 — Repo + Tooling Foundation
-**Goal:** establish monorepo structure and baseline quality tooling.
+## Phase 1 — Docs first (execution gate)
 
-### Acceptance Criteria
-- Directory layout exists: `apps/web`, `packages/core`, `packages/db`, `packages/ui`.
-- Workspace tooling resolves package boundaries.
-- Lint/typecheck/test scripts are wired at root.
+### R1.1 Finalize planning docs
+- [ ] Confirm `CONTEXT.md` as source of truth
+- [ ] Confirm `ARCHITECTURE.md` boundaries
+- [ ] Confirm `API_CONTRACT.md` endpoint/DTOs
+- [ ] Confirm `DB_SCHEMA.md` Prisma model alignment
+- [ ] Confirm `CODEX_WORKFLOW.md` story lifecycle
+- [ ] Confirm `UI_UX_SPEC.md` desktop dashboard IA
 
-### Checks
-- Workspace install/bootstrap succeeds.
-- Lint/typecheck/test commands execute without failure.
+**Acceptance criteria**
+- Docs are internally consistent and represent current implementation target.
 
-## Slice 1 — API Contract Skeleton (`/api/v1`)
-**Goal:** stand up initial endpoint surface and contract schemas.
+## Phase 2 — Schema + contract baseline
 
-### Acceptance Criteria
-- `/api/v1` route namespace exists.
-- Endpoint skeletons for health, ingestion, activities, dashboard are present.
-- Request/response Zod schemas defined in `packages/core`.
+### R2.1 Prisma model baseline
+- [ ] Implement `Activity`
+- [ ] Implement `ActivitySplitKm`
+- [ ] Implement `WeeklyFeature`
+- [ ] Implement `RouteSignature`
+- [ ] Implement minimal supporting ingestion tables (`imports`, `raw_files`, `staging_activities`)
 
-### Checks
-- Contract tests validate request parsing + response shape.
-- No breaking changes against additive-only v1 policy.
+**Acceptance criteria**
+- Model fields and indexes match `DB_SCHEMA.md`.
+- Dedupe uniqueness (`athleteId` + `dedupeHash`) enforced.
 
-## Slice 2 — Staging + Normalized DB Schema
-**Goal:** support reliable ingestion and query-friendly domain storage.
+### R2.2 API baseline
+- [ ] `POST /api/v1/imports/upload`
+- [ ] `POST /api/v1/imports/:id/normalize`
+- [ ] `GET /api/v1/activities`
+- [ ] `GET /api/v1/activities/:activityId`
+- [ ] `GET /api/v1/features/weekly`
+- [ ] `POST /api/v1/predictions`
 
-### Acceptance Criteria
-- Staging tables defined and migrated.
-- Normalized tables defined with required keys and relations.
-- Dedupe uniqueness constraints implemented.
+**Acceptance criteria**
+- Requests/responses are Zod-validated.
+- Normalize batching uses cursor semantics.
 
-### Checks
-- Migration apply/rollback verified in CI/local.
-- Dedupe constraints tested with conflict scenarios.
+## Phase 3 — Visual-first dashboard slice
 
-## Slice 3 — Ingestion Pipeline + Dedupe
-**Goal:** ingest source activities and upsert normalized records idempotently.
+### R3.1 Mocked dashboard
+- [ ] Build desktop layout (sidebar, KPI row, drivers, trends, import status)
+- [ ] Add typed fixture data mapped to `Activity`, `WeeklyFeature`, and prediction DTOs
+- [ ] Add data-source adapter seam (`mock` vs `api`)
 
-### Acceptance Criteria
-- Ingestion endpoint writes staging records.
-- Normalization job/process maps to domain schema.
-- Dedupe uses `source_activity_id` primary and `dedupe_hash` fallback.
+**Acceptance criteria**
+- Entire dashboard renders with mock data.
+- Mock payloads validate against shared contracts.
 
-### Checks
-- Integration tests cover duplicate and near-duplicate payloads.
-- Throughput baseline meets agreed ingest target.
+## Phase 4 — Panel-by-panel live wiring
 
-## Slice 4 — Desktop Dashboard Vertical Slice
-**Goal:** deliver primary desktop experience for overview + activity exploration.
+### R4.1 Import status panel live wiring
+- [ ] Wire upload + normalize progress to API
 
-### Acceptance Criteria
-- Dashboard docs and scaffold are completed.
-- Dashboard visual with typed mock data.
-- Full desktop dashboard layout renders realistic mock states (KPI, confidence, drivers, trends, import status).
-- Shared contract compliance is enforced: mock payloads validate against `packages/core` Zod schemas.
-- Activities list/detail flow functional with empty/loading/error states.
+### R4.2 Activity timeline panel live wiring
+- [ ] Wire activities list/detail including splits
 
-### Checks
-- UI tests/smoke tests for core navigation and filter behavior.
-- Contract tests verify mock payload validation against dashboard schemas.
-- Accessibility spot checks (keyboard nav + contrast).
+### R4.3 Features trend panel live wiring
+- [ ] Wire weekly features series
 
-### Follow-on Slices Plan
-- Wire dashboard panels to real APIs panel-by-panel, preserving existing component contracts.
-- Treat schema/component contract updates as explicit contract-versioned changes, not incidental wiring changes.
+### R4.4 Prediction + drivers panel live wiring
+- [ ] Wire prediction endpoint and confidence bands
 
-## Slice 5 — Hardening + Release Readiness
-**Goal:** stabilize reliability, observability, and documentation.
+**Acceptance criteria**
+- Each panel swaps from mock to live without component contract changes.
 
-### Acceptance Criteria
-- Structured error handling across API/UI.
-- Logging + key metrics available for ingestion and API latency.
-- Documentation set fully aligned with implemented behavior.
+## Phase 5 — Hardening and release
+- [ ] Structured error handling + useful UI fallbacks
+- [ ] Free-tier guardrails enforced (batch sizes, file limits)
+- [ ] Deployment documentation (Vercel + Neon)
+- [ ] PWA baseline
 
-### Checks
-- Regression suite passes.
-- Performance sanity checks completed.
-- Final doc review completed for all files in `docs/`.
-
-## Epic 6 — Authentication (Post-MVP)
-**Goal:** add account authentication after single-profile local MVP is stable.
-
-### Acceptance Criteria
-- Email/password registration and login flows are implemented.
-- JWT-based auth is issued and stored in HTTP-only secure cookies.
-- API authorization middleware protects user-scoped endpoints.
-- Session lifecycle behavior (logout, token rotation/expiry handling) is documented and tested.
-
-### Checks
-- Auth integration tests cover signup/login/logout and unauthorized access behavior.
-- Cookie/security settings validated for local + production environments.
-- Backward compatibility verified for non-auth MVP slices where applicable.
+## Deferred epics (post-MVP)
+- [ ] Auth (email/password + JWT HTTP-only cookies)
+- [ ] Mobile app in `apps/mobile` using same contracts/core
+- [ ] Optional vector search (pgvector) when semantic retrieval is clearly needed

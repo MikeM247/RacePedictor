@@ -1,139 +1,112 @@
 # DB_SCHEMA
 
 ## Overview
-The data model separates **staging ingestion** from **normalized domain storage** to ensure traceability, idempotency, and clean downstream querying. MVP runs in a single local athlete profile mode, but schema remains user-extensible for later authenticated multi-user support.
+The MVP schema is anchored on four primary Prisma models provided for implementation planning:
+- `Activity`
+- `ActivitySplitKm`
+- `WeeklyFeature`
+- `RouteSignature`
 
-## Schema Layers
+This keeps ingestion/output explainable while protecting Neon free-tier limits (no row-per-trackpoint storage in MVP).
 
-### 1) Staging Layer
-Purpose: preserve raw source payloads and ingestion metadata before normalization.
+## Canonical MVP Models
 
-Suggested tables:
-- `staging_activity`
-  - `id` (pk)
-  - `athlete_id` (fk/reference)
-  - `profile_scope` (text, default `local_single_profile`; reserved for future multi-user partitioning)
-  - `source` (text)
-  - `source_type` (text; normalized source/provider discriminator)
-  - `source_activity_id` (text, nullable for weak sources)
-  - `dedupe_hash` (text)
-  - `payload_json` (jsonb)
-  - `ingested_at` (timestamptz)
-  - `ingest_batch_id` (uuid/text)
-  - `parse_status` (enum/text)
-  - `parse_error` (text, nullable)
+### `Activity`
+Purpose: normalized activity record and top-level prediction inputs.
 
-Staging payload policy (v1/MVP):
-- `payload_json` stores **minimal ingestion metadata only** by default:
-  - source file checksum/hash
-  - parser version used
-  - parser/ingestion summaries (counts, warnings, bounds)
-- Full raw payload/body storage is excluded from MVP default behavior.
+Required fields:
+- Identity/source: `id`, `athleteId`, `sourceType`, `sourceFileId?`, `sourceActivityId?`
+- Time: `occurredAt`, `endedAt`, `elapsedTimeS`, `movingTimeS?`
+- Sport/performance: `sport`, `distanceM`, `avgPaceSecPerKm`, `best1kSec?`, `best5kSec?`
+- Elevation: `elevationGainM`, `elevationLossM`, `minElevationM?`, `maxElevationM?`
+- Heart rate: `avgHrBpm?`, `maxHrBpm?`, `minHrBpm?`, `hrAvailable`
+- Cadence: `avgCadenceSpm?`, `maxCadenceSpm?`, `cadenceAvailable`
+- Quality signals: `paceVariability?`, `hrDriftPct?`, `hillDifficulty?`
+- Dedupe/meta: `dedupeHash`, `createdAt`
+- Relations: `splits ActivitySplitKm[]`, `routeSignature RouteSignature?`
 
-### 2) Normalized Layer
-Purpose: canonical relational model used by APIs and analytics.
+Indexes/constraints:
+- `@@index([athleteId, occurredAt(sort: Desc)])`
+- `@@index([athleteId, sport, occurredAt(sort: Desc)])`
+- `@@unique([athleteId, dedupeHash])`
 
-Suggested tables:
-- `activity`
-  - `id` (pk)
-  - `athlete_id` (fk)
-  - `source`
-  - `source_type`
-  - `source_activity_id` (nullable)
-  - `dedupe_hash`
-  - `activity_type`
-  - `started_at`
-  - `duration_seconds`
-  - `distance_meters`
-  - `elevation_gain_meters`
-  - `avg_heart_rate`
-  - `max_heart_rate`
-  - `created_at`
-  - `updated_at`
+### `ActivitySplitKm`
+Purpose: per-km splits to support explainable pacing and workload features.
 
-- `activity_metric`
-  - `activity_id` (fk)
-  - `metric_name`
-  - `metric_value`
-  - `metric_unit`
+Required fields:
+- Identity: `id`, `activityId`, `athleteId`, `splitIndex`
+- Time: `startOffsetS`, `endOffsetS`, `durationS`
+- Distance/pace: `distanceM`, `paceSecPerKm`
+- Terrain/effort: `elevGainM`, `elevLossM`, `avgHrBpm?`, `maxHrBpm?`, `avgCadenceSpm?`
+- Meta: `createdAt`
 
-- `athlete`
-  - `id` (pk)
-  - `external_ref`
-  - `owner_user_id` (nullable fk placeholder for future auth users table)
-  - `display_name`
-  - `created_at`
+Relation:
+- `activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)`
 
-- `activity_track` (optional, default OFF in MVP)
-  - `activity_id` (pk/fk)
-  - `track_encoding` (text, e.g. `encoded_polyline`)
-  - `track_blob` (bytea/text; compressed per-activity geometry payload)
-  - `point_count` (int)
-  - `bounding_box` (jsonb, nullable)
-  - `created_at`
+Indexes:
+- `@@index([activityId, splitIndex])`
+- `@@index([athleteId, createdAt])`
 
-- `training_features` (derived aggregates for modeling/training)
-  - `id` (pk)
-  - `athlete_id` (fk)
-  - `period_type` (enum/text: `weekly` | `daily`; MVP default `weekly`)
-  - `period_start` (date/timestamptz)
-  - `period_end` (date/timestamptz)
-  - `feature_payload` (jsonb or typed feature columns)
-  - `computed_at` (timestamptz)
+### `WeeklyFeature`
+Purpose: weekly-first feature store for prediction and dashboard trends.
 
-Feature aggregation policy (v1/MVP):
-- Primary storage and read path uses `period_type = weekly`.
-- `daily` period support is optional and deferred until required by downstream consumers.
-- `period_start`/`period_end` define inclusive aggregation windows for reproducible feature recomputation.
+Required fields:
+- Identity/time window: `id`, `athleteId`, `weekStartDate`, `weekEndDate`
+- Volume/load: `runCount`, `totalDistanceM`, `totalElapsedTimeS`, `totalElevationGainM`
+- Long run: `longRunDistanceM`, `longestRunId?`
+- Intensity mix: `easyDistanceM`, `moderateDistanceM`, `hardDistanceM`
+- Aggregates: `avgPaceSecPerKm?`, `avgHrBpm?`
+- Explainable load proxies: `strainScore?`, `monotonyScore?`, `consistencyScore?`
+- Quality: `dataCompleteness`
+- Meta: `createdAt`
 
-Track storage policy:
-- Row-per-point storage is **explicitly excluded from MVP**.
-- Future route/track persistence should use a per-activity encoded/compressed blob format (encoded polyline + compression).
+Indexes/constraints:
+- `@@unique([athleteId, weekStartDate])`
+- `@@index([athleteId, weekStartDate(sort: Desc)])`
+
+### `RouteSignature`
+Purpose: optional compact route representation without vector search dependency.
+
+Required fields:
+- Identity: `id`, `activityId` (unique), `athleteId`
+- Geometry summary: `startLat`, `startLon`, `endLat`, `endLon`, `bboxMinLat`, `bboxMinLon`, `bboxMaxLat`, `bboxMaxLon`
+- Compact route data: `polyline?`, `elevProfile?`
+- Dedupe/similarity: `routeHash`
+- Meta: `createdAt`
+
+Relation:
+- `activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)`
+
+Indexes:
+- `@@index([athleteId, routeHash])`
+
+## Staging + Import Metadata (supporting tables)
+The model set above remains canonical for normalized data. Keep lightweight ingestion metadata tables to preserve idempotency:
+- `imports` (status/progress/cursor)
+- `raw_files` (filename/checksum/parser summary only; no full payload storage by default)
+- `staging_activities` (parse outputs before normalization)
 
 ## Dedupe Strategy
-Primary strategy:
-1. Attempt uniqueness via (`athlete_id`, `source_type`, `source_activity_id`) when `source_activity_id` exists.
-2. Fallback uniqueness via (`athlete_id`, `dedupe_hash`) when source identifiers are missing or unreliable.
+1. Use `sourceActivityId` when available from provider/file.
+2. Always compute `dedupeHash` from canonical signature for fallback + idempotency.
+3. Enforce uniqueness at normalized layer via `@@unique([athleteId, dedupeHash])`.
 
-### `dedupe_hash` guidance
-- Deterministic hash of a canonical activity signature when source identifiers are absent/unreliable.
-- Canonical signature inputs SHOULD include:
-  - athlete identifier (`athlete_id` or stable external athlete ref)
-  - rounded activity start time (e.g. nearest minute)
-  - normalized duration (seconds)
-  - normalized distance (meters)
-  - normalized elevation gain (meters)
-  - optional route fingerprint sample (e.g. sparse lat/lng sample hash) when track data exists
-- Exclude volatile fields (sync timestamps, mutable annotations).
+Canonical `dedupeHash` input guidance:
+- rounded start time
+- duration
+- distance
+- elevation gain
+- sparse route sample hash (when available)
 
-## Key Indexes
-
-### Staging
-- Unique partial index: (`athlete_id`, `source_type`, `source_activity_id`) where `source_activity_id` is not null.
-- Unique index: (`athlete_id`, `dedupe_hash`).
-- Index: `ingested_at` for batch windows.
-- Index: `parse_status` for retry workflows.
-
-### Normalized
-- Unique partial index: (`athlete_id`, `source_type`, `source_activity_id`) where `source_activity_id` is not null.
-- Unique index: (`athlete_id`, `dedupe_hash`).
-- Index: (`athlete_id`, `started_at desc`) for timeline queries.
-- Index: (`activity_type`, `started_at desc`) for filtered analytics.
-- Optional BRIN index on `started_at` for large append-heavy datasets.
-- Optional index on `activity_track(activity_id)` only when track storage is enabled.
-
-## Data Flow
-1. Receive payload → write to `staging_activity`.
-2. Validate/transform → compute `dedupe_hash`.
-3. Upsert into normalized tables using dedupe rules.
-4. Mark staging row parse status and linkage metadata.
+## Free-tier Safety Rules
+- Trackpoints table is not part of MVP.
+- `RouteSignature.polyline` stores downsampled/encoded geometry only.
+- `raw_files` stores metadata/checksums, not large raw payload blobs.
+- GPX/TCX MVP flow assumes single file => single activity.
+- CSV bulk normalization is batched via cursor.
 
 ## Migration Rules
-- All schema changes via migrations in `packages/db`.
-- Backfills are explicit and idempotent.
-- Any index or dedupe change must be documented here and in release notes.
-
-## MVP Runtime + Future Multi-User Compatibility
-- MVP assumes exactly one local athlete profile and does not require auth tables or login/session flows.
-- Keep `athlete_id` FKs and dedupe/index keys as first-class identifiers so data can later be scoped to authenticated users without table redesign.
-- Nullable ownership placeholders (e.g., `owner_user_id`) are permitted now, but should not be enforced by runtime auth logic until the auth epic is delivered.
+- Any change to these canonical models must be reflected in:
+  - `docs/API_CONTRACT.md`
+  - `docs/CONTEXT.md` (if behavior/scope changes)
+  - `docs/ROADMAP.md` (if milestone sequencing changes)

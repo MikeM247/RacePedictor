@@ -55,13 +55,20 @@ Work is delivered in vertical slices. Each slice has explicit acceptance criteri
 **Goal:** deliver primary desktop experience for overview + activity exploration.
 
 ### Acceptance Criteria
-- Dashboard shell with navigation and top filters implemented.
-- Overview KPIs + trend chart populated from live API.
+- Dashboard docs and scaffold are completed.
+- Dashboard visual with typed mock data.
+- Full desktop dashboard layout renders realistic mock states (KPI, confidence, drivers, trends, import status).
+- Shared contract compliance is enforced: mock payloads validate against `packages/core` Zod schemas.
 - Activities list/detail flow functional with empty/loading/error states.
 
 ### Checks
 - UI tests/smoke tests for core navigation and filter behavior.
+- Contract tests verify mock payload validation against dashboard schemas.
 - Accessibility spot checks (keyboard nav + contrast).
+
+### Follow-on Slices Plan
+- Wire dashboard panels to real APIs panel-by-panel, preserving existing component contracts.
+- Treat schema/component contract updates as explicit contract-versioned changes, not incidental wiring changes.
 
 ## Slice 5 — Hardening + Release Readiness
 **Goal:** stabilize reliability, observability, and documentation.

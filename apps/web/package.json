@@ -1,0 +1,8 @@
+{
+  "name": "@racepredictor/web",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@racepredictor/core": "^0.1.0"
+  }
+}

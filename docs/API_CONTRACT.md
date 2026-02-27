@@ -67,6 +67,24 @@
   - Query: `metric`, optional date range, optional grouping.
   - Response: `{ metric: string, series: PerformanceSeriesPoint[] }`
 
+
+### Features
+- `GET /api/v1/features`
+  - Purpose: return aggregate feature rows for model training/read APIs.
+  - Query: optional `athlete_id`, optional date range, optional `period_type` (`weekly` default, `daily` optional).
+  - Response: `{ period_type: "weekly" | "daily", items: TrainingFeatureRow[], next_cursor?: string }`
+  - Notes:
+    - Default behavior returns weekly aggregates when `period_type` is omitted.
+    - Daily aggregates are optional and may be unavailable in MVP deployments.
+
+- `GET /api/v1/features/:athlete_id`
+  - Purpose: return aggregate feature rows for a specific athlete.
+  - Query: optional date range, optional `period_type` (`weekly` default).
+  - Response: `{ athlete_id: string, period_type: "weekly" | "daily", items: TrainingFeatureRow[] }`
+  - Notes:
+    - Weekly aggregates are the primary MVP contract surface.
+    - `daily` support is optional and can return a not-enabled/empty response in MVP.
+
 ## Zod-Backed Contract Conventions
 - Each endpoint has explicit `RequestSchema` and `ResponseSchema` in `packages/core`.
 - Handlers parse incoming data via `safeParse` (or equivalent) before business logic.

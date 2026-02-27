@@ -67,6 +67,20 @@ Suggested tables:
   - `bounding_box` (jsonb, nullable)
   - `created_at`
 
+- `training_features` (derived aggregates for modeling/training)
+  - `id` (pk)
+  - `athlete_id` (fk)
+  - `period_type` (enum/text: `weekly` | `daily`; MVP default `weekly`)
+  - `period_start` (date/timestamptz)
+  - `period_end` (date/timestamptz)
+  - `feature_payload` (jsonb or typed feature columns)
+  - `computed_at` (timestamptz)
+
+Feature aggregation policy (v1/MVP):
+- Primary storage and read path uses `period_type = weekly`.
+- `daily` period support is optional and deferred until required by downstream consumers.
+- `period_start`/`period_end` define inclusive aggregation windows for reproducible feature recomputation.
+
 Track storage policy:
 - Row-per-point storage is **explicitly excluded from MVP**.
 - Future route/track persistence should use a per-activity encoded/compressed blob format (encoded polyline + compression).

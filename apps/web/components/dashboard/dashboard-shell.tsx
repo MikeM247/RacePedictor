@@ -1,7 +1,7 @@
-import type { DashboardData } from "../../lib/dashboard-data-source";
+import type { DashboardViewModel } from "../../lib/dashboard-view-model";
 import "./dashboard.css";
 
-type DashboardShellProps = DashboardData;
+type DashboardShellProps = DashboardViewModel;
 
 const formatDuration = (seconds: number) => {
   const min = Math.floor(seconds / 60);

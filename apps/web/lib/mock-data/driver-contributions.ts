@@ -1,36 +1,39 @@
-import {
-  driverContributionListSchema,
-  type DriverContribution,
-} from "../../../../packages/core/src/contracts";
+import type { DriverContribution } from "../../../../packages/core/src/contracts";
 
-export const driverContributionsFixture: DriverContribution[] =
-  driverContributionListSchema.parse([
-    {
-      key: "consistency",
-      label: "Training consistency",
-      contributionPct: 38,
-      direction: "positive",
-      confidence: 0.91,
-    },
-    {
-      key: "threshold",
-      label: "Threshold volume",
-      contributionPct: 24,
-      direction: "positive",
-      confidence: 0.84,
-    },
-    {
-      key: "heat",
-      label: "Heat adaptation gap",
-      contributionPct: -11,
-      direction: "negative",
-      confidence: 0.62,
-    },
-    {
-      key: "recovery",
-      label: "Recovery score",
-      contributionPct: 9,
-      direction: "neutral",
-      confidence: 0.58,
-    },
-  ]);
+export const driverContributionsFixture: DriverContribution[] = [
+  {
+    key: "consistency",
+    label: "Training consistency",
+    contributionPct: 32.5,
+    direction: "positive",
+    confidence: 0.89,
+  },
+  {
+    key: "acute_load",
+    label: "Acute load",
+    contributionPct: -18.4,
+    direction: "negative",
+    confidence: 0.78,
+  },
+  {
+    key: "sleep_efficiency",
+    label: "Sleep efficiency",
+    contributionPct: 14.2,
+    direction: "positive",
+    confidence: 0.74,
+  },
+  {
+    key: "heat_stress",
+    label: "Heat stress",
+    contributionPct: -9.1,
+    direction: "negative",
+    confidence: 0.68,
+  },
+  {
+    key: "terrain_specificity",
+    label: "Terrain specificity",
+    contributionPct: 11.8,
+    direction: "positive",
+    confidence: 0.71,
+  },
+];

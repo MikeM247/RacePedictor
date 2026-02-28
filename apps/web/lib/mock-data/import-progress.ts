@@ -1,14 +1,11 @@
-import {
-  importProgressSchema,
-  type ImportProgress,
-} from "../../../../packages/core/src/contracts";
+import type { ImportProgress } from "../../../../packages/core/src/contracts";
 
-export const importProgressFixture: ImportProgress = importProgressSchema.parse({
-  importId: "imp_20260220_001",
-  status: "normalizing",
-  stagedCount: 312,
-  normalizedCount: 248,
-  duplicateCount: 41,
-  rejectedCount: 2,
-  updatedAt: "2026-02-20T08:18:32.000Z",
-});
+export const importProgressFixture: ImportProgress = {
+  importId: "import_2026_02_20",
+  status: "completed",
+  stagedCount: 152,
+  normalizedCount: 149,
+  duplicateCount: 2,
+  rejectedCount: 1,
+  updatedAt: "2026-02-20T08:10:00.000Z",
+};

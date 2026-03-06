@@ -1,9 +1,6 @@
-import {
-  predictionSummarySchema,
-  type PredictionSummary,
-} from "../../../../packages/core/src/contracts";
+import type { PredictionSummary } from "../../../../packages/core/src/contracts";
 
-export const predictionSummaryFixture: PredictionSummary = predictionSummarySchema.parse({
+export const predictionSummaryFixture: PredictionSummary = {
   athleteId: "athlete_001",
   predictedTimeS: 5710,
   predictedPaceSecPerKm: 271.9,
@@ -11,4 +8,4 @@ export const predictionSummaryFixture: PredictionSummary = predictionSummarySche
   bandHighS: 5920,
   modelVersion: "v1.3.0",
   generatedAt: "2026-02-20T08:15:00.000Z",
-});
+};

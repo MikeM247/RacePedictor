@@ -1,17 +1,7 @@
-import type {
-  DriverContribution,
-  FeatureTrendPoint,
-  ImportProgress,
-  PredictionSummary,
-} from "../../../../packages/core/src/contracts";
+import type { DashboardViewModel } from "../../lib/dashboard-view-model";
 import "./dashboard.css";
 
-type DashboardShellProps = {
-  predictionSummary: PredictionSummary;
-  driverContributions: DriverContribution[];
-  featureTrendPoints: FeatureTrendPoint[];
-  importProgress: ImportProgress;
-};
+type DashboardShellProps = DashboardViewModel;
 
 const formatDuration = (seconds: number) => {
   const min = Math.floor(seconds / 60);

@@ -86,27 +86,17 @@ Avoid:
 - marketing-style headings
 - hero sections
 ### Content Container
-
 Max width:
-
 1200–1400px
-
 Padding:
-
 24–32px
-
-Content should be divided into logical sections:
-
-summary metrics
-
-visualizations
-
-data tables
-
-insights
-
-Component Guidelines
-Cards / Panels
+### Content should be divided into logical sections:
+- summary metrics
+- visualizations
+- data tables
+- insights
+## Component Guidelines
+### Cards / Panels
 
 Cards should group related information.
 

@@ -58,3 +58,18 @@
 - Pixel-perfect mobile optimization.
 - Native mobile interaction patterns.
 - Highly customized per-role dashboards.
+
+## Page States
+- Every page must support:
+  - Loading state
+  - Empty state
+  - Error state
+  - Data stale state
+
+## Core UI Components
+- KPI Card
+- Data Table
+- Trend Chart
+- Detail Drawer
+- Filter Panel
+- Insight Panel

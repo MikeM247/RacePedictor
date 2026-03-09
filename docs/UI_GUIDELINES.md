@@ -221,6 +221,22 @@ Avoid:
 
 ---
 
+## Dashboard Implementation Audit (Current)
+
+Scope reviewed:
+
+- `apps/web/components/dashboard/dashboard-shell.tsx`
+- `apps/web/components/dashboard/dashboard.css`
+- `apps/web/app/dashboard/page.tsx`
+
+| Guideline requirement | Current implementation status | Required change | Priority |
+|---|---|---|---|
+| **Global shell consistency**: Sidebar + top toolbar + content regions should follow the standard app shell with a dedicated toolbar row for title/filters/status. | Sidebar and main content split exist, but there is no distinct top toolbar region; page title/version are embedded in content header only. Content area also has no max-width container guard. | Introduce a dedicated toolbar strip (`48–56px`) above dashboard panels; keep sidebar as global nav; wrap body content in a constrained container (`max-width: 1200–1400px`, centered) to stabilize layout across large displays. | **P0 (High)** |
+| **Card/panel consistency**: Panels should have consistent structure and support common panel affordances (header/action/body). | Base `.card` visual style is close to guideline ranges, but panel internals are inconsistent (some plain lists, one definition list, no shared panel header/action pattern). Grid strategy also couples chart card span behavior to layout class names. | Standardize panel anatomy (title row + optional action/status + content body), normalize spacing/typography across KPI and detail cards, and extract reusable panel component/class to reduce per-card divergence. | **P1 (High-Med)** |
+| **State handling & interaction clarity**: Users should understand current state and available interactions at a glance. | Navigation links are static anchors with only one hardcoded `active`; no route-aware state. Dashboard page fetches data but exposes no loading, empty, or error states. Interactive affordances (filters/date/status) are absent in shell. | Add route-aware nav active state, explicit loading/error/empty states in `page.tsx` flow (or via boundary components), and basic toolbar interaction slots (filters/date/status) so state is visible and predictable. | **P1 (High-Med)** |
+
+---
+
 ## Tables
 
 Tables are a **primary UI element**.

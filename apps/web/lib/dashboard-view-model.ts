@@ -27,8 +27,15 @@ export type ImportProgressView = {
   rejectedCount: number;
 };
 
+export type DashboardKpiView = {
+  key: "predicted-finish" | "predicted-pace" | "confidence-band";
+  title: string;
+  value: string;
+};
+
 export type DashboardViewModel = {
   predictionSummary: PredictionSummaryView;
+  summaryKpis: DashboardKpiView[];
   driverContributions: DriverContributionView[];
   featureTrendPoints: FeatureTrendPointView[];
   importProgress: ImportProgressView;
@@ -50,6 +57,34 @@ const readString = (value: unknown, fieldName: string): string => {
     throw new Error(`Expected string for ${fieldName}`);
   }
   return value;
+};
+
+const formatDuration = (seconds: number) => {
+  const min = Math.floor(seconds / 60);
+  const sec = Math.round(seconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${min}:${sec}`;
+};
+
+const toSummaryKpis = (predictionSummary: PredictionSummaryView): DashboardKpiView[] => {
+  return [
+    {
+      key: "predicted-finish",
+      title: "Predicted finish",
+      value: formatDuration(predictionSummary.predictedTimeS),
+    },
+    {
+      key: "predicted-pace",
+      title: "Predicted pace",
+      value: `${Math.round(predictionSummary.predictedPaceSecPerKm)} sec/km`,
+    },
+    {
+      key: "confidence-band",
+      title: "Confidence band",
+      value: `${formatDuration(predictionSummary.bandLowS)} - ${formatDuration(predictionSummary.bandHighS)}`,
+    },
+  ];
 };
 
 export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
@@ -100,14 +135,17 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     throw new Error("Invalid import progress status");
   }
 
+  const normalizedPredictionSummary: PredictionSummaryView = {
+    predictedTimeS: readNumber(predictionSummary.predictedTimeS, "predictionSummary.predictedTimeS"),
+    predictedPaceSecPerKm: readNumber(predictionSummary.predictedPaceSecPerKm, "predictionSummary.predictedPaceSecPerKm"),
+    bandLowS: readNumber(predictionSummary.bandLowS, "predictionSummary.bandLowS"),
+    bandHighS: readNumber(predictionSummary.bandHighS, "predictionSummary.bandHighS"),
+    modelVersion: readString(predictionSummary.modelVersion, "predictionSummary.modelVersion"),
+  };
+
   return {
-    predictionSummary: {
-      predictedTimeS: readNumber(predictionSummary.predictedTimeS, "predictionSummary.predictedTimeS"),
-      predictedPaceSecPerKm: readNumber(predictionSummary.predictedPaceSecPerKm, "predictionSummary.predictedPaceSecPerKm"),
-      bandLowS: readNumber(predictionSummary.bandLowS, "predictionSummary.bandLowS"),
-      bandHighS: readNumber(predictionSummary.bandHighS, "predictionSummary.bandHighS"),
-      modelVersion: readString(predictionSummary.modelVersion, "predictionSummary.modelVersion"),
-    },
+    predictionSummary: normalizedPredictionSummary,
+    summaryKpis: toSummaryKpis(normalizedPredictionSummary),
     driverContributions: normalizedContributions,
     featureTrendPoints: normalizedTrendPoints,
     importProgress: {

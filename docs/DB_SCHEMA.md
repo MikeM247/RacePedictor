@@ -1,7 +1,9 @@
 # DB_SCHEMA
 
 ## Overview
+
 The MVP schema is anchored on four primary Prisma models provided for implementation planning:
+
 - `Activity`
 - `ActivitySplitKm`
 - `WeeklyFeature`
@@ -12,9 +14,11 @@ This keeps ingestion/output explainable while protecting Neon free-tier limits (
 ## Canonical MVP Models
 
 ### `Activity`
+
 Purpose: normalized activity record and top-level prediction inputs.
 
 Required fields:
+
 - Identity/source: `id`, `athleteId`, `sourceType`, `sourceFileId?`, `sourceActivityId?`
 - Time: `occurredAt`, `endedAt`, `elapsedTimeS`, `movingTimeS?`
 - Sport/performance: `sport`, `distanceM`, `avgPaceSecPerKm`, `best1kSec?`, `best5kSec?`
@@ -26,14 +30,27 @@ Required fields:
 - Relations: `splits ActivitySplitKm[]`, `routeSignature RouteSignature?`
 
 Indexes/constraints:
+
 - `@@index([athleteId, occurredAt(sort: Desc)])`
 - `@@index([athleteId, sport, occurredAt(sort: Desc)])`
+- `@@index([athleteId, sourceType, occurredAt(sort: Desc)])`
+- `@@unique([athleteId, sourceType, sourceActivityId])`
 - `@@unique([athleteId, dedupeHash])`
 
+Query-path coverage notes:
+
+- `GET /api/v1/activities` (date range + cursor): served by `@@index([athleteId, occurredAt(sort: Desc)])`.
+- `GET /api/v1/activities` with sport filter: served by `@@index([athleteId, sport, occurredAt(sort: Desc)])`.
+- Activities source filtering (Product flow): served by `@@index([athleteId, sourceType, occurredAt(sort: Desc)])`.
+- Normalize dedupe primary path (`sourceActivityId`): enforced by `@@unique([athleteId, sourceType, sourceActivityId])`.
+- Normalize dedupe fallback path (`dedupeHash`): enforced by `@@unique([athleteId, dedupeHash])`.
+
 ### `ActivitySplitKm`
+
 Purpose: per-km splits to support explainable pacing and workload features.
 
 Required fields:
+
 - Identity: `id`, `activityId`, `athleteId`, `splitIndex`
 - Time: `startOffsetS`, `endOffsetS`, `durationS`
 - Distance/pace: `distanceM`, `paceSecPerKm`
@@ -41,16 +58,20 @@ Required fields:
 - Meta: `createdAt`
 
 Relation:
+
 - `activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)`
 
 Indexes:
-- `@@index([activityId, splitIndex])`
+
+- `@@unique([activityId, splitIndex])`
 - `@@index([athleteId, createdAt])`
 
 ### `WeeklyFeature`
+
 Purpose: weekly-first feature store for prediction and dashboard trends.
 
 Required fields:
+
 - Identity/time window: `id`, `athleteId`, `weekStartDate`, `weekEndDate`
 - Volume/load: `runCount`, `totalDistanceM`, `totalElapsedTimeS`, `totalElevationGainM`
 - Long run: `longRunDistanceM`, `longestRunId?`
@@ -61,13 +82,23 @@ Required fields:
 - Meta: `createdAt`
 
 Indexes/constraints:
+
 - `@@unique([athleteId, weekStartDate])`
 - `@@index([athleteId, weekStartDate(sort: Desc)])`
+- `@@index([weekStartDate(sort: Desc)])`
+
+Query-path coverage notes:
+
+- `GET /api/v1/features/weekly/:athleteId` (date range + cursor): served by `@@index([athleteId, weekStartDate(sort: Desc)])`.
+- `GET /api/v1/features/weekly` with optional `athleteId`: covered by athlete index when scoped, and `@@index([weekStartDate(sort: Desc)])` for global weekly feeds.
+- Weekly upsert/idempotency: enforced by `@@unique([athleteId, weekStartDate])`.
 
 ### `RouteSignature`
+
 Purpose: optional compact route representation without vector search dependency.
 
 Required fields:
+
 - Identity: `id`, `activityId` (unique), `athleteId`
 - Geometry summary: `startLat`, `startLon`, `endLat`, `endLon`, `bboxMinLat`, `bboxMinLon`, `bboxMaxLat`, `bboxMaxLon`
 - Compact route data: `polyline?`, `elevProfile?`
@@ -75,23 +106,29 @@ Required fields:
 - Meta: `createdAt`
 
 Relation:
+
 - `activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)`
 
 Indexes:
+
 - `@@index([athleteId, routeHash])`
 
 ## Staging + Import Metadata (supporting tables)
+
 The model set above remains canonical for normalized data. Keep lightweight ingestion metadata tables to preserve idempotency:
+
 - `imports` (status/progress/cursor)
 - `raw_files` (filename/checksum/parser summary only; no full payload storage by default)
 - `staging_activities` (parse outputs before normalization)
 
 ## Dedupe Strategy
+
 1. Use `sourceActivityId` when available from provider/file.
 2. Always compute `dedupeHash` from canonical signature for fallback + idempotency.
 3. Enforce uniqueness at normalized layer via `@@unique([athleteId, dedupeHash])`.
 
 Canonical `dedupeHash` input guidance:
+
 - rounded start time
 - duration
 - distance
@@ -99,6 +136,7 @@ Canonical `dedupeHash` input guidance:
 - sparse route sample hash (when available)
 
 ## Free-tier Safety Rules
+
 - Trackpoints table is not part of MVP.
 - `RouteSignature.polyline` stores downsampled/encoded geometry only.
 - `raw_files` stores metadata/checksums, not large raw payload blobs.
@@ -106,6 +144,7 @@ Canonical `dedupeHash` input guidance:
 - CSV bulk normalization is batched via cursor.
 
 ## Migration Rules
+
 - Any change to these canonical models must be reflected in:
   - `docs/API_CONTRACT.md`
   - `docs/CONTEXT.md` (if behavior/scope changes)

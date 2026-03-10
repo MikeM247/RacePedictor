@@ -114,8 +114,9 @@ Relation:
 
 - `activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)`
 
-Indexes:
+Indexes/constraints:
 
+- `activityId` unique (one optional route signature per activity).
 - `@@index([athleteId, routeHash])`
 
 ## Staging + Import Metadata (supporting tables)

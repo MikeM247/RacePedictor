@@ -61,12 +61,34 @@ model Activity {
   dedupeHash          String
   createdAt           DateTime   @default(now())
   splits              ActivitySplitKm[]
+  routeSignature      RouteSignature?
 
   @@index([athleteId, occurredAt(sort: Desc)])
   @@index([athleteId, sport, occurredAt(sort: Desc)])
   @@index([athleteId, sourceType, occurredAt(sort: Desc)])
   @@unique([athleteId, sourceType, sourceActivityId])
   @@unique([athleteId, dedupeHash])
+}
+
+model RouteSignature {
+  id          String   @id @default(cuid())
+  activityId  String   @unique
+  athleteId   String
+  startLat    Float
+  startLon    Float
+  endLat      Float
+  endLon      Float
+  bboxMinLat  Float
+  bboxMinLon  Float
+  bboxMaxLat  Float
+  bboxMaxLon  Float
+  polyline    String?
+  elevProfile String?
+  routeHash   String
+  createdAt   DateTime @default(now())
+  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@index([athleteId, routeHash])
 }
 
 model ActivitySplitKm {

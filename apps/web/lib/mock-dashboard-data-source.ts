@@ -1,4 +1,5 @@
-import type { DashboardDataSource, DashboardFetchResult } from "./dashboard-data-source";
+import type { DashboardFetchResult } from "../../../packages/core/src/contracts";
+import type { DashboardDataSource } from "./dashboard-data-source";
 import { driverContributionsFixture } from "./mock-data/driver-contributions";
 import { featureTrendPointsFixture } from "./mock-data/feature-trend-points";
 import { importProgressFixture } from "./mock-data/import-progress";

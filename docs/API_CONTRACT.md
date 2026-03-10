@@ -69,10 +69,18 @@ This contract is aligned to Prisma-style domain models:
 
 ### Dashboard
 - `GET /api/v1/dashboard/overview`
-  - Response includes:
-    - prediction summary
-    - latest weekly load snapshot
-    - import/normalize progress summary
+  - Response contract (source of truth: `packages/core/src/contracts/dashboard.ts`):
+    - `DashboardFetchResult` (discriminated by `fetchStatus`)
+      - `success`: `{ fetchStatus, stale, data }`
+      - `empty`: `{ fetchStatus, stale }`
+      - `error`: `{ fetchStatus, stale, errorMessage }`
+    - `DashboardOverviewData` includes:
+      - `predictionSummary: PredictionSummary`
+      - `driverContributions: DriverContribution[]`
+      - `featureTrendPoints: FeatureTrendPoint[]`
+      - `importProgress: ImportProgress`
+    - `DashboardStaleMetadata` includes `isStale`, optional `staleReason`, optional `staleAtIso`
+  - Compatibility note: these dashboard contract additions are additive-only within `/api/v1`.
 
 ## DTO Guidance (mapped to models)
 - `ActivitySummary`: key listing fields (`id`, `occurredAt`, `sport`, `distanceM`, `elapsedTimeS`, `avgPaceSecPerKm`, `elevationGainM`, availability flags).

@@ -26,9 +26,16 @@ export const featureTrendPointSchema = z.object({
   unit: z.string().min(1),
 });
 
+export const importProgressStatusSchema = z.enum([
+  "uploaded",
+  "normalizing",
+  "completed",
+  "failed",
+]);
+
 export const importProgressSchema = z.object({
   importId: z.string().min(1),
-  status: z.enum(["uploaded", "normalizing", "completed", "failed"]),
+  status: importProgressStatusSchema,
   stagedCount: z.number().int().nonnegative(),
   normalizedCount: z.number().int().nonnegative(),
   duplicateCount: z.number().int().nonnegative(),
@@ -36,10 +43,92 @@ export const importProgressSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
-export type PredictionSummary = z.infer<typeof predictionSummarySchema>;
-export type DriverContribution = z.infer<typeof driverContributionSchema>;
-export type FeatureTrendPoint = z.infer<typeof featureTrendPointSchema>;
-export type ImportProgress = z.infer<typeof importProgressSchema>;
-
 export const driverContributionListSchema = z.array(driverContributionSchema);
 export const featureTrendPointListSchema = z.array(featureTrendPointSchema);
+
+export const dashboardOverviewDataSchema = z.object({
+  predictionSummary: predictionSummarySchema,
+  driverContributions: driverContributionListSchema,
+  featureTrendPoints: featureTrendPointListSchema,
+  importProgress: importProgressSchema,
+});
+
+export const dashboardStaleMetadataSchema = z.object({
+  isStale: z.enum(["true", "false"]),
+  staleReason: z.string(),
+  staleAtIso: z.string().datetime(),
+});
+
+export const dashboardFetchResultSchema = z.object({
+  fetchStatus: z.enum(["success", "empty", "error"]),
+  errorMessage: z.string(),
+  stale: dashboardStaleMetadataSchema,
+  data: dashboardOverviewDataSchema,
+});
+
+export type PredictionSummary = {
+  athleteId: string;
+  predictedTimeS: number;
+  predictedPaceSecPerKm: number;
+  bandLowS: number;
+  bandHighS: number;
+  modelVersion: string;
+  generatedAt: string;
+};
+
+export type DriverContribution = {
+  key: string;
+  label: string;
+  contributionPct: number;
+  direction: "positive" | "negative" | "neutral";
+  confidence: number;
+};
+
+export type FeatureTrendPoint = {
+  weekStart: string;
+  featureKey: string;
+  featureLabel: string;
+  value: number;
+  unit: string;
+};
+
+export type ImportProgressStatus = "uploaded" | "normalizing" | "completed" | "failed";
+
+export type ImportProgress = {
+  importId: string;
+  status: ImportProgressStatus;
+  stagedCount: number;
+  normalizedCount: number;
+  duplicateCount: number;
+  rejectedCount: number;
+  updatedAt: string;
+};
+
+export type DashboardOverviewData = {
+  predictionSummary: PredictionSummary;
+  driverContributions: DriverContribution[];
+  featureTrendPoints: FeatureTrendPoint[];
+  importProgress: ImportProgress;
+};
+
+export type DashboardStaleMetadata = {
+  isStale: boolean;
+  staleReason?: string;
+  staleAtIso?: string;
+};
+
+export type DashboardFetchResult =
+  | {
+      fetchStatus: "success";
+      data: DashboardOverviewData;
+      stale: DashboardStaleMetadata;
+    }
+  | {
+      fetchStatus: "empty";
+      stale: DashboardStaleMetadata;
+    }
+  | {
+      fetchStatus: "error";
+      errorMessage: string;
+      stale: DashboardStaleMetadata;
+    };

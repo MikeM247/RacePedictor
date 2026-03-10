@@ -1,26 +1,28 @@
-export type PredictionSummaryView = {
-  predictedTimeS: number;
-  predictedPaceSecPerKm: number;
-  bandLowS: number;
-  bandHighS: number;
-  modelVersion: string;
-};
+import type {
+  DashboardFetchResult,
+  DriverContribution,
+  FeatureTrendPoint,
+  ImportProgressStatus,
+  PredictionSummary,
+} from "../../../packages/core/src/contracts";
 
-export type DriverContributionView = {
-  key: string;
-  label: string;
-  contributionPct: number;
-};
+export type PredictionSummaryView = Pick<
+  PredictionSummary,
+  "predictedTimeS" | "predictedPaceSecPerKm" | "bandLowS" | "bandHighS" | "modelVersion"
+>;
 
-export type FeatureTrendPointView = {
-  weekStart: string;
-  featureKey: string;
-  value: number;
-  unit: string;
-};
+export type DriverContributionView = Pick<
+  DriverContribution,
+  "key" | "label" | "contributionPct"
+>;
+
+export type FeatureTrendPointView = Pick<
+  FeatureTrendPoint,
+  "weekStart" | "featureKey" | "value" | "unit"
+>;
 
 export type ImportProgressView = {
-  status: "uploaded" | "normalizing" | "completed" | "failed";
+  status: ImportProgressStatus;
   stagedCount: number;
   normalizedCount: number;
   duplicateCount: number;
@@ -34,7 +36,7 @@ export type DashboardKpiView = {
 };
 
 export type DashboardViewModel = {
-  fetchStatus: "success" | "empty" | "error";
+  fetchStatus: DashboardFetchResult["fetchStatus"];
   errorMessage: string | null;
   staleInfo: {
     isStale: boolean;

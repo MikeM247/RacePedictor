@@ -12,7 +12,7 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 ### R1.1 Finalize planning docs
 - [x] Confirm `CONTEXT.md` as source of truth
 - [x] Confirm `ARCHITECTURE.md` boundaries
-- [ ] Confirm `API_CONTRACT.md` endpoint/DTOs
+- [x] Confirm `API_CONTRACT.md` endpoint/DTOs
 - [ ] Confirm `DB_SCHEMA.md` Prisma model alignment
 - [ ] Confirm `CODEX_WORKFLOW.md` story lifecycle
 - [ ] Confirm `UI_UX_SPEC.md` desktop dashboard IA

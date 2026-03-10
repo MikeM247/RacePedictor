@@ -57,6 +57,32 @@
 5. **UI purity**
    - `packages/ui` remains presentation-focused; orchestration occurs in app/core layers.
 
+## Planned Module Boundary Map (R1.1/T02)
+
+The table below maps every planned feature/module in `docs/ROADMAP.md` to its owning layer and explicitly allowed imports. This is the boundary reference to use during implementation planning and code review.
+
+| Planned feature/module | Owning layer | Allowed imports | Forbidden shortcuts / notes |
+| --- | --- | --- | --- |
+| `POST /api/v1/imports/upload` route handler + request validation | `apps/web` (API composition) + `packages/core` (contracts) | `apps/web` may import `packages/core` contracts and `packages/db` service/repository entrypoints; `packages/core` imports no app/ui/db runtime | Route handlers must not embed raw SQL/ORM calls inline; persistence delegated to db layer interfaces. |
+| `POST /api/v1/imports/:id/normalize` orchestration | `apps/web` + `packages/core` use-cases + `packages/db` repositories | `apps/web -> core/db`, `packages/db -> packages/core` | Normalization + dedupe logic in core/db; avoid controller-level data mutation logic tied to DB details. |
+| `GET /api/v1/activities` and `GET /api/v1/activities/:activityId` | `apps/web` + `packages/core` contracts + `packages/db` query adapters | Same as above | App layer may shape HTTP response using core contracts, but cannot own query semantics/index hints. |
+| `GET /api/v1/features/weekly` | `apps/web` + `packages/core` + `packages/db` | Same as above | Weekly aggregation SQL/materialization logic remains in db layer or core services, not UI/app components. |
+| `POST /api/v1/predictions` | `apps/web` + `packages/core` | `apps/web -> packages/core`; optional db reads only through db interfaces | Prediction DTO definitions remain in core; app route must not redefine competing DTOs. |
+| Prisma models (`Activity`, `ActivitySplitKm`, `WeeklyFeature`, `RouteSignature`, ingestion support tables) | `packages/db` | `packages/db -> packages/core` types only | No imports from `apps/web`; schema/index/dedupe internals remain encapsulated in db package. |
+| Dashboard data-source seam (`DashboardDataSource`, mock/api implementations) | `apps/web` | `apps/web -> packages/core` contracts and app-local adapters | `packages/ui` must not select data sources or perform fetch/orchestration logic. |
+| Desktop dashboard layout/panels/components | `packages/ui` (reusable) and/or `apps/web` composition shell | UI can import React/shared style utilities; app composes with prepared props | UI components must not import `packages/db` or call API/DB directly. |
+| Typed fixture data mapped to `Activity`, `WeeklyFeature`, prediction DTOs | `apps/web` fixtures using `packages/core` contracts | `apps/web -> packages/core` | Fixture types are contract-consumers only; contracts are authored in core. |
+| Panel-by-panel live wiring (import status, timeline, trends, prediction/drivers) | `apps/web` composition + adapters | `apps/web -> packages/core`, `apps/web -> packages/db` via services | Prevent app-layer shortcuts that directly couple components to DB repository/query internals. |
+
+## Import Guardrails for Reviews and Static Checks
+
+- **Red flag pattern:** any `apps/web` file importing db implementation internals (e.g., schema/client/query files) instead of consuming db service/repository interfaces.
+- **Red flag pattern:** any `packages/ui` component importing from `packages/db` or app route/data-source files.
+- **Red flag pattern:** any package importing from `apps/web`.
+- **Minimum static check for boundary drift:** run repository lint plus a targeted import scan for forbidden edges (for example, `rg "from ['\"](\.\./)*apps/web|packages/db" packages`).
+
+If a future planned feature cannot be mapped into this table without violating one of the rules above, architecture must be updated first (docs-first) before implementation.
+
 ## Cross-Cutting Architecture Decisions
 - API namespace fixed at `/api/v1` for initial release.
 - Additive evolution strategy for v1 contracts.

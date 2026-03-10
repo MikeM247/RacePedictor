@@ -60,10 +60,33 @@ model Activity {
   hillDifficulty      Float?
   dedupeHash          String
   createdAt           DateTime   @default(now())
+  splits              ActivitySplitKm[]
 
   @@index([athleteId, occurredAt(sort: Desc)])
   @@index([athleteId, sport, occurredAt(sort: Desc)])
   @@index([athleteId, sourceType, occurredAt(sort: Desc)])
   @@unique([athleteId, sourceType, sourceActivityId])
   @@unique([athleteId, dedupeHash])
+}
+
+model ActivitySplitKm {
+  id              String    @id @default(cuid())
+  activityId      String
+  athleteId       String
+  splitIndex      Int
+  startOffsetS    Int
+  endOffsetS      Int
+  durationS       Int
+  distanceM       Float
+  paceSecPerKm    Float
+  elevGainM       Float
+  elevLossM       Float
+  avgHrBpm        Int?
+  maxHrBpm        Int?
+  avgCadenceSpm   Float?
+  createdAt       DateTime  @default(now())
+  activity        Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, splitIndex])
+  @@index([athleteId, createdAt])
 }

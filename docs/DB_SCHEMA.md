@@ -66,6 +66,11 @@ Indexes:
 - `@@unique([activityId, splitIndex])`
 - `@@index([athleteId, createdAt])`
 
+Query-path coverage notes:
+
+- `GET /api/v1/activities/:activityId/splits` ordered split retrieval: uniqueness on `(activityId, splitIndex)` prevents duplicate positions and supports deterministic ordering assumptions.
+- Athlete-level split recency scans: served by `@@index([athleteId, createdAt])`.
+
 ### `WeeklyFeature`
 
 Purpose: weekly-first feature store for prediction and dashboard trends.

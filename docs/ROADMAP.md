@@ -17,12 +17,13 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 - [x] Confirm `API_CONTRACT.md` endpoint/DTOs
 - [x] Confirm `DB_SCHEMA.md` Prisma model alignment
 - [x] Confirm `CODEX_WORKFLOW.md` story lifecycle
-- [ ] Confirm `UI_UX_SPEC.md` desktop dashboard IA
+- [x] Confirm `UI_UX_SPEC.md` desktop dashboard IA
 
 **Acceptance criteria**
 
 - Docs are internally consistent and represent current implementation target.
 - `CODEX_WORKFLOW.md` defines explicit story checklist and docs-sync gates with `Updated`/`N/A` resolution.
+- `UI_UX_SPEC.md` defines all five dashboard pages and the required loading/empty/error/stale variants for each.
 
 ## Phase 2 — Schema + contract baseline
 

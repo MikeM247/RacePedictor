@@ -237,6 +237,24 @@ Scope reviewed:
 
 ---
 
+
+## IA/State Implementation Guardrails (Desktop Dashboard)
+
+This section translates `UI_UX_SPEC.md` IA requirements into implementation guardrails.
+
+- The dashboard must preserve five-page IA in the sidebar, in this exact order: Overview, Activities, Performance, Data Quality, Settings.
+- Top bar behavior must remain consistent across data pages:
+  - Date range and source filters are global to Overview/Activities/Performance/Data Quality.
+  - Athlete filter remains visible but read-only in single-athlete v1 mode.
+  - Settings omits data filters and keeps title + status only.
+- Every page implementation must include presentational variants for:
+  - loading
+  - empty
+  - error
+  - stale data
+- "Unavailable optional data" (e.g., missing splits/route signature) is a local module state, not a full-page error.
+- Active filter context must remain visible after refresh actions.
+
 ## Tables
 
 Tables are a **primary UI element**.

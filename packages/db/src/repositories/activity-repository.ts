@@ -47,3 +47,29 @@ export interface ActivitySplitKmRecord {
   avgCadenceSpm: number | null;
   createdAt: Date;
 }
+
+export type WeeklyFeatureCreateInput = Prisma.WeeklyFeatureCreateInput;
+export type WeeklyFeatureWhereUniqueInput = Prisma.WeeklyFeatureWhereUniqueInput;
+
+export interface WeeklyFeatureRecord {
+  id: string;
+  athleteId: string;
+  weekStartDate: Date;
+  weekEndDate: Date;
+  runCount: number;
+  totalDistanceM: number;
+  totalElapsedTimeS: number;
+  totalElevationGainM: number;
+  longRunDistanceM: number;
+  longestRunId: string | null;
+  easyDistanceM: number;
+  moderateDistanceM: number;
+  hardDistanceM: number;
+  avgPaceSecPerKm: number | null;
+  avgHrBpm: number | null;
+  strainScore: number | null;
+  monotonyScore: number | null;
+  consistencyScore: number | null;
+  dataCompleteness: number;
+  createdAt: Date;
+}

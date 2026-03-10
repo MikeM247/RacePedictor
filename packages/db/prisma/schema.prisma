@@ -90,3 +90,30 @@ model ActivitySplitKm {
   @@unique([activityId, splitIndex])
   @@index([athleteId, createdAt])
 }
+
+model WeeklyFeature {
+  id                 String    @id @default(cuid())
+  athleteId          String
+  weekStartDate      DateTime
+  weekEndDate        DateTime
+  runCount           Int
+  totalDistanceM     Float
+  totalElapsedTimeS  Int
+  totalElevationGainM Float
+  longRunDistanceM   Float
+  longestRunId       String?
+  easyDistanceM      Float
+  moderateDistanceM  Float
+  hardDistanceM      Float
+  avgPaceSecPerKm    Float?
+  avgHrBpm           Int?
+  strainScore        Float?
+  monotonyScore      Float?
+  consistencyScore   Float?
+  dataCompleteness   Float
+  createdAt          DateTime  @default(now())
+
+  @@unique([athleteId, weekStartDate])
+  @@index([athleteId, weekStartDate(sort: Desc)])
+  @@index([weekStartDate(sort: Desc)])
+}

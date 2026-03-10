@@ -54,17 +54,27 @@ export const dashboardOverviewDataSchema = z.object({
 });
 
 export const dashboardStaleMetadataSchema = z.object({
-  isStale: z.enum(["true", "false"]),
-  staleReason: z.string(),
-  staleAtIso: z.string().datetime(),
+  isStale: z.boolean(),
+  staleReason: z.string().optional(),
+  staleAtIso: z.string().datetime().optional(),
 });
 
-export const dashboardFetchResultSchema = z.object({
-  fetchStatus: z.enum(["success", "empty", "error"]),
-  errorMessage: z.string(),
-  stale: dashboardStaleMetadataSchema,
-  data: dashboardOverviewDataSchema,
-});
+export const dashboardFetchResultSchema = z.discriminatedUnion("fetchStatus", [
+  z.object({
+    fetchStatus: z.literal("success"),
+    stale: dashboardStaleMetadataSchema,
+    data: dashboardOverviewDataSchema,
+  }),
+  z.object({
+    fetchStatus: z.literal("empty"),
+    stale: dashboardStaleMetadataSchema,
+  }),
+  z.object({
+    fetchStatus: z.literal("error"),
+    stale: dashboardStaleMetadataSchema,
+    errorMessage: z.string().min(1),
+  }),
+]);
 
 export type PredictionSummary = {
   athleteId: string;

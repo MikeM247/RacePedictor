@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum SourceType {
+  gpx
+  tcx
+  csv
+  fit
+  strava
+  garmin
+  polar
+  coros
+  suunto
+  other
+}
+
+enum SportType {
+  run
+  trail_run
+  treadmill_run
+  walk
+  hike
+  other
+}
+
+model Activity {
+  id                  String     @id @default(cuid())
+  athleteId           String
+  sourceType          SourceType
+  sourceFileId        String?
+  sourceActivityId    String?
+  occurredAt          DateTime
+  endedAt             DateTime
+  elapsedTimeS        Int
+  movingTimeS         Int?
+  sport               SportType
+  distanceM           Float
+  avgPaceSecPerKm     Float
+  best1kSec           Float?
+  best5kSec           Float?
+  elevationGainM      Float
+  elevationLossM      Float
+  minElevationM       Float?
+  maxElevationM       Float?
+  avgHrBpm            Int?
+  maxHrBpm            Int?
+  minHrBpm            Int?
+  hrAvailable         Boolean
+  avgCadenceSpm       Float?
+  maxCadenceSpm       Float?
+  cadenceAvailable    Boolean
+  paceVariability     Float?
+  hrDriftPct          Float?
+  hillDifficulty      Float?
+  dedupeHash          String
+  createdAt           DateTime   @default(now())
+
+  @@index([athleteId, occurredAt(sort: Desc)])
+  @@index([athleteId, sport, occurredAt(sort: Desc)])
+  @@index([athleteId, sourceType, occurredAt(sort: Desc)])
+  @@unique([athleteId, sourceType, sourceActivityId])
+  @@unique([athleteId, dedupeHash])
+}

@@ -12,6 +12,28 @@ export type DashboardData = {
   importProgress: ImportProgress;
 };
 
+export type DashboardStaleMetadata = {
+  isStale: boolean;
+  staleReason?: string;
+  staleAtIso?: string;
+};
+
+export type DashboardFetchResult =
+  | {
+      fetchStatus: "success";
+      data: DashboardData;
+      stale: DashboardStaleMetadata;
+    }
+  | {
+      fetchStatus: "empty";
+      stale: DashboardStaleMetadata;
+    }
+  | {
+      fetchStatus: "error";
+      errorMessage: string;
+      stale: DashboardStaleMetadata;
+    };
+
 export interface DashboardDataSource {
-  getDashboardData(): Promise<DashboardData>;
+  getDashboardData(): Promise<DashboardFetchResult>;
 }

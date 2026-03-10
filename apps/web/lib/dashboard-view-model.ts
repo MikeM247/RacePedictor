@@ -34,6 +34,19 @@ export type DashboardKpiView = {
 };
 
 export type DashboardViewModel = {
+  fetchStatus: "success" | "empty" | "error";
+  errorMessage: string | null;
+  staleInfo: {
+    isStale: boolean;
+    staleReason: string | null;
+    staleAtIso: string | null;
+  };
+  uiState: {
+    showContent: boolean;
+    showEmptyState: boolean;
+    showErrorState: boolean;
+    showStaleState: boolean;
+  };
   predictionSummary: PredictionSummaryView;
   summaryKpis: DashboardKpiView[];
   driverContributions: DriverContributionView[];
@@ -55,6 +68,13 @@ const readNumber = (value: unknown, fieldName: string): number => {
 const readString = (value: unknown, fieldName: string): string => {
   if (typeof value !== "string") {
     throw new Error(`Expected string for ${fieldName}`);
+  }
+  return value;
+};
+
+const readBoolean = (value: unknown, fieldName: string): boolean => {
+  if (typeof value !== "boolean") {
+    throw new Error(`Expected boolean for ${fieldName}`);
   }
   return value;
 };
@@ -92,10 +112,75 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     throw new Error("Dashboard payload must be an object");
   }
 
-  const predictionSummary = input.predictionSummary;
-  const driverContributions = input.driverContributions;
-  const featureTrendPoints = input.featureTrendPoints;
-  const importProgress = input.importProgress;
+  const fetchStatus = readString(input.fetchStatus, "fetchStatus");
+  if (fetchStatus !== "success" && fetchStatus !== "empty" && fetchStatus !== "error") {
+    throw new Error("Invalid dashboard fetch status");
+  }
+
+  const stale = input.stale;
+  if (!isRecord(stale)) {
+    throw new Error("Dashboard payload has invalid stale metadata");
+  }
+
+  const staleInfo = {
+    isStale: readBoolean(stale.isStale, "stale.isStale"),
+    staleReason: typeof stale.staleReason === "string" ? stale.staleReason : null,
+    staleAtIso: typeof stale.staleAtIso === "string" ? stale.staleAtIso : null,
+  };
+
+  const uiState = {
+    showContent: fetchStatus === "success",
+    showEmptyState: fetchStatus === "empty",
+    showErrorState: fetchStatus === "error",
+    showStaleState: staleInfo.isStale,
+  };
+
+  const fallbackPredictionSummary: PredictionSummaryView = {
+    predictedTimeS: 0,
+    predictedPaceSecPerKm: 0,
+    bandLowS: 0,
+    bandHighS: 0,
+    modelVersion: "Unavailable",
+  };
+
+  const fallbackImportProgress: ImportProgressView = {
+    status: "uploaded",
+    stagedCount: 0,
+    normalizedCount: 0,
+    duplicateCount: 0,
+    rejectedCount: 0,
+  };
+
+  const errorMessage =
+    fetchStatus === "error" && typeof input.errorMessage === "string"
+      ? input.errorMessage
+      : fetchStatus === "error"
+        ? "Dashboard data could not be loaded."
+        : null;
+
+  if (fetchStatus !== "success") {
+    return {
+      fetchStatus,
+      errorMessage,
+      staleInfo,
+      uiState,
+      predictionSummary: fallbackPredictionSummary,
+      summaryKpis: toSummaryKpis(fallbackPredictionSummary),
+      driverContributions: [],
+      featureTrendPoints: [],
+      importProgress: fallbackImportProgress,
+    };
+  }
+
+  const data = input.data;
+  if (!isRecord(data)) {
+    throw new Error("Dashboard payload missing successful data");
+  }
+
+  const predictionSummary = data.predictionSummary;
+  const driverContributions = data.driverContributions;
+  const featureTrendPoints = data.featureTrendPoints;
+  const importProgress = data.importProgress;
 
   if (!isRecord(predictionSummary) || !isRecord(importProgress)) {
     throw new Error("Dashboard payload has invalid nested objects");
@@ -144,6 +229,10 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
   };
 
   return {
+    fetchStatus,
+    errorMessage,
+    staleInfo,
+    uiState,
     predictionSummary: normalizedPredictionSummary,
     summaryKpis: toSummaryKpis(normalizedPredictionSummary),
     driverContributions: normalizedContributions,

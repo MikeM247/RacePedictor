@@ -29,7 +29,7 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 
 ### R2.1 Prisma model baseline
 
-- [ ] Implement `Activity`
+- [x] Implement `Activity`
 - [ ] Implement `ActivitySplitKm`
 - [ ] Implement `WeeklyFeature`
 - [ ] Implement `RouteSignature`

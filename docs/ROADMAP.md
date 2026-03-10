@@ -1,5 +1,7 @@
 # ROADMAP
 
+This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning source of truth for scope, constraints, non-goals, and milestone order. If wording conflicts, follow `CONTEXT.md` and update this roadmap accordingly.
+
 ## Status key
 - [ ] Not started
 - [~] In progress
@@ -8,7 +10,7 @@
 ## Phase 1 — Docs first (execution gate)
 
 ### R1.1 Finalize planning docs
-- [ ] Confirm `CONTEXT.md` as source of truth
+- [x] Confirm `CONTEXT.md` as source of truth
 - [ ] Confirm `ARCHITECTURE.md` boundaries
 - [ ] Confirm `API_CONTRACT.md` endpoint/DTOs
 - [ ] Confirm `DB_SCHEMA.md` Prisma model alignment

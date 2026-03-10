@@ -9,6 +9,8 @@ This document is the **source of truth** for:
 - Explicit non-goals.
 - Milestone execution order.
 
+If any planning doc (`ROADMAP.md`, `PRODUCT_EPICS_EXECUTION_PLAN.md`, `PRODUCT.md`, or other implementation-planning notes) conflicts with this document, **`CONTEXT.md` takes precedence** and the conflicting wording must be updated.
+
 ## In-Scope (v1)
 - Monorepo with clear package/app boundaries:
   - `apps/web` for the dashboard.

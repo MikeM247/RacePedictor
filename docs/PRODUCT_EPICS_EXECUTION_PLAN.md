@@ -1,6 +1,6 @@
 # RacePredictor v1 Epic Backlog Execution Plan
 
-> Note: `docs/PRODUCT_EPICS.md` is not present in this repository at the time of planning. This plan uses `docs/ROADMAP.md` as the active epic/task backlog source of truth and aligns it with the required architecture/workflow docs.
+> Note: `docs/PRODUCT_EPICS.md` is not present in this repository at the time of planning. This plan uses `docs/ROADMAP.md` as the active epic/task backlog tracker and treats `docs/CONTEXT.md` as the planning source of truth for scope/constraints whenever wording differs.
 
 ## 1) Plan Summary
 

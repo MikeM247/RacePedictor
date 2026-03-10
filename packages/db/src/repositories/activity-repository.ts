@@ -27,3 +27,23 @@ export interface ActivityRecord {
   cadenceAvailable: boolean;
   createdAt: Date;
 }
+
+export type ActivitySplitKmCreateManyInput = Prisma.ActivitySplitKmCreateManyInput;
+
+export interface ActivitySplitKmRecord {
+  id: string;
+  activityId: string;
+  athleteId: string;
+  splitIndex: number;
+  startOffsetS: number;
+  endOffsetS: number;
+  durationS: number;
+  distanceM: number;
+  paceSecPerKm: number;
+  elevGainM: number;
+  elevLossM: number;
+  avgHrBpm: number | null;
+  maxHrBpm: number | null;
+  avgCadenceSpm: number | null;
+  createdAt: Date;
+}

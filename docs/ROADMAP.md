@@ -42,7 +42,7 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 
 ### R2.2 API baseline
 
-- [ ] `POST /api/v1/imports/upload`
+- [x] `POST /api/v1/imports/upload`
 - [ ] `POST /api/v1/imports/:id/normalize`
 - [ ] `GET /api/v1/activities`
 - [ ] `GET /api/v1/activities/:activityId`

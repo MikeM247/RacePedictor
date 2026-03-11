@@ -6,7 +6,9 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test app/api/v1/imports/upload/route.test.js"
   },
   "dependencies": {
     "next": "^16.1.6",
@@ -21,4 +23,3 @@
     "typescript": "5.5.4"
   }
 }
-

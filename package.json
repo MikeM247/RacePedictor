@@ -10,6 +10,8 @@
     "build": "npm run build --workspace @racepredictor/web",
     "vercel-build": "npm run build --workspace @racepredictor/web",
     "start": "npm run start --workspace @racepredictor/web",
-    "lint": "npm run lint --workspace @racepredictor/web"
+    "lint": "npm run lint --workspace @racepredictor/web",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test"
   }
 }

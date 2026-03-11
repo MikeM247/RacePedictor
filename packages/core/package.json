@@ -5,5 +5,9 @@
   "type": "module",
   "dependencies": {
     "zod": "3.23.8"
+  },
+  "exports": {
+    "./contracts": "./src/contracts/index.ts",
+    "./contracts/*": "./src/contracts/*.ts"
   }
 }

@@ -36,9 +36,16 @@ This contract is aligned to Prisma-style domain models:
 ### Imports
 - `POST /api/v1/imports/upload`
   - Purpose: create import + parse file + write staging rows.
-  - Request: multipart form with `file`, `sourceType`, optional `idempotencyKey`.
+  - Request: multipart form with:
+    - `file` (required)
+    - `sourceType` (required enum: `gpx | tcx | csv | fit | strava | garmin | polar | coros | suunto | other`)
+    - `idempotencyKey` (optional non-empty string, max 128 chars)
   - Response:
     - `{ importId, status, stagedCount, duplicateCount, rejectedCount, parseWarnings }`
+    - `status` for upload parse/stage is `parsed | failed` in MVP.
+  - MVP parse behavior notes:
+    - GPX/TCX multi-activity uploads are accepted with warning and only first activity staged.
+    - Invalid/empty payloads return `VALIDATION_ERROR` envelope.
 
 - `POST /api/v1/imports/:id/normalize`
   - Purpose: cursor-batched normalization into `Activity` + related tables.

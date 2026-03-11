@@ -121,11 +121,58 @@ Indexes/constraints:
 
 ## Staging + Import Metadata (supporting tables)
 
-The model set above remains canonical for normalized data. Keep lightweight ingestion metadata tables to preserve idempotency:
+The model set above remains canonical for normalized data. Keep lightweight ingestion metadata tables to preserve idempotency and cursor-batched normalization:
 
-- `imports` (status/progress/cursor)
-- `raw_files` (filename/checksum/parser summary only; no full payload storage by default)
-- `staging_activities` (parse outputs before normalization)
+### `Import`
+
+Purpose: one ingest job lifecycle envelope.
+
+Required fields:
+
+- Identity/source: `id`, `sourceType`, `idempotencyKey?`
+- Lifecycle: `status` (`uploaded | parsed | normalizing | completed | failed`)
+- Progress counters: `stagedCount`, `normalizedCount`, `duplicateCount`, `rejectedCount`, `errorCount`
+- Cursor batching: `normalizeCursor?`, `normalizeHasMore`
+- Meta: `createdAt`, `updatedAt`
+
+Indexes/constraints:
+
+- `idempotencyKey` unique (when provided)
+- `@@index([status, createdAt(sort: Desc)])`
+
+### `RawFile`
+
+Purpose: file-level metadata for idempotency + parser observability.
+
+Required fields:
+
+- Identity/relations: `id`, `importId`
+- File metadata: `fileName`, `fileChecksum`, `fileSizeBytes?`, `mimeType?`
+- Parse summary: `parserSummary?`, `metadataSummary?`
+- Meta: `createdAt`
+
+Indexes/constraints:
+
+- `@@unique([importId, fileChecksum])`
+- `@@index([fileChecksum])`
+
+### `StagingActivity`
+
+Purpose: parsed activity payloads queued for normalize batching.
+
+Required fields:
+
+- Identity/relations: `id`, `importId`, `athleteId`, `sourceType`
+- Cursor batching: `stagingIndex` (monotonic within import), `normalizeStatus`
+- Dedupe hooks: `sourceActivityId?`, `dedupeHash?`, `occurredAt?`
+- Parse output: `parsePayload?`, `parseError?`, `normalizedActivityId?`
+- Meta: `createdAt`, `updatedAt`
+
+Indexes/constraints:
+
+- `@@unique([importId, stagingIndex])`
+- `@@index([importId, normalizeStatus, stagingIndex])`
+- `@@index([athleteId, sourceType, occurredAt(sort: Desc)])`
 
 ## Dedupe Strategy
 

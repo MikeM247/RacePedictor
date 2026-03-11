@@ -33,7 +33,7 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 - [ ] Implement `ActivitySplitKm`
 - [ ] Implement `WeeklyFeature`
 - [ ] Implement `RouteSignature`
-- [ ] Implement minimal supporting ingestion tables (`imports`, `raw_files`, `staging_activities`)
+- [x] Implement minimal supporting ingestion tables (`imports`, `raw_files`, `staging_activities`)
 
 **Acceptance criteria**
 

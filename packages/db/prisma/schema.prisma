@@ -29,6 +29,79 @@ enum SportType {
   other
 }
 
+enum ImportStatus {
+  uploaded
+  parsed
+  normalizing
+  completed
+  failed
+}
+
+enum StagingNormalizeStatus {
+  pending
+  normalized
+  skipped
+  error
+}
+
+model Import {
+  id               String     @id @default(cuid())
+  sourceType       SourceType
+  status           ImportStatus @default(uploaded)
+  idempotencyKey   String?    @unique
+  stagedCount      Int        @default(0)
+  normalizedCount  Int        @default(0)
+  duplicateCount   Int        @default(0)
+  rejectedCount    Int        @default(0)
+  errorCount       Int        @default(0)
+  normalizeCursor  String?
+  normalizeHasMore Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  rawFiles         RawFile[]
+  stagingActivities StagingActivity[]
+
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model RawFile {
+  id              String   @id @default(cuid())
+  importId        String
+  fileName        String
+  fileChecksum    String
+  fileSizeBytes   Int?
+  mimeType        String?
+  parserSummary   String?
+  metadataSummary String?
+  createdAt       DateTime @default(now())
+  import          Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([importId, fileChecksum])
+  @@index([fileChecksum])
+}
+
+model StagingActivity {
+  id                   String   @id @default(cuid())
+  importId             String
+  athleteId            String
+  sourceType           SourceType
+  stagingIndex         Int
+  normalizeStatus      StagingNormalizeStatus @default(pending)
+  sourceActivityId     String?
+  dedupeHash           String?
+  occurredAt           DateTime?
+  parsePayload         String?
+  parseError           String?
+  normalizedActivityId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  import               Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([importId, stagingIndex])
+  @@index([importId, normalizeStatus, stagingIndex])
+  @@index([athleteId, sourceType, occurredAt(sort: Desc)])
+}
+
 model Activity {
   id                  String     @id @default(cuid())
   athleteId           String

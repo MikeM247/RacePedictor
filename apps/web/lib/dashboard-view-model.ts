@@ -8,7 +8,7 @@ import type {
 
 export type PredictionSummaryView = Pick<
   PredictionSummary,
-  "predictedTimeS" | "predictedPaceSecPerKm" | "bandLowS" | "bandHighS" | "modelVersion"
+  "targetDistanceM" | "predictedTimeS" | "predictedPaceSecPerKm" | "bandLowS" | "bandHighS" | "modelVersion"
 >;
 
 export type DriverContributionView = Pick<
@@ -50,6 +50,7 @@ export type DashboardViewModel = {
     showStaleState: boolean;
   };
   predictionSummary: PredictionSummaryView;
+  predictionOptions: PredictionSummaryView[];
   summaryKpis: DashboardKpiView[];
   driverContributions: DriverContributionView[];
   featureTrendPoints: FeatureTrendPointView[];
@@ -82,24 +83,38 @@ const readBoolean = (value: unknown, fieldName: string): boolean => {
 };
 
 const formatDuration = (seconds: number) => {
-  const min = Math.floor(seconds / 60);
-  const sec = Math.round(seconds % 60)
+  const rounded = Math.round(seconds);
+  const hours = Math.floor(rounded / 3600);
+  const min = Math.floor((rounded % 3600) / 60);
+  const sec = Math.round(rounded % 60)
     .toString()
     .padStart(2, "0");
-  return `${min}:${sec}`;
+  return hours > 0 ? `${hours}:${min.toString().padStart(2, "0")}:${sec}` : `${min}:${sec}`;
 };
 
-const toSummaryKpis = (predictionSummary: PredictionSummaryView): DashboardKpiView[] => {
+const formatPace = (seconds: number) => `${Math.floor(seconds / 60)}:${Math.round(seconds % 60).toString().padStart(2, "0")}/km`;
+
+export const predictionDistanceLabel = (targetDistanceM?: number) => {
+  if (!targetDistanceM) return "Predicted finish";
+  if (Math.abs(targetDistanceM - 5000) < 10) return "5 km";
+  if (Math.abs(targetDistanceM - 10000) < 10) return "10 km";
+  if (Math.abs(targetDistanceM - 21097.5) < 10) return "Half marathon";
+  if (Math.abs(targetDistanceM - 42195) < 10) return "Marathon";
+  return `${(targetDistanceM / 1000).toFixed(1)} km`;
+};
+
+export const toSummaryKpis = (predictionSummary: PredictionSummaryView): DashboardKpiView[] => {
+  const targetTitle = `${predictionDistanceLabel(predictionSummary.targetDistanceM)} estimate`;
   return [
     {
       key: "predicted-finish",
-      title: "Predicted finish",
+      title: targetTitle,
       value: formatDuration(predictionSummary.predictedTimeS),
     },
     {
       key: "predicted-pace",
       title: "Predicted pace",
-      value: `${Math.round(predictionSummary.predictedPaceSecPerKm)} sec/km`,
+      value: formatPace(predictionSummary.predictedPaceSecPerKm),
     },
     {
       key: "confidence-band",
@@ -138,6 +153,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
   };
 
   const fallbackPredictionSummary: PredictionSummaryView = {
+    targetDistanceM: undefined,
     predictedTimeS: 0,
     predictedPaceSecPerKm: 0,
     bandLowS: 0,
@@ -167,6 +183,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
       staleInfo,
       uiState,
       predictionSummary: fallbackPredictionSummary,
+      predictionOptions: [],
       summaryKpis: toSummaryKpis(fallbackPredictionSummary),
       driverContributions: [],
       featureTrendPoints: [],
@@ -180,6 +197,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
   }
 
   const predictionSummary = data.predictionSummary;
+  const predictionOptions = data.predictionOptions;
   const driverContributions = data.driverContributions;
   const featureTrendPoints = data.featureTrendPoints;
   const importProgress = data.importProgress;
@@ -223,12 +241,30 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
   }
 
   const normalizedPredictionSummary: PredictionSummaryView = {
+    targetDistanceM: typeof predictionSummary.targetDistanceM === "number"
+      ? predictionSummary.targetDistanceM
+      : undefined,
     predictedTimeS: readNumber(predictionSummary.predictedTimeS, "predictionSummary.predictedTimeS"),
     predictedPaceSecPerKm: readNumber(predictionSummary.predictedPaceSecPerKm, "predictionSummary.predictedPaceSecPerKm"),
     bandLowS: readNumber(predictionSummary.bandLowS, "predictionSummary.bandLowS"),
     bandHighS: readNumber(predictionSummary.bandHighS, "predictionSummary.bandHighS"),
     modelVersion: readString(predictionSummary.modelVersion, "predictionSummary.modelVersion"),
   };
+  const normalizedPredictionOptions = Array.isArray(predictionOptions)
+    ? predictionOptions.map((candidate, index) => {
+        if (!isRecord(candidate)) {
+          throw new Error(`Invalid prediction option at index ${index}`);
+        }
+        return {
+          targetDistanceM: readNumber(candidate.targetDistanceM, `predictionOptions[${index}].targetDistanceM`),
+          predictedTimeS: readNumber(candidate.predictedTimeS, `predictionOptions[${index}].predictedTimeS`),
+          predictedPaceSecPerKm: readNumber(candidate.predictedPaceSecPerKm, `predictionOptions[${index}].predictedPaceSecPerKm`),
+          bandLowS: readNumber(candidate.bandLowS, `predictionOptions[${index}].bandLowS`),
+          bandHighS: readNumber(candidate.bandHighS, `predictionOptions[${index}].bandHighS`),
+          modelVersion: readString(candidate.modelVersion, `predictionOptions[${index}].modelVersion`),
+        };
+      })
+    : [normalizedPredictionSummary];
 
   return {
     fetchStatus,
@@ -236,6 +272,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     staleInfo,
     uiState,
     predictionSummary: normalizedPredictionSummary,
+    predictionOptions: normalizedPredictionOptions,
     summaryKpis: toSummaryKpis(normalizedPredictionSummary),
     driverContributions: normalizedContributions,
     featureTrendPoints: normalizedTrendPoints,

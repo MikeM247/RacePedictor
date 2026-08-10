@@ -1,0 +1,24 @@
+[
+  {
+    "id": "900000000001",
+    "athlete": { "id": "700000001" },
+    "distance": 2000,
+    "moving_time": 720,
+    "elapsed_time": 750,
+    "total_elevation_gain": 18,
+    "sport_type": "Run",
+    "start_date": "2026-08-10T04:00:00.000Z",
+    "private": false
+  },
+  {
+    "id": "900000000002",
+    "athlete": { "id": "700000001" },
+    "distance": 5000,
+    "moving_time": 1800,
+    "elapsed_time": 1860,
+    "total_elevation_gain": 35,
+    "sport_type": "TrailRun",
+    "start_date": "2026-08-09T04:00:00.000Z",
+    "private": true
+  }
+]

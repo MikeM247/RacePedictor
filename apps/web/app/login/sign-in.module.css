@@ -1,0 +1,64 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at top left, rgb(47 89 187 / 16%), transparent 34rem),
+    #f4f6fb;
+  color: #18212b;
+}
+
+.card {
+  width: min(100%, 31rem);
+  padding: clamp(1.75rem, 5vw, 3rem);
+  border: 1px solid #dce3ee;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 1.5rem 4rem rgb(37 54 82 / 12%);
+}
+
+.eyebrow {
+  margin: 0 0 .65rem;
+  color: #3155a6;
+  font-size: .78rem;
+  font-weight: 750;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.card h1 {
+  margin: 0;
+  max-width: 15ch;
+  font-size: clamp(1.9rem, 7vw, 2.75rem);
+  line-height: 1.04;
+}
+
+.intro {
+  margin: 1.15rem 0 1.5rem;
+  color: #536273;
+  line-height: 1.6;
+}
+
+.button {
+  width: 100%;
+  min-height: 3rem;
+  border: 0;
+  border-radius: .7rem;
+  padding: .8rem 1rem;
+  background: #18212b;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.button:hover { background: #263443; }
+.button:focus-visible { outline: 3px solid #8eb1ff; outline-offset: 3px; }
+
+.note {
+  margin: 1rem 0 0;
+  color: #6b7886;
+  font-size: .85rem;
+  text-align: center;
+}

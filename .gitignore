@@ -27,6 +27,9 @@ pnpm-debug.log*
 # Deployment platform metadata
 .vercel/
 
+# Private local data (Garmin exports, Obsidian vault mirror, SQLite runtime)
+.local/
+
 # OS / editor files
 .DS_Store
 Thumbs.db

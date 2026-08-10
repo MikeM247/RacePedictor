@@ -5,6 +5,12 @@ const nextConfig = {
   experimental: {
     externalDir: true,
   },
+  typescript: {
+    tsconfigPath:
+      process.env.NODE_ENV === "production"
+        ? "tsconfig.typecheck.json"
+        : "tsconfig.json",
+  },
   webpack: (config) => {
     config.resolve.modules = [
       ...(config.resolve.modules ?? []),

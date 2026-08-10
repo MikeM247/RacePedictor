@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const predictionSummarySchema = z.object({
   athleteId: z.string().min(1),
+  targetDistanceM: z.number().positive().optional(),
   predictedTimeS: z.number().nonnegative(),
   predictedPaceSecPerKm: z.number().nonnegative(),
   bandLowS: z.number().nonnegative(),
@@ -48,26 +49,50 @@ export const featureTrendPointListSchema = z.array(featureTrendPointSchema);
 
 export const dashboardOverviewDataSchema = z.object({
   predictionSummary: predictionSummarySchema,
+  predictionOptions: z.array(predictionSummarySchema).optional(),
   driverContributions: driverContributionListSchema,
   featureTrendPoints: featureTrendPointListSchema,
   importProgress: importProgressSchema,
 });
 
 export const dashboardStaleMetadataSchema = z.object({
-  isStale: z.enum(["true", "false"]),
-  staleReason: z.string(),
-  staleAtIso: z.string().datetime(),
+  isStale: z.boolean(),
+  staleReason: z.string().optional(),
+  staleAtIso: z.string().datetime().optional(),
 });
 
-export const dashboardFetchResultSchema = z.object({
-  fetchStatus: z.enum(["success", "empty", "error"]),
-  errorMessage: z.string(),
+const dashboardSuccessResultSchema = z.object({
+  fetchStatus: z.literal("success"),
   stale: dashboardStaleMetadataSchema,
   data: dashboardOverviewDataSchema,
+  errorMessage: z.never().optional(),
 });
+
+const dashboardEmptyResultSchema = z.object({
+  fetchStatus: z.literal("empty"),
+  stale: dashboardStaleMetadataSchema,
+  data: z.never().optional(),
+  errorMessage: z.never().optional(),
+});
+
+const dashboardErrorResultSchema = z.object({
+  fetchStatus: z.literal("error"),
+  stale: dashboardStaleMetadataSchema,
+  errorMessage: z.string().min(1),
+  data: z.never().optional(),
+});
+
+export const dashboardFetchResultSchema = z.discriminatedUnion("fetchStatus", [
+  dashboardSuccessResultSchema,
+  dashboardEmptyResultSchema,
+  dashboardErrorResultSchema,
+]);
+
+export const dashboardOverviewResponseSchema = dashboardFetchResultSchema;
 
 export type PredictionSummary = {
   athleteId: string;
+  targetDistanceM?: number;
   predictedTimeS: number;
   predictedPaceSecPerKm: number;
   bandLowS: number;
@@ -106,6 +131,7 @@ export type ImportProgress = {
 
 export type DashboardOverviewData = {
   predictionSummary: PredictionSummary;
+  predictionOptions?: PredictionSummary[];
   driverContributions: DriverContribution[];
   featureTrendPoints: FeatureTrendPoint[];
   importProgress: ImportProgress;

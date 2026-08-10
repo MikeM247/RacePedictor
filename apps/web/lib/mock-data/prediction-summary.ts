@@ -2,6 +2,7 @@ import type { PredictionSummary } from "../../../../packages/core/src/contracts"
 
 export const predictionSummaryFixture: PredictionSummary = {
   athleteId: "athlete_001",
+  targetDistanceM: 21097.5,
   predictedTimeS: 5710,
   predictedPaceSecPerKm: 271.9,
   bandLowS: 5550,

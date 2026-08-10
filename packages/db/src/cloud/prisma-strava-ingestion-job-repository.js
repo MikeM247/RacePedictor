@@ -1,0 +1,401 @@
+import {
+  stravaBackfillRequestSchema,
+  stravaReconciliationRequestSchema,
+} from "../../../core/src/contracts/strava.ts";
+import { assertAthleteScope, immutableCopy } from "./athlete-scope.js";
+
+const MAX_CLAIM_CONTENTION_RETRIES = 8;
+
+export class PrismaStravaIngestionJobRepository {
+  #prisma;
+
+  constructor({ prisma }) {
+    if (!prisma || typeof prisma.$transaction !== "function") throw new Error("Prisma client is required");
+    this.#prisma = prisma;
+  }
+
+  async enqueueBatch(scope, input) {
+    const athleteId = assertAthleteScope(scope);
+    const request = input?.kind === "backfill"
+      ? stravaBackfillRequestSchema.parse(input.request)
+      : input?.kind === "reconciliation"
+        ? stravaReconciliationRequestSchema.parse(input.request)
+        : null;
+    if (!request) throw new Error("Strava batch job kind is invalid");
+    const idempotencyKey = batchIdempotencyKey(input.kind, request);
+
+    return this.#prisma.$transaction(async (transaction) => {
+      const connection = await transaction.providerConnection.findUnique({
+        where: { athleteId_provider: { athleteId, provider: "strava" } },
+        select: { id: true, athleteId: true, status: true },
+      });
+      if (!connection || connection.athleteId !== athleteId || connection.status !== "connected") {
+        throw new Error("Strava connection is unavailable for batch ingestion");
+      }
+      const unique = { athleteId, idempotencyKey };
+      const existing = await transaction.ingestionJob.findUnique({
+        where: { athleteId_idempotencyKey: unique },
+        select: { id: true },
+      });
+      const job = await transaction.ingestionJob.upsert({
+        where: { athleteId_idempotencyKey: unique },
+        create: {
+          athleteId,
+          providerConnectionId: connection.id,
+          webhookEventId: null,
+          idempotencyKey,
+          kind: input.kind,
+          payload: request,
+          status: "queued",
+        },
+        update: {},
+        select: {
+          id: true,
+          athleteId: true,
+          providerConnectionId: true,
+          kind: true,
+          payload: true,
+        },
+      });
+      if (
+        job.athleteId !== athleteId
+        || job.providerConnectionId !== connection.id
+        || job.kind !== input.kind
+        || JSON.stringify(job.payload) !== JSON.stringify(request)
+      ) {
+        throw new Error("Strava batch job conflicts with its idempotency key");
+      }
+      return immutableCopy({ jobId: job.id, reused: Boolean(existing) });
+    });
+  }
+
+  async claimNext(input) {
+    return this.#claim(null, input);
+  }
+
+  async claimById(jobId, input) {
+    assertIdentifier(jobId, "Job id");
+    return this.#claim(jobId, input);
+  }
+
+  async markCompleted(input) {
+    return this.#finalize(input, "completed");
+  }
+
+  async markRetry(input) {
+    assertDate(input.availableAt, "Job retry time");
+    return this.#finalize(input, "retry");
+  }
+
+  async markTerminal(input) {
+    return this.#finalize(input, "failed");
+  }
+
+  async markDeadLetter(input) {
+    return this.#finalize(input, "dead_letter");
+  }
+
+  async #claim(requestedJobId, input) {
+    const request = validateClaim(input);
+    return this.#prisma.$transaction(async (transaction) => {
+      await deadLetterExhausted(transaction, requestedJobId, request);
+
+      for (let contention = 0; contention < MAX_CLAIM_CONTENTION_RETRIES; contention += 1) {
+        const candidate = await transaction.ingestionJob.findFirst({
+          where: claimableWhere(requestedJobId, request, { lt: request.maxAttempts }),
+          orderBy: [
+            { availableAt: "asc" },
+            { createdAt: "asc" },
+            { id: "asc" },
+          ],
+          select: { id: true, athleteId: true, attemptCount: true },
+        });
+        if (!candidate) return null;
+
+        const claimed = await transaction.ingestionJob.updateMany({
+          where: {
+            ...claimableWhere(candidate.id, request, { equals: candidate.attemptCount }),
+            athleteId: candidate.athleteId,
+          },
+          data: {
+            status: "processing",
+            attemptCount: { increment: 1 },
+            lockedAt: request.claimedAt,
+            lockedBy: request.workerId,
+            leaseToken: request.leaseToken,
+            completedAt: null,
+            errorCode: null,
+            errorMessage: null,
+            updatedAt: request.claimedAt,
+          },
+        });
+        if (claimed.count !== 1) continue;
+
+        const record = await transaction.ingestionJob.findUnique({
+          where: { id: candidate.id },
+          select: {
+            id: true,
+            athleteId: true,
+            attemptCount: true,
+            leaseToken: true,
+            webhookEventId: true,
+            kind: true,
+            payload: true,
+            webhookEvent: {
+              select: {
+                id: true,
+                athleteId: true,
+                provider: true,
+                objectType: true,
+                providerObjectId: true,
+                aspectType: true,
+                eventOccurredAt: true,
+              },
+            },
+          },
+        });
+        try {
+          return projectClaim(record, request.leaseToken);
+        } catch {
+          await markInvalidClaim(transaction, record, request.claimedAt);
+          return null;
+        }
+      }
+      return null;
+    });
+  }
+
+  async #finalize(input, outcome) {
+    const completion = validateCompletion(input);
+    return this.#prisma.$transaction(async (transaction) => {
+      const status = outcome === "retry" ? "queued" : outcome;
+      const terminal = outcome !== "retry";
+      const updated = await transaction.ingestionJob.updateMany({
+        where: {
+          id: completion.job.id,
+          athleteId: completion.job.athleteId,
+          status: "processing",
+          attemptCount: completion.job.attempt,
+          leaseToken: completion.job.leaseToken,
+        },
+        data: {
+          status,
+          availableAt: outcome === "retry" ? completion.availableAt : completion.occurredAt,
+          lockedAt: null,
+          lockedBy: null,
+          leaseToken: null,
+          completedAt: terminal ? completion.occurredAt : null,
+          errorCode: outcome === "completed" ? null : completion.diagnosticCode,
+          errorMessage: null,
+          updatedAt: completion.occurredAt,
+        },
+      });
+      if (updated.count !== 1) throw new Error("Ingestion job lease was lost");
+
+      const eventStatus = outcome === "completed" ? "processed" : outcome === "retry" ? "queued" : "failed";
+      if (completion.job.webhookEventId === null) return;
+      const eventUpdated = await transaction.providerWebhookEvent.updateMany({
+        where: {
+          id: completion.job.webhookEventId,
+          athleteId: completion.job.athleteId,
+        },
+        data: {
+          status: eventStatus,
+          processedAt: outcome === "retry" ? null : completion.occurredAt,
+          errorCode: outcome === "completed" ? null : completion.diagnosticCode,
+        },
+      });
+      if (eventUpdated.count !== 1) throw new Error("Ingestion job event is unavailable");
+    });
+  }
+}
+
+function claimableWhere(jobId, request, attemptCount) {
+  return {
+    ...(jobId ? { id: jobId } : {}),
+    attemptCount,
+    OR: [
+      { status: "queued", availableAt: { lte: request.claimedAt } },
+      { status: "processing", lockedAt: { lte: request.staleBefore } },
+    ],
+  };
+}
+
+async function deadLetterExhausted(transaction, jobId, request) {
+  const exhausted = await transaction.ingestionJob.findMany({
+    where: claimableWhere(jobId, request, { gte: request.maxAttempts }),
+    select: { id: true, athleteId: true, webhookEventId: true, attemptCount: true },
+    take: jobId ? 1 : 25,
+  });
+  for (const job of exhausted) {
+    const updated = await transaction.ingestionJob.updateMany({
+      where: {
+        ...claimableWhere(job.id, request, { equals: job.attemptCount }),
+        athleteId: job.athleteId,
+      },
+      data: {
+        status: "dead_letter",
+        availableAt: request.claimedAt,
+        lockedAt: null,
+        lockedBy: null,
+        leaseToken: null,
+        completedAt: request.claimedAt,
+        errorCode: "MAX_ATTEMPTS_EXHAUSTED",
+        errorMessage: null,
+        updatedAt: request.claimedAt,
+      },
+    });
+    if (updated.count !== 1 || !job.webhookEventId) continue;
+    await transaction.providerWebhookEvent.updateMany({
+      where: { id: job.webhookEventId, athleteId: job.athleteId },
+      data: {
+        status: "failed",
+        processedAt: request.claimedAt,
+        errorCode: "MAX_ATTEMPTS_EXHAUSTED",
+      },
+    });
+  }
+}
+
+async function markInvalidClaim(transaction, record, occurredAt) {
+  if (!record?.id || !record.athleteId || !record.leaseToken) return;
+  const updated = await transaction.ingestionJob.updateMany({
+    where: { id: record.id, athleteId: record.athleteId, status: "processing", leaseToken: record.leaseToken },
+    data: {
+      status: "failed",
+      lockedAt: null,
+      lockedBy: null,
+      leaseToken: null,
+      completedAt: occurredAt,
+      errorCode: "INVALID_INGESTION_JOB",
+      errorMessage: null,
+      updatedAt: occurredAt,
+    },
+  });
+  if (updated.count === 1 && record.webhookEventId) {
+    await transaction.providerWebhookEvent.updateMany({
+      where: { id: record.webhookEventId, athleteId: record.athleteId },
+      data: { status: "failed", processedAt: occurredAt, errorCode: "INVALID_INGESTION_JOB" },
+    });
+  }
+}
+
+function projectClaim(record, expectedLeaseToken) {
+  const event = record?.webhookEvent;
+  if (
+    !record
+    || record.leaseToken !== expectedLeaseToken
+    || !Number.isInteger(record.attemptCount)
+    || record.attemptCount < 1
+  ) {
+    throw new Error("Claimed ingestion job is invalid");
+  }
+  let projectedEvent;
+  if (record.kind === "backfill") {
+    if (record.webhookEventId !== null || event !== null) throw new Error("Batch job cannot reference a webhook event");
+    projectedEvent = { kind: "backfill", request: stravaBackfillRequestSchema.parse(record.payload) };
+  } else if (record.kind === "reconciliation") {
+    if (record.webhookEventId !== null || event !== null) throw new Error("Batch job cannot reference a webhook event");
+    projectedEvent = { kind: "reconciliation", request: stravaReconciliationRequestSchema.parse(record.payload) };
+  } else if (
+    record.kind === "webhook"
+    && event
+    && event.id === record.webhookEventId
+    && event.athleteId === record.athleteId
+    && event.provider === "strava"
+  ) {
+    const occurredAt = new Date(event.eventOccurredAt).toISOString();
+    if (
+      event.objectType === "activity"
+      && ["create", "update", "delete"].includes(event.aspectType)
+      && /^\d+$/.test(event.providerObjectId)
+    ) {
+      projectedEvent = {
+        kind: "activity",
+        providerActivityId: event.providerObjectId,
+        aspect: event.aspectType,
+        occurredAt,
+      };
+    } else if (event.objectType === "athlete" && event.aspectType === "update") {
+      projectedEvent = { kind: "athlete_deauthorization", occurredAt };
+    } else {
+      throw new Error("Claimed webhook event is invalid");
+    }
+  } else {
+    throw new Error("Claimed ingestion job kind is invalid");
+  }
+  return immutableCopy({
+    id: record.id,
+    athleteId: record.athleteId,
+    webhookEventId: record.webhookEventId,
+    attempt: record.attemptCount,
+    leaseToken: record.leaseToken,
+    event: projectedEvent,
+  });
+}
+
+function batchIdempotencyKey(kind, request) {
+  return [
+    "strava",
+    kind,
+    request.after,
+    request.before,
+    request.pageSize,
+    request.maxPages,
+    request.maxActivities,
+  ].join(":");
+}
+
+function validateClaim(input) {
+  if (!input || typeof input !== "object") throw new Error("Job claim is invalid");
+  assertIdentifier(input.workerId, "Worker id");
+  assertIdentifier(input.leaseToken, "Lease token");
+  const claimedAt = assertDate(input.claimedAt, "Job claim time");
+  if (!Number.isInteger(input.leaseTimeoutSeconds) || input.leaseTimeoutSeconds < 30 || input.leaseTimeoutSeconds > 900) {
+    throw new Error("Job lease duration is invalid");
+  }
+  if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 20) {
+    throw new Error("Job attempt limit is invalid");
+  }
+  return {
+    workerId: input.workerId,
+    leaseToken: input.leaseToken,
+    claimedAt,
+    staleBefore: new Date(claimedAt.getTime() - input.leaseTimeoutSeconds * 1_000),
+    maxAttempts: input.maxAttempts,
+  };
+}
+
+function validateCompletion(input) {
+  if (!input?.job || typeof input.job !== "object") throw new Error("Claimed job is required");
+  assertIdentifier(input.job.id, "Job id");
+  assertIdentifier(input.job.athleteId, "Athlete id");
+  if (input.job.webhookEventId !== null) assertIdentifier(input.job.webhookEventId, "Webhook event id");
+  assertIdentifier(input.job.leaseToken, "Lease token");
+  if (!Number.isInteger(input.job.attempt) || input.job.attempt < 1 || input.job.attempt > 20) {
+    throw new Error("Job attempt is invalid");
+  }
+  const occurredAt = assertDate(input.occurredAt, "Job outcome time");
+  const diagnosticCode = input.diagnosticCode ?? null;
+  if (diagnosticCode !== null && !/^[A-Z0-9_:-]{1,80}$/.test(diagnosticCode)) {
+    throw new Error("Job diagnostic code is invalid");
+  }
+  return {
+    job: input.job,
+    occurredAt,
+    diagnosticCode,
+    availableAt: input.availableAt ? assertDate(input.availableAt, "Job retry time") : null,
+  };
+}
+
+function assertDate(value, label) {
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new Error(`${label} is invalid`);
+  return parsed;
+}
+
+function assertIdentifier(value, label) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$/.test(value)) {
+    throw new Error(`${label} is invalid`);
+  }
+}

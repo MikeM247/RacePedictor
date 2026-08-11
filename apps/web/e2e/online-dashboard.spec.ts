@@ -60,6 +60,52 @@ test("online dashboard exposes a recoverable service error", async ({ page }) =>
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
+test("online Activities renders cloud-enveloped Strava data without a client crash", async ({ page }) => {
+  const browserErrors: Error[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error));
+  const activity = {
+    id: "activity-a", athleteId: "athlete-a", title: "Morning Strava Run",
+    occurredAt: "2026-08-11T04:00:00.000Z", localOccurredAt: "2026-08-11T06:00:00.000+02:00",
+    sport: "run", distanceM: 10_000, elapsedTimeS: 3_000, avgPaceSecPerKm: 300,
+    elevationGainM: 100, hrAvailable: true, cadenceAvailable: true,
+  };
+  await page.route("**/api/v1/activities**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path === "/api/v1/activities/activity-a"
+      ? { data: { activity: {
+        ...activity, endedAt: "2026-08-11T04:50:00.000Z", sourceType: "strava",
+        sourceActivityId: "strava-a", elevationLossM: 90, dedupeHash: "a".repeat(64),
+        createdAt: "2026-08-11T05:00:00.000Z", splits: [], routeSignature: null,
+      } } }
+      : { data: { items: [activity] } };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto("/dashboard/activities");
+  await expect(page.getByRole("heading", { name: "Recent activities" })).toBeVisible();
+  await expect(page.getByText("Morning Strava Run")).toBeVisible();
+  await page.getByRole("button", { name: /Morning Strava Run/u }).click();
+  await expect(page.getByRole("heading", { name: "Morning Strava Run" })).toBeVisible();
+  await expect(page.getByText("No split data was included in this imported activity.")).toBeVisible();
+  expect(browserErrors).toEqual([]);
+});
+
+test("online Activities handles a malformed success envelope as a recoverable error", async ({ page }) => {
+  const browserErrors: Error[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error));
+  await page.route("**/api/v1/activities**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: {} }),
+  }));
+
+  await page.goto("/dashboard/activities");
+  await expect(page.getByRole("heading", { name: "Unable to load activities" })).toBeVisible();
+  await expect(page.getByText("The server returned an invalid activity response.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  expect(browserErrors).toEqual([]);
+});
+
 test("online Plan and Calendar are read-only at desktop and mobile widths", async ({ page }) => {
   await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: plan }) }));
   await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: [plan] } }) }));

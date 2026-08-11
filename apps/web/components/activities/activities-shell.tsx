@@ -15,6 +15,10 @@ import {
   formatPace,
   sportLabel,
 } from "../../lib/activity-formatters";
+import {
+  readActivitiesListResponse,
+  readActivityDetailResponse,
+} from "../../lib/activities-api-client.ts";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import "../dashboard/dashboard.css";
 import "./activities.css";
@@ -44,15 +48,6 @@ function activityQuery(filters: Filters, cursor?: string) {
   return params;
 }
 
-async function responseJson<T>(response: Response): Promise<T> {
-  const body = await response.json();
-  if (!response.ok) {
-    const message = body?.error?.message;
-    throw new Error(typeof message === "string" ? message : "The request could not be completed.");
-  }
-  return body as T;
-}
-
 export function ActivitiesShell({ initialData, initialError, onlineMode = false }: ActivitiesShellProps) {
   const [draftFilters, setDraftFilters] = useState<Filters>(initialFilters);
   const [activeFilters, setActiveFilters] = useState<Filters>(initialFilters);
@@ -78,7 +73,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
     setListError(undefined);
     try {
       const response = await fetch(`/api/v1/activities?${activityQuery(filters, cursor)}`);
-      const data = await responseJson<ActivitiesListResponse>(response);
+      const data = await readActivitiesListResponse(response);
       setActivities((current) => cursor ? [...current, ...data.items] : data.items);
       setNextCursor(data.nextCursor);
       setListStatus("idle");
@@ -112,7 +107,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
     setDetailError(undefined);
     try {
       const response = await fetch(`/api/v1/activities/${encodeURIComponent(activityId)}`);
-      const data = await responseJson<{ activity: ActivityDetail }>(response);
+      const data = await readActivityDetailResponse(response);
       setSelectedActivity(data.activity);
       setDetailStatus("idle");
     } catch (error) {

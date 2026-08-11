@@ -1,11 +1,11 @@
 import { ActivitiesShell } from "../../../components/activities/activities-shell";
 import { getActivities } from "../../../lib/local-activities-data-source";
-import { readCloudEnvironment } from "../../../lib/server/cloud-environment.ts";
+import { shouldRenderOnlineUi } from "../../../lib/server/online-ui-mode.ts";
 
 export const dynamic = "force-dynamic";
 
 export default function ActivitiesPage() {
-  if (readCloudEnvironment().cloudMode === "enabled") {
+  if (shouldRenderOnlineUi()) {
     return <ActivitiesShell initialData={{ items: [] }} onlineMode />;
   }
   try {

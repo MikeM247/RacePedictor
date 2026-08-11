@@ -22,6 +22,7 @@ test("operational usage records durable daily/quarter-hour counters and measures
     providerRequests15Minutes: 1,
     providerRequestsDaily: 1,
   });
+  assert.deepEqual(prisma.rawAggregateInput, { _sum: { byteSize: true } });
   const quarter = [...prisma.rows.values()].find((row) => row.metric === "provider_requests_15m");
   assert.equal(quarter.windowStart.toISOString(), "2026-08-10T12:30:00.000Z");
   assert.equal(quarter.windowEnd.toISOString(), "2026-08-10T12:45:00.000Z");
@@ -58,7 +59,10 @@ function fakePrisma() {
   const prisma = {
     rows,
     operationalUsageBucket,
-    rawObject: { aggregate: async () => ({ _sum: { sizeBytes: 4_096 } }) },
+    rawObject: { aggregate: async (input) => {
+      prisma.rawAggregateInput = input;
+      return { _sum: { byteSize: 4_096 } };
+    } },
     $queryRawUnsafe: async () => [{ bytes: 8_192n }],
     $transaction: async (operation) => operation({ operationalUsageBucket }),
   };

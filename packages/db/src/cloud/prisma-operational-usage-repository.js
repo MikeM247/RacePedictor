@@ -35,7 +35,7 @@ export class PrismaOperationalUsageRepository {
     const day = windowFor("invocations_daily", time);
     const quarter = windowFor("provider_requests_15m", time);
     const [raw, databaseRows, daily, providerQuarter] = await Promise.all([
-      this.#prisma.rawObject.aggregate({ _sum: { sizeBytes: true } }),
+      this.#prisma.rawObject.aggregate({ _sum: { byteSize: true } }),
       this.#prisma.$queryRawUnsafe("SELECT pg_database_size(current_database())::bigint AS bytes"),
       this.#prisma.operationalUsageBucket.findMany({
         where: { windowStart: day.start, metric: { in: ["invocations_daily", "bandwidth_bytes_daily", "provider_requests_daily"] } },
@@ -47,7 +47,7 @@ export class PrismaOperationalUsageRepository {
     const value = (metric) => daily.find((row) => row.metric === metric)?.amount ?? 0n;
     const databaseBytes = Array.isArray(databaseRows) ? Number(databaseRows[0]?.bytes ?? 0) : 0;
     return operationalUsageSchema.parse({
-      rawStorageBytes: Number(raw._sum.sizeBytes ?? 0),
+      rawStorageBytes: Number(raw._sum.byteSize ?? 0),
       databaseBytes,
       invocationsDaily: Number(value("invocations_daily")),
       bandwidthBytesDaily: Number(value("bandwidth_bytes_daily")),

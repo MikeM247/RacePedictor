@@ -24,7 +24,11 @@ async function readApiData<T>(response: Response, schema: ResponseSchema<T>): Pr
     throw new Error(typeof message === "string" ? message : "The request could not be completed.");
   }
 
-  const parsed = schema.safeParse(asRecord(body).data);
+  const record = asRecord(body);
+  const payload = Object.prototype.hasOwnProperty.call(record, "data")
+    ? record.data
+    : body;
+  const parsed = schema.safeParse(payload);
   if (!parsed.success) {
     throw new Error("The server returned an invalid activity response.");
   }

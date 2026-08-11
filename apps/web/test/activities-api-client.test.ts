@@ -41,13 +41,21 @@ test("activity API client unwraps and validates standard cloud success envelopes
   assert.deepEqual(selected.activity.splits, []);
 });
 
+test("activity API client preserves valid local success responses", async () => {
+  const list = await readActivitiesListResponse(jsonResponse({ items: [summary] }));
+  const selected = await readActivityDetailResponse(jsonResponse({ activity: detail }));
+
+  assert.equal(list.items[0].title, "Morning Run");
+  assert.equal(selected.activity.sourceType, "strava");
+});
+
 test("activity API client rejects malformed success envelopes without leaking a render error", async () => {
   await assert.rejects(
     () => readActivitiesListResponse(jsonResponse({ data: {} })),
     /invalid activity response/u,
   );
   await assert.rejects(
-    () => readActivityDetailResponse(jsonResponse({ activity: detail })),
+    () => readActivityDetailResponse(jsonResponse({ data: { activity: { id: "incomplete" } } })),
     /invalid activity response/u,
   );
 });

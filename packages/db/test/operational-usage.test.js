@@ -19,13 +19,26 @@ test("operational usage records durable daily/quarter-hour counters and measures
     databaseBytes: 8_192,
     invocationsDaily: 1,
     bandwidthBytesDaily: 1_536,
-    providerRequests15Minutes: 1,
-    providerRequestsDaily: 1,
+    providerRequests15Minutes: 0,
+    providerRequestsDaily: 0,
   });
   assert.deepEqual(prisma.rawAggregateInput, { _sum: { byteSize: true } });
-  const quarter = [...prisma.rows.values()].find((row) => row.metric === "provider_requests_15m");
-  assert.equal(quarter.windowStart.toISOString(), "2026-08-10T12:30:00.000Z");
-  assert.equal(quarter.windowEnd.toISOString(), "2026-08-10T12:45:00.000Z");
+  assert.equal([...prisma.rows.values()].some((row) => row.metric === "provider_requests_15m"), false);
+});
+
+test("Strava read capacity is reserved before provider I/O and cannot exceed its conservative global window", async () => {
+  const prisma = fakePrisma();
+  const repository = new PrismaOperationalUsageRepository({ prisma });
+
+  assert.deepEqual(await repository.reserve({ units: 79, occurredAt: NOW.toISOString() }), { state: "granted" });
+  assert.deepEqual(await repository.reserve({ units: 2, occurredAt: NOW.toISOString() }), {
+    state: "deferred",
+    retryAt: "2026-08-10T12:45:05.000Z",
+  });
+  assert.deepEqual(await repository.reserve({ units: 2, occurredAt: "2026-08-10T12:45:05.000Z" }), { state: "granted" });
+  const usage = await repository.readUsage(NOW);
+  assert.equal(usage.providerRequests15Minutes, 79);
+  assert.equal(usage.providerRequestsDaily, 81);
 });
 
 test("reconciliation scope is connected-Strava-only, deterministic, and bounded", async () => {
@@ -55,6 +68,35 @@ function fakePrisma() {
     },
     findMany: async ({ where }) => [...rows.values()].filter((row) => row.windowStart.getTime() === where.windowStart.getTime() && where.metric.in.includes(row.metric)),
     findUnique: async ({ where }) => rows.get(`${where.metric_windowStart.metric}:${where.metric_windowStart.windowStart.toISOString()}`) ?? null,
+    updateMany: async ({ where, data }) => {
+      let count = 0;
+      for (const [key, row] of rows) {
+        if (
+          row.metric !== where.metric
+          || row.windowStart.getTime() !== where.windowStart.getTime()
+          || (where.amount?.lte !== undefined && row.amount > BigInt(where.amount.lte))
+        ) continue;
+        rows.set(key, {
+          ...row,
+          amount: row.amount + BigInt(data.amount.increment),
+          windowEnd: data.windowEnd,
+          updatedAt: data.updatedAt,
+        });
+        count += 1;
+      }
+      return { count };
+    },
+    create: async ({ data }) => {
+      const key = `${data.metric}:${data.windowStart.toISOString()}`;
+      if (rows.has(key)) {
+        const error = new Error("unique");
+        error.code = "P2002";
+        throw error;
+      }
+      const row = { ...data, amount: BigInt(data.amount) };
+      rows.set(key, row);
+      return row;
+    },
   };
   const prisma = {
     rows,

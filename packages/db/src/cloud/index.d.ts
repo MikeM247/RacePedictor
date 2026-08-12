@@ -7,6 +7,7 @@ import type { StravaIngestionJobRepository } from "../../../core/src/ports/strav
 import type {
   StravaCredentialPort,
   StravaIngestionUnitOfWork,
+  StravaReadRequestBudget,
 } from "../../../core/src/ports/strava-ingestion.ts";
 import type { StravaConnectionService } from "../../../core/src/use-cases/strava-connection.ts";
 import type { AthleteScope } from "../../../core/src/contracts/auth.ts";
@@ -67,6 +68,7 @@ export class PrismaStravaIngestionJobRepository implements StravaIngestionJobRep
   claimById: StravaIngestionJobRepository["claimById"];
   markCompleted: StravaIngestionJobRepository["markCompleted"];
   markRetry: StravaIngestionJobRepository["markRetry"];
+  markDeferred: StravaIngestionJobRepository["markDeferred"];
   markTerminal: StravaIngestionJobRepository["markTerminal"];
   markDeadLetter: StravaIngestionJobRepository["markDeadLetter"];
 }
@@ -184,6 +186,7 @@ export class PrismaOperationalUsageRepository {
   recordInvocation(occurredAt?: Date): Promise<unknown>;
   recordBandwidth(bytes: number, occurredAt?: Date): Promise<unknown>;
   recordProviderResponse(bytes: number, occurredAt?: Date): Promise<void>;
+  reserve(input: Parameters<StravaReadRequestBudget["reserve"]>[0]): ReturnType<StravaReadRequestBudget["reserve"]>;
   readUsage(occurredAt?: Date): Promise<import("../../../core/src/services/operational-guardrails.ts").OperationalUsage>;
 }
 

@@ -154,6 +154,7 @@ test("bounded batch windows enqueue idempotently per athlete without synthetic w
   assert.deepEqual(claimed.event, {
     kind: "backfill",
     request: { ...request, pageSize: 30, maxPages: 5, maxActivities: 150 },
+    checkpoint: initialCheckpoint(),
   });
   await repository.markCompleted({ job: claimed, occurredAt: "2026-08-10T10:00:01.000Z" });
   assert.equal(prisma.jobs.get(first.jobId).status, "completed");
@@ -186,6 +187,77 @@ test("batch queue verification accepts JSON payloads returned in database key or
 
   assert.equal(queued.reused, false);
   assert.equal(prisma.jobs.get(queued.jobId).status, "queued");
+});
+
+test("a planned provider-window deferral keeps a batch checkpoint and does not consume an attempt", async () => {
+  const prisma = new FakeWorkerPrisma();
+  prisma.connections.set("athlete-a", { id: "connection-a", athleteId: "athlete-a", status: "connected" });
+  const repository = new PrismaStravaIngestionJobRepository({ prisma });
+  const scope = athleteScopeFor(buildActorContext({
+    userId: "owner-a", permittedAthleteIds: ["athlete-a"], activeAthleteId: "athlete-a",
+    requestId: "request-batch-defer", credentialKind: "session",
+  }));
+  const queued = await repository.enqueueBatch(scope, {
+    kind: "backfill",
+    request: { after: "2026-08-01T00:00:00.000Z", before: "2026-08-10T00:00:00.000Z" },
+  });
+  const claimed = await repository.claimById(queued.jobId, claim("batch-worker", "batch-lease", t0));
+  const checkpoint = {
+    ...initialCheckpoint(),
+    nextPage: 2,
+    pagesFetched: 1,
+    activitiesDiscovered: 2,
+    seenActivityIds: ["900000000001", "900000000002"],
+    pendingActivityIds: ["900000000002"],
+    completedActivityIds: ["900000000001"],
+  };
+  await repository.markDeferred({
+    job: claimed,
+    occurredAt: "2026-08-10T10:00:01.000Z",
+    availableAt: "2026-08-10T10:15:05.000Z",
+    diagnosticCode: "STRAVA_RATE_WINDOW_DEFERRED",
+    checkpoint,
+  });
+  const row = prisma.jobs.get(queued.jobId);
+  assert.equal(row.status, "queued");
+  assert.equal(row.attemptCount, 0);
+  assert.equal(row.availableAt.toISOString(), "2026-08-10T10:15:05.000Z");
+  assert.deepEqual(row.payload.checkpoint, checkpoint);
+});
+
+test("a recoverable batch retry retains its checkpoint while consuming its attempt", async () => {
+  const prisma = new FakeWorkerPrisma();
+  prisma.connections.set("athlete-a", { id: "connection-a", athleteId: "athlete-a", status: "connected" });
+  const repository = new PrismaStravaIngestionJobRepository({ prisma });
+  const scope = athleteScopeFor(buildActorContext({
+    userId: "owner-a", permittedAthleteIds: ["athlete-a"], activeAthleteId: "athlete-a",
+    requestId: "request-batch-retry", credentialKind: "session",
+  }));
+  const queued = await repository.enqueueBatch(scope, {
+    kind: "backfill",
+    request: { after: "2026-08-01T00:00:00.000Z", before: "2026-08-10T00:00:00.000Z" },
+  });
+  const claimed = await repository.claimById(queued.jobId, claim("batch-worker", "retry-lease", t0));
+  const checkpoint = {
+    ...initialCheckpoint(),
+    nextPage: 2,
+    pagesFetched: 1,
+    activitiesDiscovered: 1,
+    seenActivityIds: ["900000000001"],
+    completedActivityIds: ["900000000001"],
+    exhausted: false,
+  };
+  await repository.markRetry({
+    job: claimed,
+    occurredAt: "2026-08-10T10:00:01.000Z",
+    availableAt: "2026-08-10T10:15:05.000Z",
+    diagnosticCode: "STRAVA_RATE_LIMITED",
+    checkpoint,
+  });
+  const row = prisma.jobs.get(queued.jobId);
+  assert.equal(row.status, "queued");
+  assert.equal(row.attemptCount, 1);
+  assert.deepEqual(row.payload.checkpoint, checkpoint);
 });
 
 function claim(workerId, leaseToken, claimedAt, maxAttempts = 5) {
@@ -369,7 +441,9 @@ function applyData(record, data) {
   for (const [key, value] of Object.entries(data)) {
     updated[key] = value && typeof value === "object" && "increment" in value
       ? updated[key] + value.increment
-      : structuredClone(value);
+      : value && typeof value === "object" && "decrement" in value
+        ? updated[key] - value.decrement
+        : structuredClone(value);
   }
   return updated;
 }
@@ -391,4 +465,17 @@ function reorderJsonObject(value) {
   if (Array.isArray(value)) return value.map(reorderJsonObject);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, reorderJsonObject(value[key])]));
+}
+
+function initialCheckpoint() {
+  return {
+    version: 1,
+    nextPage: 1,
+    pendingActivityIds: [],
+    seenActivityIds: [],
+    completedActivityIds: [],
+    pagesFetched: 0,
+    activitiesDiscovered: 0,
+    exhausted: false,
+  };
 }

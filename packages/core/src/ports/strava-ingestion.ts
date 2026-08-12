@@ -65,6 +65,21 @@ export interface StravaCredentialPort {
   refreshAccessToken(scope: AthleteScope): Promise<string>;
 }
 
+/**
+ * The Strava application quota is shared by every athlete. Reservations are
+ * made before provider I/O so parallel workers cannot discover a limit only
+ * after exceeding it.
+ */
+export interface StravaReadRequestBudget {
+  reserve(input: {
+    units: number;
+    occurredAt: string;
+  }): Promise<
+    | Readonly<{ state: "granted" }>
+    | Readonly<{ state: "deferred"; retryAt: string }>
+  >;
+}
+
 export interface ContentDigestPort {
   sha256(input: string | Uint8Array): string;
 }
@@ -157,6 +172,7 @@ export interface StravaIngestionUnitOfWork {
 export type StravaIngestionDependencies = Readonly<{
   client: StravaActivityClient;
   credentials: StravaCredentialPort;
+  requestBudget: StravaReadRequestBudget;
   rawObjects: RawObjectStore;
   unitOfWork: StravaIngestionUnitOfWork;
   digest: ContentDigestPort;

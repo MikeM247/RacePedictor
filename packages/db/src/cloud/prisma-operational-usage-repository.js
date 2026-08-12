@@ -1,6 +1,7 @@
 import { operationalUsageSchema } from "../../../core/src/services/operational-guardrails.ts";
 
 const metrics = new Set(["invocations_daily", "bandwidth_bytes_daily", "provider_requests_15m", "provider_requests_daily"]);
+const STRAVA_READ_RESERVATION_LIMIT = 80;
 
 export class PrismaOperationalUsageRepository {
   #prisma;
@@ -21,13 +22,55 @@ export class PrismaOperationalUsageRepository {
   }
 
   async recordProviderResponse(bytes, occurredAt = new Date()) {
+    return this.recordBandwidth(bytes, occurredAt);
+  }
+
+  /**
+   * Atomically reserves capacity before a Strava read. The counter is global
+   * because Strava applies this allowance per application, not per athlete.
+   */
+  async reserve({ units, occurredAt }) {
+    const amount = validAmount(units);
+    if (amount < 1 || amount > STRAVA_READ_RESERVATION_LIMIT) {
+      throw new Error("Strava request reservation is invalid");
+    }
     const time = validDate(occurredAt);
-    const amount = validAmount(bytes);
-    await this.#prisma.$transaction(async (transaction) => {
-      await increment(transaction, "provider_requests_15m", 1, time);
-      await increment(transaction, "provider_requests_daily", 1, time);
-      await increment(transaction, "bandwidth_bytes_daily", amount, time);
-    });
+    const window = windowFor("provider_requests_15m", time);
+    const maximumBeforeReservation = STRAVA_READ_RESERVATION_LIMIT - amount;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const updated = await this.#prisma.operationalUsageBucket.updateMany({
+        where: {
+          metric: "provider_requests_15m",
+          windowStart: window.start,
+          amount: { lte: maximumBeforeReservation },
+        },
+        data: {
+          amount: { increment: amount },
+          windowEnd: window.end,
+          updatedAt: time,
+        },
+      });
+      if (updated.count === 1) {
+        await increment(this.#prisma, "provider_requests_daily", amount, time);
+        return Object.freeze({ state: "granted" });
+      }
+      try {
+        await this.#prisma.operationalUsageBucket.create({
+          data: {
+            metric: "provider_requests_15m",
+            windowStart: window.start,
+            windowEnd: window.end,
+            amount,
+            updatedAt: time,
+          },
+        });
+        await increment(this.#prisma, "provider_requests_daily", amount, time);
+        return Object.freeze({ state: "granted" });
+      } catch (error) {
+        if (error?.code !== "P2002" || attempt === 1) break;
+      }
+    }
+    return Object.freeze({ state: "deferred", retryAt: nextQuarterHour(time).toISOString() });
   }
 
   async readUsage(occurredAt = new Date()) {
@@ -79,6 +122,11 @@ function windowFor(metric, occurredAt) {
   }
   start.setUTCHours(0, 0, 0, 0);
   return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1_000) };
+}
+
+function nextQuarterHour(occurredAt) {
+  const interval = 15 * 60 * 1_000;
+  return new Date((Math.floor(occurredAt.getTime() / interval) + 1) * interval + 5_000);
 }
 
 function validAmount(value) {

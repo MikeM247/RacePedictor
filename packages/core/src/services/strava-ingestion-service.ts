@@ -5,12 +5,14 @@ import {
   STRAVA_CANONICAL_STREAM_KEYS,
   stravaActivityDetailSchema,
   stravaActivitySummaryPageSchema,
+  stravaBatchCheckpointSchema,
   stravaBackfillRequestSchema,
   stravaIngestionEventSchema,
   stravaLapsSchema,
   stravaReconciliationRequestSchema,
   stravaStreamSetSchema,
   type StravaBackfillRequest,
+  type StravaBatchCheckpoint,
   type StravaIngestionEvent,
   type StravaRawObjectKind,
   type StravaReconciliationRequest,
@@ -48,6 +50,7 @@ export type StravaIngestionOutcome =
       candidateCount: number;
       rawObjectKeys: readonly string[];
     }>
+  | StravaIngestionDeferred
   | StravaIngestionFailure;
 
 export type StravaIngestionFailure = Readonly<{
@@ -56,13 +59,20 @@ export type StravaIngestionFailure = Readonly<{
   retryAt: string | null;
 }>;
 
+export type StravaIngestionDeferred = Readonly<{
+  state: "deferred";
+  diagnosticCode: "STRAVA_RATE_WINDOW_DEFERRED";
+  retryAt: string;
+}>;
+
 export type StravaBatchResult = Readonly<{
   source: "backfill" | "reconciliation";
   pagesFetched: number;
   activitiesDiscovered: number;
+  checkpoint: StravaBatchCheckpoint;
   outcomes: readonly StravaIngestionOutcome[];
   truncated: boolean;
-  failure: StravaIngestionFailure | null;
+  failure: StravaIngestionFailure | StravaIngestionDeferred | null;
 }>;
 
 class StravaAuthenticationFailure extends Error {}
@@ -83,6 +93,9 @@ export class StravaIngestionService {
       return this.#applyDeletion(scope, event, "provider_delete");
     }
     const upsertAspect = event.aspect;
+
+    const reservation = await this.#reserve(3);
+    if (reservation.state === "deferred") return reservation;
 
     let access: AccessSession;
     try {
@@ -226,85 +239,112 @@ export class StravaIngestionService {
     }
   }
 
-  async runBackfill(scope: AthleteScope, input: StravaBackfillRequest): Promise<StravaBatchResult> {
+  async runBackfill(
+    scope: AthleteScope,
+    input: StravaBackfillRequest,
+    checkpointInput?: StravaBatchCheckpoint,
+  ): Promise<StravaBatchResult> {
     const parsed = stravaBackfillRequestSchema.safeParse(input);
     if (!parsed.success) return invalidBatch("backfill");
-    return this.#runPaged(scope, parsed.data, "backfill");
+    return this.#runPaged(scope, parsed.data, "backfill", checkpointInput);
   }
 
-  async runReconciliation(scope: AthleteScope, input: StravaReconciliationRequest): Promise<StravaBatchResult> {
+  async runReconciliation(
+    scope: AthleteScope,
+    input: StravaReconciliationRequest,
+    checkpointInput?: StravaBatchCheckpoint,
+  ): Promise<StravaBatchResult> {
     const parsed = stravaReconciliationRequestSchema.safeParse(input);
     if (!parsed.success) return invalidBatch("reconciliation");
-    return this.#runPaged(scope, parsed.data, "reconciliation");
+    return this.#runPaged(scope, parsed.data, "reconciliation", checkpointInput);
   }
 
   async #runPaged(
     scope: AthleteScope,
     input: { after: string; before: string; pageSize: number; maxPages: number; maxActivities: number },
     source: "backfill" | "reconciliation",
+    checkpointInput?: StravaBatchCheckpoint,
   ): Promise<StravaBatchResult> {
-    let access: AccessSession;
+    let checkpoint: BatchCheckpoint;
     try {
-      access = await this.#createAccessSession(scope);
+      checkpoint = readCheckpoint(checkpointInput, input);
     } catch {
-      return { ...invalidBatch(source), failure: terminal("STRAVA_REAUTH_REQUIRED") };
+      return invalidBatch(source);
     }
+    let access: AccessSession | null = null;
 
-    const discovered = new Set<string>();
     const outcomes: StravaIngestionOutcome[] = [];
-    let pagesFetched = 0;
-    let exhausted = false;
-    for (let page = 1; page <= input.maxPages && discovered.size < input.maxActivities; page += 1) {
-      let summaries;
-      try {
-        const response = await access.call((accessToken) => this.#dependencies.client.listActivities({
-          accessToken,
-          afterEpochSeconds: Math.floor(Date.parse(input.after) / 1_000),
-          beforeEpochSeconds: Math.floor(Date.parse(input.before) / 1_000),
-          page,
-          perPage: input.pageSize,
-        }));
-        summaries = stravaActivitySummaryPageSchema.parse(response);
-      } catch (error) {
-        return {
-          source,
-          pagesFetched,
-          activitiesDiscovered: discovered.size,
-          outcomes,
-          truncated: true,
-          failure: error instanceof z.ZodError
-            ? terminal("STRAVA_PAYLOAD_INVALID")
-            : classifyClientFailure(error, 1, this.#dependencies.now()),
-        };
-      }
-      pagesFetched += 1;
+    while (
+      checkpoint.pendingActivityIds.length > 0
+      || (!checkpoint.exhausted && checkpoint.nextPage <= input.maxPages && checkpoint.seenActivityIds.size < input.maxActivities)
+    ) {
+      if (checkpoint.pendingActivityIds.length === 0) {
+        const reservation = await this.#reserve(1);
+        if (reservation.state === "deferred") return batchResult(source, checkpoint, outcomes, reservation, true);
+        if (!access) {
+          try {
+            access = await this.#createAccessSession(scope);
+          } catch {
+            return { ...invalidBatch(source), failure: terminal("STRAVA_REAUTH_REQUIRED") };
+          }
+        }
+        let summaries;
+        try {
+          const response = await access.call((accessToken) => this.#dependencies.client.listActivities({
+            accessToken,
+            afterEpochSeconds: Math.floor(Date.parse(input.after) / 1_000),
+            beforeEpochSeconds: Math.floor(Date.parse(input.before) / 1_000),
+            page: checkpoint.nextPage,
+            perPage: input.pageSize,
+          }));
+          summaries = stravaActivitySummaryPageSchema.parse(response);
+        } catch (error) {
+          return batchResult(
+            source,
+            checkpoint,
+            outcomes,
+            error instanceof z.ZodError ? terminal("STRAVA_PAYLOAD_INVALID") : classifyClientFailure(error, 1, this.#dependencies.now()),
+            true,
+          );
+        }
 
-      for (const summary of summaries) {
-        if (discovered.size >= input.maxActivities) break;
-        if (discovered.has(summary.id)) continue;
-        discovered.add(summary.id);
-        outcomes.push(await this.ingest(scope, {
-          providerActivityId: summary.id,
+        checkpoint.pagesFetched += 1;
+        checkpoint.nextPage += 1;
+        for (const summary of summaries) {
+          if (checkpoint.seenActivityIds.size >= input.maxActivities) break;
+          if (checkpoint.seenActivityIds.has(summary.id)) continue;
+          checkpoint.seenActivityIds.add(summary.id);
+          if (!checkpoint.completedActivityIds.has(summary.id)) checkpoint.pendingActivityIds.push(summary.id);
+        }
+        checkpoint.exhausted = summaries.length < input.pageSize;
+      }
+
+      while (checkpoint.pendingActivityIds.length > 0) {
+        const providerActivityId = checkpoint.pendingActivityIds[0];
+        const outcome = await this.ingest(scope, {
+          providerActivityId,
           aspect: "create",
           source,
           occurredAt: this.#dependencies.now().toISOString(),
           attempt: 1,
-        }));
-      }
-      if (summaries.length < input.pageSize) {
-        exhausted = true;
-        break;
+        });
+        outcomes.push(outcome);
+        if (outcome.state === "applied" || outcome.state === "deleted") {
+          checkpoint.completedActivityIds.add(providerActivityId);
+          checkpoint.pendingActivityIds.shift();
+          continue;
+        }
+        return batchResult(
+          source,
+          checkpoint,
+          outcomes,
+          outcome.state === "retry" || outcome.state === "terminal" || outcome.state === "deferred" ? outcome : null,
+          true,
+        );
       }
     }
 
-    return {
-      source,
-      pagesFetched,
-      activitiesDiscovered: discovered.size,
-      outcomes,
-      truncated: !exhausted,
-      failure: null,
-    };
+    return batchResult(source, checkpoint, outcomes, null, checkpoint.pendingActivityIds.length > 0 || !checkpoint.exhausted);
   }
 
   async #applyDeletion(
@@ -373,6 +413,26 @@ export class StravaIngestionService {
         }
       },
     };
+  }
+
+  async #reserve(units: number) {
+    const reservation = await this.#dependencies.requestBudget.reserve({
+      units,
+      occurredAt: this.#dependencies.now().toISOString(),
+    });
+    if (reservation.state === "granted") return reservation;
+    if (
+      reservation.state === "deferred"
+      && !Number.isNaN(Date.parse(reservation.retryAt))
+      && Date.parse(reservation.retryAt) > this.#dependencies.now().getTime()
+    ) {
+      return {
+        state: "deferred" as const,
+        diagnosticCode: "STRAVA_RATE_WINDOW_DEFERRED" as const,
+        retryAt: reservation.retryAt,
+      };
+    }
+    throw new Error("Strava request budget returned an invalid reservation");
   }
 
   async #storeRaw<T>(
@@ -463,8 +523,100 @@ function invalidBatch(source: "backfill" | "reconciliation"): StravaBatchResult 
     source,
     pagesFetched: 0,
     activitiesDiscovered: 0,
+    checkpoint: checkpointDto(initialCheckpoint()),
     outcomes: [],
     truncated: false,
     failure: terminal("STRAVA_WINDOW_INVALID"),
+  };
+}
+
+type BatchCheckpoint = {
+  version: 1;
+  nextPage: number;
+  pendingActivityIds: string[];
+  seenActivityIds: Set<string>;
+  completedActivityIds: Set<string>;
+  pagesFetched: number;
+  exhausted: boolean;
+};
+
+function initialCheckpoint(): BatchCheckpoint {
+  return {
+    version: 1,
+    nextPage: 1,
+    pendingActivityIds: [],
+    seenActivityIds: new Set<string>(),
+    completedActivityIds: new Set<string>(),
+    pagesFetched: 0,
+    exhausted: false,
+  };
+}
+
+function readCheckpoint(input: StravaBatchCheckpoint | undefined, request: { maxPages: number; maxActivities: number }) {
+  if (input === undefined) return initialCheckpoint();
+  const parsed = stravaBatchCheckpointSchema.parse(input);
+  if (parsed.nextPage > request.maxPages + 1 || parsed.pagesFetched !== parsed.nextPage - 1) {
+    throw new Error("Strava batch checkpoint page state is invalid");
+  }
+  if (parsed.activitiesDiscovered !== parsed.seenActivityIds.length || parsed.activitiesDiscovered > request.maxActivities) {
+    throw new Error("Strava batch checkpoint discovery state is invalid");
+  }
+  if (parsed.pendingActivityIds.length > 0 && parsed.exhausted && parsed.nextPage > request.maxPages + 1) {
+    throw new Error("Strava batch checkpoint terminal state is invalid");
+  }
+  const seen = uniqueIdSet(parsed.seenActivityIds);
+  const completed = uniqueIdSet(parsed.completedActivityIds);
+  const pending = uniqueIdSet(parsed.pendingActivityIds);
+  for (const id of [...completed, ...pending]) {
+    if (!seen.has(id)) throw new Error("Strava batch checkpoint references an undiscovered activity");
+  }
+  for (const id of pending) {
+    if (completed.has(id)) throw new Error("Strava batch checkpoint repeats a completed activity");
+  }
+  return {
+    version: 1 as const,
+    nextPage: parsed.nextPage,
+    pendingActivityIds: [...parsed.pendingActivityIds],
+    seenActivityIds: seen,
+    completedActivityIds: completed,
+    pagesFetched: parsed.pagesFetched,
+    exhausted: parsed.exhausted,
+  };
+}
+
+function uniqueIdSet(ids: readonly string[]) {
+  const result = new Set(ids);
+  if (result.size !== ids.length) throw new Error("Strava batch checkpoint contains duplicate activity IDs");
+  return result;
+}
+
+function checkpointDto(checkpoint: BatchCheckpoint): StravaBatchCheckpoint {
+  return stravaBatchCheckpointSchema.parse({
+    version: checkpoint.version,
+    nextPage: checkpoint.nextPage,
+    pendingActivityIds: checkpoint.pendingActivityIds,
+    seenActivityIds: [...checkpoint.seenActivityIds].sort((left, right) => left.localeCompare(right)),
+    completedActivityIds: [...checkpoint.completedActivityIds].sort((left, right) => left.localeCompare(right)),
+    pagesFetched: checkpoint.pagesFetched,
+    activitiesDiscovered: checkpoint.seenActivityIds.size,
+    exhausted: checkpoint.exhausted,
+  });
+}
+
+function batchResult(
+  source: "backfill" | "reconciliation",
+  checkpoint: BatchCheckpoint,
+  outcomes: readonly StravaIngestionOutcome[],
+  failure: StravaIngestionFailure | StravaIngestionDeferred | null,
+  truncated: boolean,
+): StravaBatchResult {
+  return {
+    source,
+    pagesFetched: checkpoint.pagesFetched,
+    activitiesDiscovered: checkpoint.seenActivityIds.size,
+    checkpoint: checkpointDto(checkpoint),
+    outcomes,
+    truncated,
+    failure,
   };
 }

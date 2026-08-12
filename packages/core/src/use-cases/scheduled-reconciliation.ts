@@ -45,10 +45,15 @@ export class ScheduledReconciliationService {
     }
     const outcomes: Record<string, number> = {};
     let processed = 0;
-    for (; processed < maxJobs; processed += 1) {
-      const outcome = await this.#dependencies.processor.processNext(`${input.workerId}:${processed}`);
+    for (let index = 0; index < maxJobs; index += 1) {
+      const outcome = await this.#dependencies.processor.processNext(`${input.workerId}:${index}`);
       if (outcome.state === "not_available") break;
+      processed += 1;
       outcomes[outcome.state] = (outcomes[outcome.state] ?? 0) + 1;
+      // A deferred Strava batch has reached the shared application budget.
+      // Leave its durable availableAt checkpoint for the next scheduled pass
+      // rather than repeatedly claiming work in the same provider window.
+      if (outcome.state === "deferred") break;
     }
     return Object.freeze({ state: "completed" as const, enqueued, reused, processed, outcomes: Object.freeze(outcomes), guardrails });
   }

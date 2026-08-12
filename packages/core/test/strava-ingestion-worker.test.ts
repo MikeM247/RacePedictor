@@ -150,12 +150,26 @@ test("bounded backfill and reconciliation windows enqueue idempotently and use t
     source: "reconciliation",
     pagesFetched: 0,
     activitiesDiscovered: 0,
+    checkpoint: {
+      version: 1 as const,
+      nextPage: 1,
+      pendingActivityIds: [],
+      seenActivityIds: [],
+      completedActivityIds: [],
+      pagesFetched: 0,
+      activitiesDiscovered: 0,
+      exhausted: false,
+    },
     outcomes: [],
     truncated: true,
     failure: { state: "retry", diagnosticCode: "STRAVA_RATE_LIMITED", retryAt: "2026-08-10T10:15:05.000Z" },
   });
   assert.equal((await harness.processor.processJob(reconciliation.jobId, "reconcile-001")).state, "retry");
   assert.equal(harness.reconciliationCalls[0].scope.athleteId, "athlete-a");
+  assert.deepEqual(
+    (harness.jobs.records.get(reconciliation.jobId)?.event as Extract<StravaIngestionJobEvent, { kind: "reconciliation" }>).checkpoint,
+    successfulBatch("reconciliation").checkpoint,
+  );
 
   await assert.rejects(
     harness.processor.enqueueReconciliation(scope, {
@@ -163,6 +177,54 @@ test("bounded backfill and reconciliation windows enqueue idempotently and use t
       before: "2026-08-10T00:00:00.000Z",
     }),
     /Window must not exceed 31 days/u,
+  );
+});
+
+test("a planned provider-window yield retains its batch checkpoint without using a retry attempt", async () => {
+  const harness = createHarness();
+  const scope = athleteScopeFor(buildActorContext({
+    userId: "owner-a",
+    permittedAthleteIds: ["athlete-a"],
+    activeAthleteId: "athlete-a",
+    requestId: "request-deferred-batch",
+    credentialKind: "session",
+  }));
+  const queued = await harness.processor.enqueueBackfill(scope, {
+    after: "2026-08-01T00:00:00.000Z",
+    before: "2026-08-10T00:00:00.000Z",
+  });
+  const checkpoint = {
+    version: 1 as const,
+    nextPage: 2,
+    pendingActivityIds: ["900000000001"],
+    seenActivityIds: ["900000000001"],
+    completedActivityIds: [],
+    pagesFetched: 1,
+    activitiesDiscovered: 1,
+    exhausted: false,
+  };
+  harness.batchOutcomes.push({
+    source: "backfill",
+    pagesFetched: 1,
+    activitiesDiscovered: 1,
+    checkpoint,
+    outcomes: [],
+    truncated: true,
+    failure: {
+      state: "deferred",
+      diagnosticCode: "STRAVA_RATE_WINDOW_DEFERRED",
+      retryAt: "2026-08-10T10:15:05.000Z",
+    },
+  });
+
+  assert.equal((await harness.processor.processJob(queued.jobId, "defer-worker")).state, "deferred");
+  const record = harness.jobs.records.get(queued.jobId);
+  assert.equal(record?.status, "queued");
+  assert.equal(record?.attempt, 0);
+  assert.equal(record?.availableAt, "2026-08-10T10:15:05.000Z");
+  assert.deepEqual(
+    (record?.event as Extract<StravaIngestionJobEvent, { kind: "backfill" }>).checkpoint,
+    checkpoint,
   );
 });
 
@@ -281,9 +343,27 @@ class MemoryJobRepository implements StravaIngestionJobRepository {
     this.finalize(input.job, "completed", null);
   }
 
-  async markRetry(input: StravaJobFailure & { availableAt: string }) {
+  async markRetry(input: StravaJobFailure & {
+    availableAt: string;
+    checkpoint?: import("../src/contracts/strava.ts").StravaBatchCheckpoint;
+  }) {
     const record = this.finalize(input.job, "queued", input.diagnosticCode);
     record.availableAt = input.availableAt;
+    if (input.checkpoint && (record.event.kind === "backfill" || record.event.kind === "reconciliation")) {
+      record.event = { ...record.event, checkpoint: input.checkpoint };
+    }
+  }
+
+  async markDeferred(input: StravaJobFailure & {
+    availableAt: string;
+    checkpoint?: import("../src/contracts/strava.ts").StravaBatchCheckpoint;
+  }) {
+    const record = this.finalize(input.job, "queued", null);
+    record.attempt -= 1;
+    record.availableAt = input.availableAt;
+    if (input.checkpoint && (record.event.kind === "backfill" || record.event.kind === "reconciliation")) {
+      record.event = { ...record.event, checkpoint: input.checkpoint };
+    }
   }
 
   async markTerminal(input: StravaJobFailure) {
@@ -350,6 +430,16 @@ function successfulBatch(source: "backfill" | "reconciliation") {
     source,
     pagesFetched: 1,
     activitiesDiscovered: 0,
+    checkpoint: {
+      version: 1 as const,
+      nextPage: 1,
+      pendingActivityIds: [],
+      seenActivityIds: [],
+      completedActivityIds: [],
+      pagesFetched: 0,
+      activitiesDiscovered: 0,
+      exhausted: false,
+    },
     outcomes: [],
     truncated: false,
     failure: null,

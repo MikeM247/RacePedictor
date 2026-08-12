@@ -1,5 +1,6 @@
 import {
   stravaBackfillRequestSchema,
+  stravaBatchCheckpointSchema,
   stravaReconciliationRequestSchema,
 } from "../../../core/src/contracts/strava.ts";
 import { assertAthleteScope, immutableCopy } from "./athlete-scope.js";
@@ -45,7 +46,7 @@ export class PrismaStravaIngestionJobRepository {
           webhookEventId: null,
           idempotencyKey,
           kind: input.kind,
-          payload: request,
+          payload: batchPayload(request, initialBatchCheckpoint()),
           status: "queued",
         },
         update: {},
@@ -85,6 +86,11 @@ export class PrismaStravaIngestionJobRepository {
   async markRetry(input) {
     assertDate(input.availableAt, "Job retry time");
     return this.#finalize(input, "retry");
+  }
+
+  async markDeferred(input) {
+    assertDate(input.availableAt, "Job deferred time");
+    return this.#finalize(input, "deferred");
   }
 
   async markTerminal(input) {
@@ -168,8 +174,23 @@ export class PrismaStravaIngestionJobRepository {
   async #finalize(input, outcome) {
     const completion = validateCompletion(input);
     return this.#prisma.$transaction(async (transaction) => {
-      const status = outcome === "retry" ? "queued" : outcome;
-      const terminal = outcome !== "retry";
+      const status = outcome === "retry" || outcome === "deferred" ? "queued" : outcome;
+      const terminal = outcome !== "retry" && outcome !== "deferred";
+      const data = {
+        status,
+        availableAt: outcome === "retry" || outcome === "deferred" ? completion.availableAt : completion.occurredAt,
+        lockedAt: null,
+        lockedBy: null,
+        leaseToken: null,
+        ...(outcome === "deferred" ? { attemptCount: { decrement: 1 } } : {}),
+        completedAt: terminal ? completion.occurredAt : null,
+        errorCode: outcome === "completed" || outcome === "deferred" ? null : completion.diagnosticCode,
+        errorMessage: null,
+        updatedAt: completion.occurredAt,
+      };
+      if ((outcome === "retry" || outcome === "deferred") && completion.batchPayload) {
+        data.payload = completion.batchPayload;
+      }
       const updated = await transaction.ingestionJob.updateMany({
         where: {
           id: completion.job.id,
@@ -178,21 +199,11 @@ export class PrismaStravaIngestionJobRepository {
           attemptCount: completion.job.attempt,
           leaseToken: completion.job.leaseToken,
         },
-        data: {
-          status,
-          availableAt: outcome === "retry" ? completion.availableAt : completion.occurredAt,
-          lockedAt: null,
-          lockedBy: null,
-          leaseToken: null,
-          completedAt: terminal ? completion.occurredAt : null,
-          errorCode: outcome === "completed" ? null : completion.diagnosticCode,
-          errorMessage: null,
-          updatedAt: completion.occurredAt,
-        },
+        data,
       });
       if (updated.count !== 1) throw new Error("Ingestion job lease was lost");
 
-      const eventStatus = outcome === "completed" ? "processed" : outcome === "retry" ? "queued" : "failed";
+      const eventStatus = outcome === "completed" ? "processed" : outcome === "retry" || outcome === "deferred" ? "queued" : "failed";
       if (completion.job.webhookEventId === null) return;
       const eventUpdated = await transaction.providerWebhookEvent.updateMany({
         where: {
@@ -201,8 +212,8 @@ export class PrismaStravaIngestionJobRepository {
         },
         data: {
           status: eventStatus,
-          processedAt: outcome === "retry" ? null : completion.occurredAt,
-          errorCode: outcome === "completed" ? null : completion.diagnosticCode,
+          processedAt: outcome === "retry" || outcome === "deferred" ? null : completion.occurredAt,
+          errorCode: outcome === "completed" || outcome === "deferred" ? null : completion.diagnosticCode,
         },
       });
       if (eventUpdated.count !== 1) throw new Error("Ingestion job event is unavailable");
@@ -293,10 +304,12 @@ function projectClaim(record, expectedLeaseToken) {
   let projectedEvent;
   if (record.kind === "backfill") {
     if (record.webhookEventId !== null || event !== null) throw new Error("Batch job cannot reference a webhook event");
-    projectedEvent = { kind: "backfill", request: stravaBackfillRequestSchema.parse(record.payload) };
+    const batch = parseBatchPayload("backfill", record.payload);
+    projectedEvent = { kind: "backfill", ...batch };
   } else if (record.kind === "reconciliation") {
     if (record.webhookEventId !== null || event !== null) throw new Error("Batch job cannot reference a webhook event");
-    projectedEvent = { kind: "reconciliation", request: stravaReconciliationRequestSchema.parse(record.payload) };
+    const batch = parseBatchPayload("reconciliation", record.payload);
+    projectedEvent = { kind: "reconciliation", ...batch };
   } else if (
     record.kind === "webhook"
     && event
@@ -361,9 +374,7 @@ function sameBatchRequest(kind, stored, expected) {
 }
 
 function canonicalBatchRequest(kind, request) {
-  const parsed = kind === "backfill"
-    ? stravaBackfillRequestSchema.parse(request)
-    : stravaReconciliationRequestSchema.parse(request);
+  const parsed = parseBatchPayload(kind, request).request;
   return [
     parsed.after,
     parsed.before,
@@ -407,11 +418,59 @@ function validateCompletion(input) {
   if (diagnosticCode !== null && !/^[A-Z0-9_:-]{1,80}$/.test(diagnosticCode)) {
     throw new Error("Job diagnostic code is invalid");
   }
+  let checkpointPayload = null;
+  if (input.checkpoint !== undefined) {
+    const event = input.job.event;
+    if (!event || (event.kind !== "backfill" && event.kind !== "reconciliation")) {
+      throw new Error("Batch progress is invalid for this ingestion job");
+    }
+    checkpointPayload = batchPayload(event.request, input.checkpoint);
+  }
   return {
     job: input.job,
     occurredAt,
     diagnosticCode,
     availableAt: input.availableAt ? assertDate(input.availableAt, "Job retry time") : null,
+    batchPayload: checkpointPayload,
+  };
+}
+
+/**
+ * Batch progress remains private queue state. The original request stays
+ * versioned and strict; progress is carried over any safe retry or provider-window
+ * deferral so already completed provider calls are not repeated unnecessarily.
+ */
+function batchPayload(request, checkpoint) {
+  return { request, checkpoint: stravaBatchCheckpointSchema.parse(checkpoint) };
+}
+
+function parseBatchPayload(kind, value) {
+  const requestSchema = kind === "backfill" ? stravaBackfillRequestSchema : stravaReconciliationRequestSchema;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Batch job payload is invalid");
+  if (Object.prototype.hasOwnProperty.call(value, "request")) {
+    const keys = Object.keys(value).sort();
+    if (keys.length !== 2 || keys[0] !== "checkpoint" || keys[1] !== "request") {
+      throw new Error("Batch job payload is invalid");
+    }
+    return {
+      request: requestSchema.parse(value.request),
+      checkpoint: stravaBatchCheckpointSchema.parse(value.checkpoint),
+    };
+  }
+  // Pre-checkpoint rows are compatible and resume with no completed work.
+  return { request: requestSchema.parse(value), checkpoint: initialBatchCheckpoint() };
+}
+
+function initialBatchCheckpoint() {
+  return {
+    version: 1,
+    nextPage: 1,
+    pendingActivityIds: [],
+    seenActivityIds: [],
+    completedActivityIds: [],
+    pagesFetched: 0,
+    activitiesDiscovered: 0,
+    exhausted: false,
   };
 }
 

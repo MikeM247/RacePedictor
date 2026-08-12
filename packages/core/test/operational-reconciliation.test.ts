@@ -74,6 +74,33 @@ test("hard-stop guardrail schedules and processes no work", async () => {
   assert.equal(calls, 0);
 });
 
+test("scheduled reconciliation yields after one deferred provider-window job", async () => {
+  let processedCalls = 0;
+  const service = new ScheduledReconciliationService({
+    now: () => new Date("2026-08-10T12:00:00.000Z"),
+    readUsage: async () => ZERO,
+    listConnectedAthleteIds: async () => [],
+    processor: {
+      enqueueReconciliation: async () => ({ jobId: "never", reused: false }),
+      processNext: async () => {
+        processedCalls += 1;
+        return {
+          state: "deferred" as const,
+          jobId: "job-rate-window",
+          diagnosticCode: "STRAVA_RATE_WINDOW_DEFERRED",
+        };
+      },
+    },
+  });
+
+  const result = await service.run({ workerId: "cron:deferred", maxJobs: 5 });
+  assert.equal(processedCalls, 1);
+  assert.deepEqual({ processed: result.processed, outcomes: result.outcomes }, {
+    processed: 1,
+    outcomes: { deferred: 1 },
+  });
+});
+
 test("bounded backfill summary accounts for every outcome class", () => {
   const summary = summarizeStravaBatch({
     activitiesDiscovered: 7,

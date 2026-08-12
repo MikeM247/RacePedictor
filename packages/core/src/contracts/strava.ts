@@ -147,6 +147,24 @@ export const stravaReconciliationRequestSchema = z.object({
 }).strict().superRefine((request, ctx) => validateWindow(request, 31, ctx));
 
 /**
+ * Internal durable work state for a bounded Strava batch. This is never an
+ * HTTP request or response. It permits a job to yield at a provider-window
+ * boundary without re-fetching already listed or committed activities.
+ */
+export const stravaBatchCheckpointSchema = z.object({
+  version: z.literal(1),
+  nextPage: z.number().int().min(1).max(11),
+  pendingActivityIds: z.array(providerIdSchema).max(50),
+  seenActivityIds: z.array(providerIdSchema).max(300),
+  completedActivityIds: z.array(providerIdSchema).max(300),
+  pagesFetched: z.number().int().min(0).max(10),
+  activitiesDiscovered: z.number().int().min(0).max(300),
+  exhausted: z.boolean(),
+}).strict();
+
+export type StravaBatchCheckpoint = z.infer<typeof stravaBatchCheckpointSchema>;
+
+/**
  * Provider adapters retain the untouched response bytes for raw storage, then
  * project the parsed JSON through these allow-lists before returning core DTOs.
  */

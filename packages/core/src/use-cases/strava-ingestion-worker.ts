@@ -19,7 +19,7 @@ import type { StravaConnectionService } from "./strava-connection.ts";
 export type StravaJobProcessingResult =
   | Readonly<{ state: "not_available" }>
   | Readonly<{
-      state: "completed" | "retry" | "terminal" | "dead_letter";
+      state: "completed" | "deferred" | "retry" | "terminal" | "dead_letter";
       jobId: string;
       diagnosticCode: string | null;
     }>;
@@ -111,8 +111,8 @@ export class StravaIngestionJobProcessor {
 
       if (job.event.kind === "backfill" || job.event.kind === "reconciliation") {
         const outcome = job.event.kind === "backfill"
-          ? await this.#dependencies.ingestion.runBackfill(scope, job.event.request)
-          : await this.#dependencies.ingestion.runReconciliation(scope, job.event.request);
+          ? await this.#dependencies.ingestion.runBackfill(scope, job.event.request, job.event.checkpoint)
+          : await this.#dependencies.ingestion.runReconciliation(scope, job.event.request, job.event.checkpoint);
         return this.#settleBatch(job, outcome);
       }
 
@@ -137,6 +137,9 @@ export class StravaIngestionJobProcessor {
           outcome.retryAt ?? genericRetryAt(this.#dependencies.now(), job.attempt),
         );
       }
+      if (outcome.state === "deferred") {
+        return this.#defer(job, outcome.diagnosticCode, outcome.retryAt);
+      }
       const diagnosticCode = outcome.diagnosticCode;
       await this.#dependencies.jobs.markTerminal({
         job,
@@ -150,6 +153,9 @@ export class StravaIngestionJobProcessor {
   }
 
   async #settleBatch(job: ClaimedStravaIngestionJob, batch: StravaBatchResult): Promise<StravaJobProcessingResult> {
+    if (batch.failure?.state === "deferred") {
+      return this.#defer(job, batch.failure.diagnosticCode, batch.failure.retryAt, batch.checkpoint);
+    }
     if (batch.failure?.state === "terminal") {
       await this.#dependencies.jobs.markTerminal({
         job,
@@ -163,6 +169,7 @@ export class StravaIngestionJobProcessor {
         job,
         batch.failure.diagnosticCode,
         batch.failure.retryAt ?? genericRetryAt(this.#dependencies.now(), job.attempt),
+        batch.checkpoint,
       );
     }
 
@@ -181,6 +188,7 @@ export class StravaIngestionJobProcessor {
         job,
         retryOutcome.diagnosticCode,
         retryOutcome.retryAt ?? genericRetryAt(this.#dependencies.now(), job.attempt),
+        batch.checkpoint,
       );
     }
 
@@ -195,14 +203,31 @@ export class StravaIngestionJobProcessor {
     job: ClaimedStravaIngestionJob,
     diagnosticCode: string,
     availableAt: string,
+    checkpoint?: import("../contracts/strava.ts").StravaBatchCheckpoint,
   ): Promise<StravaJobProcessingResult> {
     const occurredAt = this.#dependencies.now().toISOString();
     if (job.attempt >= this.#maxAttempts) {
       await this.#dependencies.jobs.markDeadLetter({ job, occurredAt, diagnosticCode });
       return { state: "dead_letter", jobId: job.id, diagnosticCode };
     }
-    await this.#dependencies.jobs.markRetry({ job, occurredAt, diagnosticCode, availableAt });
+    await this.#dependencies.jobs.markRetry({ job, occurredAt, diagnosticCode, availableAt, checkpoint });
     return { state: "retry", jobId: job.id, diagnosticCode };
+  }
+
+  async #defer(
+    job: ClaimedStravaIngestionJob,
+    diagnosticCode: "STRAVA_RATE_WINDOW_DEFERRED",
+    availableAt: string,
+    checkpoint?: import("../contracts/strava.ts").StravaBatchCheckpoint,
+  ): Promise<StravaJobProcessingResult> {
+    await this.#dependencies.jobs.markDeferred({
+      job,
+      occurredAt: this.#dependencies.now().toISOString(),
+      diagnosticCode,
+      availableAt,
+      checkpoint,
+    });
+    return { state: "deferred", jobId: job.id, diagnosticCode };
   }
 }
 

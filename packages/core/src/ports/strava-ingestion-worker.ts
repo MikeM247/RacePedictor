@@ -1,6 +1,7 @@
 import type { AthleteScope } from "../contracts/auth.ts";
 import type {
   StravaBackfillWindow,
+  StravaBatchCheckpoint,
   StravaReconciliationWindow,
 } from "../contracts/strava.ts";
 
@@ -18,10 +19,12 @@ export type StravaIngestionJobEvent =
   | Readonly<{
       kind: "backfill";
       request: StravaBackfillWindow;
+      checkpoint: StravaBatchCheckpoint;
     }>
   | Readonly<{
       kind: "reconciliation";
       request: StravaReconciliationWindow;
+      checkpoint: StravaBatchCheckpoint;
     }>;
 
 export type ClaimedStravaIngestionJob = Readonly<{
@@ -61,7 +64,10 @@ export interface StravaIngestionJobRepository {
   claimNext(input: StravaJobClaimRequest): Promise<ClaimedStravaIngestionJob | null>;
   claimById(jobId: string, input: StravaJobClaimRequest): Promise<ClaimedStravaIngestionJob | null>;
   markCompleted(input: StravaJobCompletion): Promise<void>;
-  markRetry(input: StravaJobFailure & { availableAt: string }): Promise<void>;
+  /** A retry may retain batch progress so provider calls are never repeated unnecessarily. */
+  markRetry(input: StravaJobFailure & { availableAt: string; checkpoint?: StravaBatchCheckpoint }): Promise<void>;
+  /** A planned provider-window yield retains its lease attempt and checkpoint. */
+  markDeferred(input: StravaJobFailure & { availableAt: string; checkpoint?: StravaBatchCheckpoint }): Promise<void>;
   markTerminal(input: StravaJobFailure): Promise<void>;
   markDeadLetter(input: StravaJobFailure): Promise<void>;
 }

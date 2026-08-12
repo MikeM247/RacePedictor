@@ -77,6 +77,7 @@ test("synthetic release journey reaches cloud and local projections while select
       getAccessToken: async () => "synthetic-access-token",
       refreshAccessToken: async () => "synthetic-rotated-token",
     },
+    requestBudget: { reserve: async () => ({ state: "granted" }) },
     rawObjects,
     unitOfWork: canonical,
     digest: { sha256: (value) => createHash("sha256").update(value).digest("hex") },

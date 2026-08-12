@@ -50,6 +50,9 @@ function buildComposition() {
       connectionService: connection.service,
       now,
     }),
+    requestBudget: {
+      reserve: (input) => usage.reserve(input),
+    },
     rawObjects,
     unitOfWork: new PrismaStravaIngestionUnitOfWork({ prisma: connection.prisma }),
     digest: { sha256: (value) => createHash("sha256").update(value).digest("hex") },

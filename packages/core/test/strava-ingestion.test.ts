@@ -438,6 +438,78 @@ test("backfill and periodic reconciliation enforce independent bounded windows, 
   assert.equal(harness.unit.state.activities.size, 2);
 });
 
+test("Strava work is deferred before a provider call when the shared read budget is unavailable", async () => {
+  const harness = createHarness();
+  harness.budget.deferredAt = 1;
+
+  assert.deepEqual(await harness.service.ingest(scope, event()), {
+    state: "deferred",
+    diagnosticCode: "STRAVA_RATE_WINDOW_DEFERRED",
+    retryAt: "2026-08-10T04:30:05.000Z",
+  });
+  assert.equal(harness.client.tokens.length, 0);
+  assert.deepEqual(harness.budget.reservations.map((entry) => entry.units), [3]);
+});
+
+test("a deferred batch does not refresh or list before its first reserved provider call", async () => {
+  const harness = createHarness();
+  harness.budget.deferredAt = 1;
+
+  const paused = await harness.service.runBackfill(scope, {
+    after: "2026-08-01T00:00:00.000Z",
+    before: "2026-08-11T00:00:00.000Z",
+    pageSize: 2,
+    maxPages: 1,
+    maxActivities: 2,
+  });
+
+  assert.equal(paused.failure?.state, "deferred");
+  assert.equal(harness.credentials.getCalls, 0);
+  assert.equal(harness.client.listCalls.length, 0);
+});
+
+test("a deferred backfill retains its listed checkpoint and resumes without re-listing or reprocessing committed activities", async () => {
+  const initial = createHarness();
+  initial.client.pages.set(1, summaryFixture);
+  initial.client.details.set(summaryFixture[1].id, {
+    ...detailFixture,
+    id: summaryFixture[1].id,
+    distance: 5000,
+    moving_time: 1800,
+    elapsed_time: 1860,
+    total_elevation_gain: 35,
+    sport_type: "TrailRun",
+    start_date: "2026-08-09T04:00:00.000Z",
+    start_date_local: "2026-08-09T06:00:00.000+02:00",
+  });
+  initial.budget.deferredAt = 3;
+
+  const paused = await initial.service.runBackfill(scope, {
+    after: "2026-08-01T00:00:00.000Z",
+    before: "2026-08-11T00:00:00.000Z",
+    pageSize: 2,
+    maxPages: 1,
+    maxActivities: 2,
+  });
+  assert.equal(paused.failure?.state, "deferred");
+  assert.equal(paused.checkpoint.pendingActivityIds.length, 1);
+  assert.equal(paused.checkpoint.completedActivityIds.length, 1);
+  assert.equal(initial.client.listCalls.length, 1);
+
+  initial.budget.deferredAt = null;
+  const resumed = await initial.service.runBackfill(scope, {
+    after: "2026-08-01T00:00:00.000Z",
+    before: "2026-08-11T00:00:00.000Z",
+    pageSize: 2,
+    maxPages: 1,
+    maxActivities: 2,
+  }, paused.checkpoint);
+  assert.equal(resumed.failure, null);
+  assert.equal(resumed.checkpoint.completedActivityIds.length, 2);
+  assert.equal(initial.client.listCalls.length, 1);
+  assert.equal(initial.unit.state.activities.size, 2);
+});
+
 function event(overrides: Partial<{
   providerActivityId: string;
   aspect: "create" | "update" | "delete";
@@ -459,17 +531,32 @@ function createHarness() {
   const timeline: string[] = [];
   const client = new FakeStravaClient();
   const credentials = new FakeCredentials();
+  const budget = new FakeStravaRequestBudget();
   const raw = new MemoryRawObjectStore(timeline);
   const unit = new MemoryUnitOfWork(timeline);
   const service = new StravaIngestionService({
     client,
     credentials,
+    requestBudget: budget,
     rawObjects: raw,
     unitOfWork: unit,
     digest,
     now: () => new Date(now),
   });
-  return { service, client, credentials, raw, unit, timeline };
+  return { service, client, credentials, budget, raw, unit, timeline };
+}
+
+class FakeStravaRequestBudget {
+  reservations: Array<{ units: number; occurredAt: string }> = [];
+  deferredAt: number | null = null;
+
+  async reserve(input: { units: number; occurredAt: string }) {
+    this.reservations.push({ ...input });
+    if (this.deferredAt !== null && this.reservations.length >= this.deferredAt) {
+      return { state: "deferred" as const, retryAt: "2026-08-10T04:30:05.000Z" };
+    }
+    return { state: "granted" as const };
+  }
 }
 
 class FakeStravaClient implements StravaActivityClient {
@@ -524,8 +611,10 @@ class FakeStravaClient implements StravaActivityClient {
 }
 
 class FakeCredentials {
+  getCalls = 0;
   refreshCalls = 0;
   async getAccessToken() {
+    this.getCalls += 1;
     return "access-old";
   }
   async refreshAccessToken() {

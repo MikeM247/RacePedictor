@@ -25,7 +25,7 @@
 - Confirmed private raw-object metadata was created alongside the imported activity data; the online activity view exposes structured workout fields only, never raw object URLs or credentials.
 - Corrected a production queue idempotency defect: PostgreSQL JSONB object-key ordering could falsely reject an otherwise identical backfill job. The queue now compares the schema-normalised request fields and has a database regression test.
 - Observed the conservative 15-minute provider-request guardrail pause after the historical import. It preserved accepted data and resumed at the next natural Strava quarter-hour window.
-- Implemented and verified proactive history-import pacing: every provider read reserves shared capacity before network I/O; planned pauses and recoverable failures retain a durable batch checkpoint; the worker yields after a provider-window pause rather than repeatedly reclaiming work. The safeguard is awaiting this release's production deployment and smoke check.
+- Implemented and verified proactive history-import pacing: every provider read reserves shared capacity before network I/O; planned pauses and recoverable failures retain a durable batch checkpoint; the worker yields after a provider-window pause rather than repeatedly reclaiming work. The guarded release is deployed to production and the authenticated Settings and Activities smoke checks pass.
 
 ## Automated evidence
 
@@ -37,6 +37,7 @@
 - Dependency audit reports no known vulnerabilities.
 - Exact app-level Vercel build, including fresh Prisma client generation, passes locally.
 - Pacing regression: 82/82 core and 54/54 database tests pass, including no-token/no-list on a pre-call deferral, checkpoint resumption, retry checkpoint persistence, and one-job scheduler yield.
+- Production pacing smoke: Vercel production deployment for `7f53eb2` is Ready; authenticated Settings reports Strava Connected and healthy guardrails, while Activities continues to display the imported history.
 - Production deployment is Ready and Current at `https://racepedictor.vercel.app`.
 - Live smoke: health 200; anonymous dashboard 307 to `/login`; anonymous dashboard API 401; GitHub provider/callback discovery 200.
 - Authenticated owner smoke: production dashboard loads; tenant-scoped status is empty rather than cross-athlete; Settings reports no paired device and keeps disabled Strava processing fail-closed.
@@ -48,8 +49,8 @@ The first integrated rerun found that an active Next.js development process coul
 1. Perform one live Strava webhook delivery from a newly completed activity and confirm it is accepted once, stored privately, normalised, and visible online without using the manual import action.
 2. Install and run the already-paired local sync agent on `Home computer`; it must first pull the cloud cursor successfully.
 3. Publish an owner-selected `second-brain-context.v1` input and verify the exact section names/freshness online. The agent must never scan or upload the vault.
-4. Deploy and smoke-test the completed history-import pacing hardening before encouraging repeated large import attempts. No quota change or paid plan is authorised.
+4. Re-run an import only when needed; it will pause safely and keep durable progress rather than exceed the conservative provider window. No quota change or paid plan is authorised.
 
 ## Product Owner gate
 
-**Needs Review.** The free-tier production foundation, database, deployment, access controls, private raw write path, real owner login, and bounded history-import path now pass. The milestone cannot pass until the paced release is smoke-tested and automatic-webhook and local selected-field journeys have objective production evidence.
+**Needs Review.** The free-tier production foundation, database, deployment, access controls, private raw write path, real owner login, bounded history-import path, and deployed pacing smoke now pass. The milestone cannot pass until automatic-webhook, independent raw-integrity, and local selected-field journeys have objective production evidence.

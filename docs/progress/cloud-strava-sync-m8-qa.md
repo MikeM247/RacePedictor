@@ -16,7 +16,7 @@
 | Production deployment and anonymous access controls work | Current production deployment is Ready; health 200, dashboard redirects to login, protected API returns 401, and production OAuth callback is correct | Pass |
 | Real owner session resolves the persisted athlete | GitHub consent completed; live dashboard and Neon-backed Settings load the provisioned owner's empty tenant state | Pass |
 | Private raw provider storage works in production | A real bounded history import completed and created private raw-object metadata alongside canonical activity records; the online activity detail exposes no raw object URL or credential | Pass for the private write/read path; independent checksum-read evidence remains part of final smoke |
-| History import protects the provider allowance and keeps durable progress | Core service denies provider I/O before an unavailable reservation, persists checkpoints on planned pause and retry, and the scheduler yields after one deferred job | Pass in automated QA; production deployment and smoke remain |
+| History import protects the provider allowance and keeps durable progress | Core service denies provider I/O before an unavailable reservation, persists checkpoints on planned pause and retry, and the scheduler yields after one deferred job; the deployed production Settings/Activities smoke remains healthy | Pass |
 | Strava completes the real connect-to-workout journey | Owner OAuth is connected; the bounded 90-day import job completed once and its imported workout is visible online | Pass for owner connect and history import; Needs Review for an automatic webhook delivery |
 | Local Second Brain sends only selected structured fields | Synthetic and local-agent boundaries pass; real device pairing and live round trip remain | Needs Review |
 
@@ -38,8 +38,8 @@ The first integrated rerun found partially written Next.js development-cache typ
 
 The first Vercel preview exposed missing web-workspace storage dependencies because Vercel builds from `apps/web`. The web workspace now owns the required AWS SDK packages and generates the Prisma client before compiling; the exact app-level build passes and the corrected preview/production deployments are Ready.
 
-No blocking defect remains in the production foundation or owner-authenticated history-import path. The pacing hardening now has automated evidence but needs this release's production smoke. The remaining M8 gaps are that smoke, a real automatic webhook delivery, an independent raw checksum read, and local-device selected-context smoke.
+No blocking defect remains in the production foundation, owner-authenticated history-import, or paced-release path. The remaining M8 gaps are a real automatic webhook delivery, an independent raw checksum read, and local-device selected-context smoke.
 
 ## QA decision
 
-The implemented owner-authenticated, bounded history-import, and pacing slices pass. The complete M8 milestone remains **Needs Review** and must not be marked done until production pacing smoke plus the final automatic-webhook, raw-integrity, and local selected-context evidence above passes.
+The implemented owner-authenticated, bounded history-import, and pacing slices pass. The complete M8 milestone remains **Needs Review** and must not be marked done until the final automatic-webhook, raw-integrity, and local selected-context evidence above passes.

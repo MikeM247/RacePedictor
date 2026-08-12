@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12
 **Result:** PASS (scoped pacing story)
-**Milestone 8:** Needs Review — production smoke, automatic webhook, raw-integrity read, and local selected-context evidence remain
+**Milestone 8:** Needs Review — automatic webhook, raw-integrity read, and local selected-context evidence remain
 
 ## Acceptance criteria check
 
@@ -28,8 +28,8 @@
 - The reservation is deliberately global to the Strava application, preserving the future multi-athlete boundary.
 - The 80-request threshold leaves headroom under the selected conservative application window.
 - A free-tier daily scheduled recovery may continue a very large history import on a later pass; that is intentional and preferable to exceeding the provider allowance.
-- Production smoke remains required after deployment; this report is not final M8 acceptance.
+- Production smoke passed after deployment: authenticated Settings shows Strava Connected and healthy guardrails, while Activities continues to display the imported history.
 
 ## Recommendation
 
-Proceed with the guarded production deployment, then verify the authenticated Settings operational status and an existing workout view. Do not mark M8 complete until the remaining live acceptance evidence is recorded.
+The guarded production deployment passed its smoke check. Do not mark M8 complete until the remaining live acceptance evidence is recorded.

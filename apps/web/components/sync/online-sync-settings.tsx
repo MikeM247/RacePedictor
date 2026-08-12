@@ -113,6 +113,34 @@ export function OnlineSyncSettings() {
     }
   }
 
+  async function importRecentStravaHistory() {
+    if (strava?.displayStatus !== "connected") return;
+    const before = new Date();
+    const after = new Date(before.getTime() - 90 * 24 * 60 * 60 * 1_000);
+    setStravaBusy(true);
+    setStravaMessage("Queueing the last 90 days of Strava workouts…");
+    try {
+      const result = await request("/api/v1/providers/strava/backfill", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          after: after.toISOString(),
+          before: before.toISOString(),
+          pageSize: 30,
+          maxPages: 5,
+          maxActivities: 150,
+        }),
+      });
+      setStravaMessage(result.reused === true
+        ? "Recent Strava history is already queued. It may take a moment to appear in Activities."
+        : "Recent Strava history is queued. It may take a moment to appear in Activities.");
+    } catch (error) {
+      setStravaMessage(error instanceof Error ? error.message : "Recent Strava history could not be queued.");
+    } finally {
+      setStravaBusy(false);
+    }
+  }
+
   async function pair(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !displayName.trim()) return;
@@ -179,13 +207,17 @@ export function OnlineSyncSettings() {
               <span className="status-chip">{strava ? stravaLabel(strava) : "Unavailable"}</span>
             </div>
             <p>Connect once and completed Strava workouts can arrive automatically. Importing a workout never changes or approves your training plan.</p>
+            <p className="field-help">You can also import the last 90 days, capped at 150 activities, if a workout was completed before you connected.</p>
             {strava ? <dl className="sync-provider-facts">
               <div><dt>Connected</dt><dd>{strava.connectedAt ? formatDate(strava.connectedAt) : "Not connected"}</dd></div>
               <div><dt>Last provider contact</dt><dd>{strava.lastSuccessfulProviderContactAt ? formatDate(strava.lastSuccessfulProviderContactAt) : "Never"}</dd></div>
             </dl> : <p className="quiet-copy">Strava status is temporarily unavailable. No connection action has been taken.</p>}
             <div className="coach-actions">
               {strava?.displayStatus === "connected"
-                ? <button className="button button-secondary" disabled={stravaBusy} type="button" onClick={() => void disconnectStrava()}>Disconnect Strava</button>
+                ? <>
+                    <button className="button button-secondary" disabled={stravaBusy} type="button" onClick={() => void importRecentStravaHistory()}>Import last 90 days</button>
+                    <button className="button button-secondary" disabled={stravaBusy} type="button" onClick={() => void disconnectStrava()}>Disconnect Strava</button>
+                  </>
                 : <button className="button button-primary" disabled={stravaBusy || !athleteId} type="button" onClick={() => void connectStrava()}>{strava?.displayStatus === "action_required" ? "Reconnect Strava" : "Connect Strava"}</button>}
             </div>
             {stravaMessage ? <p className="coach-status" role="status">{stravaMessage}</p> : null}

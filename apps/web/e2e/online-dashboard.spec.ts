@@ -132,6 +132,8 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
   };
   let current = existing;
   let stravaState: "disconnected" | "connected" = "disconnected";
+  let backfillCalls = 0;
+  let failNextBackfill = true;
   const stravaConnection = () => ({
     athleteId: "athlete-a", provider: "strava", status: stravaState,
     displayStatus: stravaState, connectedAt: stravaState === "connected" ? "2026-08-10T12:00:00.000Z" : null,
@@ -178,6 +180,30 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
       connection: stravaConnection(), providerRevocationConfirmed: true,
     } }) });
   });
+  await page.route("**/api/v1/providers/strava/backfill", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    const body = route.request().postDataJSON() as {
+      after: string;
+      before: string;
+      pageSize: number;
+      maxPages: number;
+      maxActivities: number;
+    };
+    expect(body.pageSize).toBe(30);
+    expect(body.maxPages).toBe(5);
+    expect(body.maxActivities).toBe(150);
+    expect(Date.parse(body.before) - Date.parse(body.after)).toBe(90 * 24 * 60 * 60 * 1_000);
+    backfillCalls += 1;
+    if (failNextBackfill) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: {
+        code: "UNAVAILABLE", message: "Strava history is temporarily unavailable", details: [],
+      } }) });
+      return;
+    }
+    await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ data: {
+      jobId: "backfill-a", reused: false, status: "queued", bounds: body,
+    } }) });
+  });
   await page.route("**/api/v1/operations/status", (route) => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ data: {
       state: "warning", processingAllowed: true,
@@ -196,6 +222,12 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
   const stravaPanel = page.getByRole("region", { name: "Automatic workouts from Strava" });
   await expect(stravaPanel.locator(".status-chip")).toHaveText("Connected");
   await expect(page.getByText("Completed workouts will be imported automatically.")).toBeVisible();
+  await page.getByRole("button", { name: "Import last 90 days" }).click();
+  await expect(page.getByText("Strava history is temporarily unavailable")).toBeVisible();
+  failNextBackfill = false;
+  await page.getByRole("button", { name: "Import last 90 days" }).click();
+  await expect(page.getByText("Recent Strava history is queued. It may take a moment to appear in Activities.")).toBeVisible();
+  expect(backfillCalls).toBe(2);
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Disconnect Strava" }).click();
   await expect(page.getByText("Strava disconnected. Existing workouts and raw history were preserved.")).toBeVisible();

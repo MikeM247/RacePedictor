@@ -160,6 +160,34 @@ test("bounded batch windows enqueue idempotently per athlete without synthetic w
   assert.equal(prisma.events.size, 0);
 });
 
+test("batch queue verification accepts JSON payloads returned in database key order", async () => {
+  const prisma = new FakeWorkerPrisma();
+  prisma.normalizesJsonPayloadOrder = true;
+  prisma.connections.set("athlete-a", { id: "connection-a", athleteId: "athlete-a", status: "connected" });
+  const repository = new PrismaStravaIngestionJobRepository({ prisma });
+  const scope = athleteScopeFor(buildActorContext({
+    userId: "owner-a",
+    permittedAthleteIds: ["athlete-a"],
+    activeAthleteId: "athlete-a",
+    requestId: "request-batch-order",
+    credentialKind: "session",
+  }));
+
+  const queued = await repository.enqueueBatch(scope, {
+    kind: "backfill",
+    request: {
+      after: "2026-08-01T00:00:00.000Z",
+      before: "2026-08-10T00:00:00.000Z",
+      pageSize: 30,
+      maxPages: 5,
+      maxActivities: 150,
+    },
+  });
+
+  assert.equal(queued.reused, false);
+  assert.equal(prisma.jobs.get(queued.jobId).status, "queued");
+});
+
 function claim(workerId, leaseToken, claimedAt, maxAttempts = 5) {
   return { workerId, leaseToken, claimedAt, leaseTimeoutSeconds: 120, maxAttempts };
 }
@@ -180,6 +208,7 @@ class FakeWorkerPrisma {
   events = new Map();
   connections = new Map();
   failNextEventUpdate = false;
+  normalizesJsonPayloadOrder = false;
   #transactionTail = Promise.resolve();
 
   seed(id, athleteId, event, jobOverrides = {}) {
@@ -255,6 +284,9 @@ class FakeWorkerPrisma {
         updatedAt: new Date(t0),
         ...structuredClone(create),
       };
+      if (this.normalizesJsonPayloadOrder && record.payload) {
+        record.payload = reorderJsonObject(record.payload);
+      }
       this.jobs.set(id, record);
       return structuredClone(record);
     },
@@ -353,4 +385,10 @@ function compareOrder(left, right, orderBy) {
     if (comparison !== 0) return direction === "asc" ? comparison : -comparison;
   }
   return 0;
+}
+
+function reorderJsonObject(value) {
+  if (Array.isArray(value)) return value.map(reorderJsonObject);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, reorderJsonObject(value[key])]));
 }

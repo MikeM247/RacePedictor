@@ -61,7 +61,7 @@ export class PrismaStravaIngestionJobRepository {
         job.athleteId !== athleteId
         || job.providerConnectionId !== connection.id
         || job.kind !== input.kind
-        || JSON.stringify(job.payload) !== JSON.stringify(request)
+        || !sameBatchRequest(input.kind, job.payload, request)
       ) {
         throw new Error("Strava batch job conflicts with its idempotency key");
       }
@@ -344,6 +344,33 @@ function batchIdempotencyKey(kind, request) {
     request.maxPages,
     request.maxActivities,
   ].join(":");
+}
+
+/**
+ * PostgreSQL's JSONB storage can return object keys in a different order to
+ * the request that was written. Verify the schema-normalised fields rather
+ * than the incidental JSON serialisation order, otherwise a valid queue row
+ * would be rolled back as a false idempotency conflict.
+ */
+function sameBatchRequest(kind, stored, expected) {
+  try {
+    return canonicalBatchRequest(kind, stored) === canonicalBatchRequest(kind, expected);
+  } catch {
+    return false;
+  }
+}
+
+function canonicalBatchRequest(kind, request) {
+  const parsed = kind === "backfill"
+    ? stravaBackfillRequestSchema.parse(request)
+    : stravaReconciliationRequestSchema.parse(request);
+  return [
+    parsed.after,
+    parsed.before,
+    parsed.pageSize,
+    parsed.maxPages,
+    parsed.maxActivities,
+  ].join("\u001f");
 }
 
 function validateClaim(input) {

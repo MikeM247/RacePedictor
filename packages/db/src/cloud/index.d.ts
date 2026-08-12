@@ -181,6 +181,20 @@ export class PrismaTrainingPlanProjectionPublisher implements TrainingPlanProjec
   publishApproved: TrainingPlanProjectionPublisher["publishApproved"];
 }
 
+export class TrainingPlanActivationError extends Error {
+  readonly code: "SESSION_REQUIRED" | "PLAN_NOT_FOUND" | "PLAN_NOT_APPROVED" | "PLAN_ACTIVATION_CONFLICT" | "INCONSISTENT_PROJECTION";
+  constructor(code: TrainingPlanActivationError["code"], message: string);
+}
+
+export class PrismaTrainingPlanProjectionActivator {
+  constructor(input: { prisma: unknown; now?: () => Date });
+  activate(scope: AthleteScope, planId: string, expectedActivePlanId: string | null): Promise<{
+    activePlan: TrainingPlan;
+    retiredPlan: TrainingPlan | null;
+    reused: boolean;
+  }>;
+}
+
 export class PrismaOperationalUsageRepository {
   constructor(input: { prisma: unknown });
   recordInvocation(occurredAt?: Date): Promise<unknown>;

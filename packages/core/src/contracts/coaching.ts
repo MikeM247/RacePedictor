@@ -441,6 +441,14 @@ export const contextPublishRouteDataSchema = contextPublicationResultSchema.exte
 
 export const proposalImportRouteDataSchema = z.object({ proposal: planProposalSchema }).strict();
 export const planHistoryRouteDataSchema = z.object({ plans: z.array(trainingPlanSchema) }).strict();
+export const activatePlanRequestSchema = z.object({
+  expectedActivePlanId: idSchema.nullable(),
+}).strict();
+export const planActivationRouteDataSchema = z.object({
+  activePlan: trainingPlanSchema,
+  retiredPlan: trainingPlanSchema.nullable(),
+  reused: z.boolean(),
+}).strict();
 export const currentContextRouteDataSchema = z.object({ context: coachingContextEnvelopeSchema.nullable() }).strict();
 export const latestProposalRouteDataSchema = z.object({ proposal: planProposalSchema.nullable() }).strict();
 
@@ -643,6 +651,7 @@ export const planVersionApiResponseSchema = standardSuccessResponseSchema(planVe
 export const contextPublishApiResponseSchema = standardSuccessResponseSchema(contextPublishRouteDataSchema);
 export const proposalImportApiResponseSchema = standardSuccessResponseSchema(proposalImportRouteDataSchema);
 export const planHistoryApiResponseSchema = standardSuccessResponseSchema(planHistoryRouteDataSchema);
+export const planActivationApiResponseSchema = standardSuccessResponseSchema(planActivationRouteDataSchema);
 export const currentContextApiResponseSchema = standardSuccessResponseSchema(currentContextRouteDataSchema);
 export const latestProposalApiResponseSchema = standardSuccessResponseSchema(latestProposalRouteDataSchema);
 export const coachingProfileApiResponseSchema = standardSuccessResponseSchema(coachingProfileRouteDataSchema);

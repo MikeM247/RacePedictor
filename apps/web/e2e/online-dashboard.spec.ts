@@ -24,12 +24,26 @@ const status = {
 
 const plan = {
   id: "plan-a", athleteId: "athlete-a", goalId: "goal-a", goalRevision: 1, routineRevision: 1,
-  version: 1, revision: 2, startsOn: "2026-08-10", endsOn: "2026-08-16", timezone: "Africa/Johannesburg",
+  version: 2, revision: 2, startsOn: "2026-08-10", endsOn: "2026-08-16", timezone: "Africa/Johannesburg",
   weeklyStructure: [{ weekStartsOn: "2026-08-10", focus: "Safe aerobic consistency", sessionIds: ["run-a"] }],
   workouts: [{ id: "run-a", kind: "run", scheduledDate: "2026-08-10", title: "Cloud easy run", purpose: "Aerobic base", prescription: "Run easily for 30 minutes.", cautions: [], durationMinutes: 30 }],
   contextArtifactId: "context-a", createdAt: "2026-08-09T08:00:00.000Z",
-  approval: { goalRationale: "Approved goal", rationale: "Approved safe start", summary: "Approved plan", assumptions: [], cautions: [], sourceHistoryFingerprint: "a".repeat(64), contentHash: "b".repeat(64) },
+  approval: { goalRationale: "Approved goal", rationale: "Version 1.1.0 approved safe start", summary: "Approved plan", assumptions: [], cautions: [], sourceHistoryFingerprint: "a".repeat(64), contentHash: "b".repeat(64) },
   status: "active", activatedAt: "2026-08-09T09:00:00.000Z", activatedBy: "user",
+};
+
+const previousPlan = {
+  ...plan,
+  id: "plan-previous",
+  version: 1,
+  revision: 2,
+  workouts: [{ ...plan.workouts[0], id: "run-previous", title: "Previous easy run" }],
+  weeklyStructure: [{ ...plan.weeklyStructure[0], sessionIds: ["run-previous"] }],
+  approval: { ...plan.approval, rationale: "Version 1.0.0 initial approved plan", contentHash: "c".repeat(64) },
+  status: "retired",
+  retiredAt: "2026-08-09T09:00:00.000Z",
+  activatedAt: undefined,
+  activatedBy: undefined,
 };
 
 async function mockDashboard(page: Page, overview = dashboard) {
@@ -106,16 +120,35 @@ test("online Activities handles a malformed success envelope as a recoverable er
   expect(browserErrors).toEqual([]);
 });
 
-test("online Plan and Calendar are read-only at desktop and mobile widths", async ({ page }) => {
-  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: plan }) }));
-  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: [plan] } }) }));
+test("online Plan selects an approved version while Calendar remains prescription-safe", async ({ page }) => {
+  let active: Record<string, unknown> = plan;
+  let history: Record<string, unknown>[] = [plan, previousPlan];
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: active }) }));
+  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: history } }) }));
+  await page.route("**/api/v1/coaching/plans/plan-previous/activate", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().postDataJSON()).toEqual({ expectedActivePlanId: "plan-a" });
+    const { retiredAt: _retiredAt, ...previousBody } = previousPlan;
+    const { activatedAt: _activatedAt, activatedBy: _activatedBy, ...activeBody } = plan;
+    const selected = { ...previousBody, revision: 3, status: "active", activatedAt: "2026-08-10T13:00:00.000Z", activatedBy: "user" };
+    const retired = { ...activeBody, revision: 3, status: "retired", retiredAt: "2026-08-10T13:00:00.000Z" };
+    active = selected;
+    history = [retired, selected];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { activePlan: selected, retiredPlan: retired, reused: false } }) });
+  });
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { stale: { isStale: false } } }) }));
   await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { from: "2026-08-10", to: "2026-08-16", sessions: [{ ...plan.workouts[0], prescribedDate: "2026-08-10", effectiveDate: "2026-08-10", originalDate: "2026-08-10", status: "upcoming", revision: 2, warnings: [] }] } }) }));
 
   await page.goto("/dashboard/plan");
-  await expect(page.getByText("Online read-only")).toBeVisible();
+  await expect(page.getByText("Online plan control")).toBeVisible();
+  await expect(page.getByText("Coaching version 1.1.0").first()).toBeVisible();
   await expect(page.getByText("Cloud easy run")).toBeVisible();
   await expect(page.getByRole("button", { name: /Create a plan/u })).toHaveCount(0);
+  await page.getByText("Coaching version 1.0.0").click();
+  await page.getByRole("button", { name: "Make this approved plan active" }).click();
+  await expect(page.getByRole("heading", { name: "Make coaching version 1.0.0 active?" })).toBeVisible();
+  await page.getByRole("button", { name: "Make active" }).click();
+  await expect(page.getByText("Coaching version 1.0.0 is now active. Today and Calendar use this approved version.")).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/dashboard/calendar?date=2026-08-10");

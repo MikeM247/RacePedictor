@@ -5,6 +5,7 @@ import {
   PrismaCloudDashboardRepository,
   PrismaOnlineStatusRepository,
   PrismaSyncChangeRepository,
+  PrismaTrainingPlanProjectionActivator,
 } from "../../../../packages/db/src/cloud/index.js";
 import { assertServerRuntime } from "./server-runtime.ts";
 
@@ -17,6 +18,7 @@ function buildComposition() {
   return Object.freeze({
     activities: new PrismaCloudActivityRepository({ prisma }),
     coaching: new PrismaCloudCoachingRepository({ prisma }),
+    planActivation: new PrismaTrainingPlanProjectionActivator({ prisma }),
     dashboard: new PrismaCloudDashboardRepository({ prisma }),
     status: new PrismaOnlineStatusRepository({ prisma }),
     changes: new PrismaSyncChangeRepository({ prisma }),

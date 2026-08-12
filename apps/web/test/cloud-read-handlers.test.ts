@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { trainingPlanSchema } from "../../../packages/core/src/contracts/coaching.ts";
+import { buildActorContext } from "../../../packages/core/src/contracts/auth.ts";
 import { ApiHttpError } from "../lib/server/api-response.ts";
+import { TrainingPlanActivationError } from "../../../packages/db/src/cloud/index.js";
 import { createSyntheticTestActor } from "../lib/server/auth.ts";
 import {
   handleCloudActivities,
@@ -9,6 +11,7 @@ import {
   handleCloudCalendar,
   handleCloudOnlineStatus,
   handleCloudPlan,
+  handleCloudPlanActivation,
   handleCloudPlanHistory,
   handleCloudSyncChanges,
   handleCloudToday,
@@ -20,8 +23,18 @@ const security: SensitiveRouteContext = {
   mode: "authenticated",
   actor: createSyntheticTestActor("owner-a", ["athlete-a"]),
 };
+const ownerSecurity: SensitiveRouteContext = {
+  mode: "authenticated",
+  actor: buildActorContext({
+    userId: "owner-a",
+    permittedAthleteIds: ["athlete-a"],
+    activeAthleteId: "athlete-a",
+    requestId: "request-plan-activation",
+    credentialKind: "session",
+  }),
+};
 const now = new Date("2026-08-10T06:00:00.000Z");
-const plan = trainingPlanSchema.parse({
+const parsedPlan = trainingPlanSchema.parse({
   id: "plan-a", athleteId: "athlete-a", goalId: "goal-a", goalRevision: 1, routineRevision: 1,
   version: 1, revision: 2, startsOn: "2026-08-10", endsOn: "2026-08-16", timezone: "Africa/Johannesburg",
   weeklyStructure: [{ weekStartsOn: "2026-08-10", focus: "Synthetic week", sessionIds: ["run-a"] }],
@@ -29,6 +42,15 @@ const plan = trainingPlanSchema.parse({
   contextArtifactId: "context-a", createdAt: "2026-08-09T08:00:00.000Z",
   approval: { goalRationale: "Synthetic rationale", rationale: "Synthetic rationale", summary: "Synthetic plan", assumptions: [], cautions: [], sourceHistoryFingerprint: "a".repeat(64), contentHash: "b".repeat(64) },
   status: "active", activatedAt: "2026-08-09T09:00:00.000Z", activatedBy: "user",
+});
+if (parsedPlan.status !== "active") throw new Error("Expected an active plan fixture");
+const plan = parsedPlan;
+const { activatedAt: _activatedAt, activatedBy: _activatedBy, ...activePlanBody } = plan;
+const retiredPlan = trainingPlanSchema.parse({
+  ...activePlanBody,
+  revision: 3,
+  status: "retired",
+  retiredAt: "2026-08-10T07:00:00.000Z",
 });
 
 test("cloud read handlers pass the authenticated athlete scope to every repository", async () => {
@@ -89,6 +111,40 @@ test("cloud coaching handlers reject invalid dates and missing foreign resources
   );
 });
 
+test("cloud plan activation is owner-scoped, validates optimistic state, and maps conflicts", async () => {
+  const scopes: string[] = [];
+  const composition = fakeComposition(scopes);
+  const response = await handleCloudPlanActivation(
+    ownerSecurity,
+    "plan-a",
+    new Request("http://localhost/api/v1/coaching/plans/plan-a/activate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expectedActivePlanId: "plan-b" }),
+    }),
+    () => composition,
+  );
+  assert.equal((await response.json()).data.activePlan.id, "plan-a");
+  assert.deepEqual(scopes, ["athlete-a"]);
+
+  const conflicting = fakeComposition([]);
+  conflicting.planActivation.activate = async () => {
+    throw new TrainingPlanActivationError("PLAN_ACTIVATION_CONFLICT", "conflict");
+  };
+  await assert.rejects(
+    () => handleCloudPlanActivation(
+      ownerSecurity,
+      "plan-a",
+      new Request("http://localhost/api/v1/coaching/plans/plan-a/activate", {
+        method: "POST",
+        body: JSON.stringify({ expectedActivePlanId: "plan-b" }),
+      }),
+      () => conflicting,
+    ),
+    (error: unknown) => error instanceof ApiHttpError && error.status === 409 && error.code === "CONFLICT",
+  );
+});
+
 function fakeComposition(scopes: string[]): CloudReadComposition {
   const record = (scope: { athleteId: string }) => scopes.push(scope.athleteId);
   return {
@@ -123,6 +179,14 @@ function fakeComposition(scopes: string[]): CloudReadComposition {
       getActivePlan: async (scope: { athleteId: string }) => { record(scope); return scope.athleteId === "athlete-a" ? plan : null; },
       listHistory: async (scope: { athleteId: string }) => { record(scope); return scope.athleteId === "athlete-a" ? [plan] : []; },
       findPlan: async (scope: { athleteId: string }, planId: string) => { record(scope); return scope.athleteId === "athlete-a" && planId === plan.id ? plan : null; },
+    },
+    planActivation: {
+      activate: async (scope: { athleteId: string }, planId: string, expectedActivePlanId: string | null) => {
+        record(scope);
+        assert.equal(planId, "plan-a");
+        assert.equal(expectedActivePlanId, "plan-b");
+        return { activePlan: plan, retiredPlan, reused: false };
+      },
     },
   } as unknown as CloudReadComposition;
 }

@@ -1,5 +1,10 @@
 import { trainingPlanSchema } from "../../../core/src/contracts/coaching.ts";
 import { assertAthleteOwnership, assertAthleteScope } from "./athlete-scope.js";
+import {
+  appendPlanSyncChanges,
+  parsePlanProjection,
+  retireApprovedPlan,
+} from "./training-plan-projection-lifecycle.js";
 
 export class TrainingPlanProjectionConflictError extends Error {
   constructor() {
@@ -38,10 +43,27 @@ export class PrismaTrainingPlanProjectionPublisher {
         if (JSON.stringify(existing.plan) === JSON.stringify(plan)) return { plan, reused: true };
         throw new TrainingPlanProjectionConflictError();
       }
-      if (plan.status === "active") {
-        await transaction.trainingPlanProjection.updateMany({ where: { athleteId, active: true }, data: { active: false } });
-      }
       const occurredAt = this.#now();
+      let retiredPlan = null;
+      if (plan.status === "active") {
+        const activeRows = await transaction.trainingPlanProjection.findMany({
+          where: { athleteId, active: true },
+          orderBy: [{ planVersion: "desc" }, { planId: "desc" }],
+          take: 2,
+        });
+        if (activeRows.length > 1) throw new TrainingPlanProjectionConflictError();
+        if (activeRows[0]) {
+          try {
+            retiredPlan = retireApprovedPlan(parsePlanProjection(activeRows[0], athleteId), occurredAt);
+          } catch {
+            throw new TrainingPlanProjectionConflictError();
+          }
+          await transaction.trainingPlanProjection.update({
+            where: { id: activeRows[0].id },
+            data: { active: false, planStatus: "retired", plan: retiredPlan },
+          });
+        }
+      }
       await transaction.trainingPlanProjection.create({
         data: {
           athleteId,
@@ -54,24 +76,14 @@ export class PrismaTrainingPlanProjectionPublisher {
           publishedAt: occurredAt,
         },
       });
-      let cursor = await nextCursor(transaction, athleteId);
-      await transaction.syncChange.create({ data: {
-        athleteId, cursor, entityType: "plan", entityId: plan.id, operation: "upsert",
-        entityVersion: plan.revision, selectedFields: plan, occurredAt,
-      } });
-      for (const workout of plan.workouts) {
-        cursor += 1n;
-        await transaction.syncChange.create({ data: {
-          athleteId, cursor, entityType: "calendar_session", entityId: workout.id, operation: "upsert",
-          entityVersion: plan.revision, selectedFields: workout, occurredAt,
-        } });
-      }
+      await appendPlanSyncChanges(
+        transaction,
+        athleteId,
+        retiredPlan ? [retiredPlan, plan] : [plan],
+        occurredAt,
+        plan.id,
+      );
       return { plan, reused: false };
-    });
+    }, { isolationLevel: "Serializable" });
   }
-}
-
-async function nextCursor(transaction, athleteId) {
-  const latest = await transaction.syncChange.aggregate({ where: { athleteId }, _max: { cursor: true } });
-  return (latest._max.cursor ?? 0n) + 1n;
 }

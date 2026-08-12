@@ -1,12 +1,17 @@
 import { athleteScopeFor } from "../../../../packages/core/src/contracts/auth.ts";
 import { syncChangesQuerySchema } from "../../../../packages/core/src/contracts/sync.ts";
 import { projectOnlineStatus } from "../../../../packages/core/src/services/online-status.ts";
-import { calendarQueryRequestSchema, todayQueryRequestSchema } from "../../../../packages/core/src/contracts/coaching.ts";
+import {
+  activatePlanRequestSchema,
+  calendarQueryRequestSchema,
+  todayQueryRequestSchema,
+} from "../../../../packages/core/src/contracts/coaching.ts";
 import { projectCloudCalendar, projectCloudToday } from "../../../../packages/core/src/services/cloud-coaching.ts";
 import {
   CloudActivityCursorError,
   CloudCoachingProjectionError,
   CloudSyncCursorError,
+  TrainingPlanActivationError,
 } from "../../../../packages/db/src/cloud/index.js";
 import { ApiHttpError, success } from "./api-response.ts";
 import { getCloudReadComposition } from "./cloud-read-composition.ts";
@@ -135,6 +140,63 @@ export async function handleCloudPlan(
   const plan = await safelyReadCoaching(() => getComposition().coaching.findPlan(requireScope(security), normalizedPlanId));
   if (!plan) throw new ApiHttpError(404, "NOT_FOUND", "Approved plan version was not found");
   return success({ plan });
+}
+
+export async function handleCloudPlanActivation(
+  security: SensitiveRouteContext,
+  planId: string,
+  request: Request,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  if (scope.actor.credentialKind !== "session") {
+    throw new ApiHttpError(403, "FORBIDDEN", "A signed-in owner session is required");
+  }
+  let normalizedPlanId;
+  try {
+    normalizedPlanId = decodeURIComponent(planId).trim();
+  } catch {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "planId is invalid");
+  }
+  if (!normalizedPlanId) throw new ApiHttpError(400, "VALIDATION_ERROR", "planId is required");
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "Request body must be valid JSON");
+  }
+  const parsed = activatePlanRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "Plan activation request is invalid", parsed.error.issues.map((issue) => ({
+      path: issue.path.map(String),
+      message: issue.message,
+    })));
+  }
+
+  try {
+    return success(await getComposition().planActivation.activate(
+      scope,
+      normalizedPlanId,
+      parsed.data.expectedActivePlanId,
+    ));
+  } catch (error) {
+    if (error instanceof TrainingPlanActivationError) {
+      if (error.code === "PLAN_NOT_FOUND") {
+        throw new ApiHttpError(404, "NOT_FOUND", "Approved plan version was not found");
+      }
+      if (error.code === "SESSION_REQUIRED" || error.code === "PLAN_NOT_APPROVED") {
+        throw new ApiHttpError(403, "FORBIDDEN", "Only an approved plan can be selected by its signed-in owner");
+      }
+      if (error.code === "PLAN_ACTIVATION_CONFLICT") {
+        throw new ApiHttpError(409, "CONFLICT", "The active plan changed; reload before choosing again");
+      }
+      if (error.code === "INCONSISTENT_PROJECTION") {
+        throw new ApiHttpError(503, "UNAVAILABLE", "The approved plan projection is temporarily unavailable");
+      }
+    }
+    throw error;
+  }
 }
 
 export async function handleCloudCalendar(

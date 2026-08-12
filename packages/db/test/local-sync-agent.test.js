@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { InMemoryDeviceCredentialStore, WindowsDpapiCredentialStore } from "../src/device-credential-store.js";
 import { LocalCloudSyncAgent } from "../src/local-sync-agent.js";
+import { createLocalCoachingRepository } from "../src/local-coaching-repository.js";
 import { CLOUD_SYNC_END, CLOUD_SYNC_START, updateCloudSyncNote } from "../src/local-sync-note.js";
 import { LocalSyncProjectionRepository } from "../src/local-sync-projection.js";
 
@@ -117,6 +118,42 @@ test("corrections replace structured activity fields and tombstones remove the l
   assert.equal(fixture.projection.listEntities(athleteId)[0].operation, "delete");
 });
 
+test("approved cloud plan selection updates the local active plan and settled goal on the next pull", async () => {
+  const fixture = await localFixture();
+  const coaching = createLocalCoachingRepository({ databasePath: fixture.databasePath, athleteId, clock: () => new Date(NOW) });
+  const firstGoal = coaching.settleGoal(coaching.createGoal({ goalType: "race", title: "First goal", targetDate: "2026-09-06" }).id);
+  const firstPlan = coaching.activatePlan(coaching.saveValidatedPlan({
+    goalId: firstGoal.id,
+    title: "First approved plan",
+    startDate: "2026-08-10",
+    endDate: "2026-08-16",
+    workouts: [{ localDate: "2026-08-10", title: "First run", workoutType: "run", durationMinutes: 30 }],
+  }).id);
+  const secondGoal = coaching.settleGoal(coaching.createGoal({ goalType: "race", title: "Second goal", targetDate: "2026-10-04" }).id);
+  const secondPlan = coaching.activatePlan(coaching.saveValidatedPlan({
+    goalId: secondGoal.id,
+    title: "Second approved plan",
+    startDate: "2026-08-10",
+    endDate: "2026-08-16",
+    workouts: [{ localDate: "2026-08-11", title: "Second run", workoutType: "run", durationMinutes: 35 }],
+  }).id);
+  coaching.close();
+
+  const selectedAt = "2026-08-11T12:00:00.000Z";
+  fixture.projection.applyChanges(athleteId, [
+    change("1", "plan", secondPlan.id, 3, structuredPlan(secondPlan, "retired", selectedAt)),
+    change("2", "plan", firstPlan.id, 4, structuredPlan(firstPlan, "active", selectedAt)),
+  ]);
+
+  const database = new DatabaseSync(fixture.databasePath, { readOnly: true });
+  const activePlan = database.prepare("SELECT id, revision FROM coaching_plans WHERE athlete_id = ? AND lifecycle = 'active'").get(athleteId);
+  const settledGoal = database.prepare("SELECT id FROM coaching_goals WHERE athlete_id = ? AND lifecycle = 'settled' AND is_primary = 1").get(athleteId);
+  database.close();
+  assert.equal(activePlan.id, firstPlan.id);
+  assert.equal(activePlan.revision, 4);
+  assert.equal(settledGoal.id, firstGoal.id);
+});
+
 test("selected Second Brain publication sends only allow-listed structured fields while source references remain local", async () => {
   const fixture = await localFixture();
   let sent;
@@ -216,5 +253,29 @@ function activity(overrides = {}) {
     lapCount: 1, minElevationM: 10, maxElevationM: 60, paceVariability: null, hrDriftPct: null,
     hillDifficulty: null, dedupeHash: "dedupe-activity-a", createdAt: NOW, splits: [], routeSignature: null,
     ...overrides,
+  };
+}
+
+function structuredPlan(stored, status, changedAt) {
+  const workout = stored.workouts[0];
+  const active = status === "active";
+  return {
+    id: stored.id,
+    athleteId,
+    goalId: stored.goalId,
+    goalRevision: 1,
+    routineRevision: 1,
+    version: stored.version,
+    revision: active ? 4 : 3,
+    startsOn: stored.startDate,
+    endsOn: stored.endDate,
+    timezone: "Africa/Johannesburg",
+    weeklyStructure: [{ weekStartsOn: "2026-08-10", focus: "Approved week", sessionIds: [workout.id] }],
+    workouts: [{ id: workout.id, kind: "run", scheduledDate: workout.prescribedLocalDate, title: workout.title, purpose: "Approved purpose", prescription: "Follow the approved session.", cautions: [], durationMinutes: workout.durationMinutes }],
+    contextArtifactId: "context-a",
+    createdAt: stored.createdAt,
+    approval: { goalRationale: "Approved goal", rationale: "Approved plan", summary: "Approved plan", assumptions: [], cautions: [], sourceHistoryFingerprint: "a".repeat(64), contentHash: (active ? "b" : "c").repeat(64) },
+    status,
+    ...(active ? { activatedAt: changedAt, activatedBy: "user" } : { retiredAt: changedAt }),
   };
 }

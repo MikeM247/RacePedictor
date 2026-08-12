@@ -22,6 +22,7 @@ export { PrismaPairedDeviceRepository } from "./prisma-paired-device-repository.
 export { PrismaSecondBrainSnapshotRepository, SecondBrainSnapshotConflictError } from "./prisma-second-brain-snapshot-repository.js";
 export { CloudSyncCursorError, PrismaSyncChangeRepository } from "./prisma-sync-change-repository.js";
 export { PrismaTrainingPlanProjectionPublisher, TrainingPlanProjectionConflictError } from "./prisma-training-plan-projection-publisher.js";
+export { PrismaTrainingPlanProjectionActivator, TrainingPlanActivationError } from "./prisma-training-plan-projection-activator.js";
 export { PrismaOperationalUsageRepository } from "./prisma-operational-usage-repository.js";
 export { PrismaReconciliationScopeRepository } from "./prisma-reconciliation-scope-repository.js";
 export { PrismaIdentityRepository } from "./prisma-identity-repository.js";

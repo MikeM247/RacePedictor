@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { activityDetailSchema } from "../../core/src/contracts/activity.ts";
+import { trainingPlanSchema } from "../../core/src/contracts/coaching.ts";
 import { syncChangeSchema } from "../../core/src/contracts/sync.ts";
 import { createLocalSchema } from "./local-garmin-pipeline.js";
 import { openLocalDatabase } from "./local-database.js";
@@ -132,6 +133,7 @@ export class LocalSyncProjectionRepository {
     `).get(athleteId, change.entityType, change.entityId);
     if (existing && existing.revision > change.entityRevision) return;
     if (change.entityType === "activity") this.#applyActivity(database, athleteId, change);
+    if (change.entityType === "plan" && change.operation === "upsert") this.#applyPlan(database, athleteId, change);
     database.prepare(`
       INSERT INTO cloud_sync_entities (
         athlete_id, entity_type, entity_id, entity_revision, operation, payload_json, changed_at, applied_at
@@ -219,6 +221,53 @@ export class LocalSyncProjectionRepository {
       ON CONFLICT (athlete_id, cloud_activity_id) DO UPDATE SET
         local_activity_id = excluded.local_activity_id, dedupe_hash = excluded.dedupe_hash, updated_at = excluded.updated_at
     `).run(athleteId, activity.id, localId, activity.dedupeHash, this.#now().toISOString());
+  }
+
+  #applyPlan(database, athleteId, change) {
+    const parsed = trainingPlanSchema.safeParse(change.payload);
+    if (!parsed.success) return;
+    const plan = parsed.data;
+    if (plan.athleteId !== athleteId || plan.id !== change.entityId || plan.revision !== change.entityRevision) {
+      throw new Error("Approved plan projection crosses athlete scope");
+    }
+    const localPlan = database.prepare(`
+      SELECT id, goal_id AS goalId, version, revision
+      FROM coaching_plans WHERE athlete_id = ? AND id = ?
+    `).get(athleteId, plan.id);
+    if (!localPlan || localPlan.version !== plan.version || localPlan.goalId !== plan.goalId) return;
+    if (localPlan.revision > plan.revision) return;
+
+    if (plan.status === "active") {
+      database.prepare(`
+        UPDATE coaching_goals
+        SET lifecycle = 'superseded', is_primary = 0, superseded_at = ?, updated_at = ?
+        WHERE athlete_id = ? AND lifecycle = 'settled' AND is_primary = 1 AND id <> ?
+      `).run(plan.activatedAt, plan.activatedAt, athleteId, plan.goalId);
+      database.prepare(`
+        UPDATE coaching_goals
+        SET lifecycle = 'settled', is_primary = 1, settled_at = COALESCE(settled_at, ?),
+          superseded_at = NULL, updated_at = ?
+        WHERE athlete_id = ? AND id = ?
+      `).run(plan.activatedAt, plan.activatedAt, athleteId, plan.goalId);
+      database.prepare(`
+        UPDATE coaching_plans
+        SET lifecycle = 'superseded', superseded_at = ?, updated_at = ?
+        WHERE athlete_id = ? AND lifecycle = 'active' AND id <> ?
+      `).run(plan.activatedAt, plan.activatedAt, athleteId, plan.id);
+      database.prepare(`
+        UPDATE coaching_plans
+        SET lifecycle = 'active', revision = ?, activated_at = ?, superseded_at = NULL, updated_at = ?
+        WHERE athlete_id = ? AND id = ?
+      `).run(plan.revision, plan.activatedAt, plan.activatedAt, athleteId, plan.id);
+      return;
+    }
+    if (plan.status === "retired") {
+      database.prepare(`
+        UPDATE coaching_plans
+        SET lifecycle = 'superseded', revision = ?, superseded_at = ?, updated_at = ?
+        WHERE athlete_id = ? AND id = ?
+      `).run(plan.revision, plan.retiredAt, plan.retiredAt, athleteId, plan.id);
+    }
   }
 
   #read(action) {

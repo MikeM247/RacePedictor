@@ -6,6 +6,7 @@ import {
   buildActorContext,
 } from "../src/contracts/auth.ts";
 import { activityDetailSchema, sourceTypeSchema } from "../src/contracts/activity.ts";
+import { activatePlanRequestSchema } from "../src/contracts/coaching.ts";
 import {
   providerConnectionStatusSchema,
   providerStatusApiResponseSchema,
@@ -105,6 +106,17 @@ test("actor contracts fail closed for duplicate grants and an ungranted active a
   }).success, false);
   assert.equal(actorContextSchema.safeParse({ ...base, activeAthleteId: "athlete_002" }).success, false);
   assert.equal(actorContextSchema.safeParse({ ...base, isAdministrator: true }).success, false);
+});
+
+test("plan activation requires an explicit optimistic active-plan snapshot", () => {
+  assert.deepEqual(activatePlanRequestSchema.parse({ expectedActivePlanId: "plan_001" }), {
+    expectedActivePlanId: "plan_001",
+  });
+  assert.deepEqual(activatePlanRequestSchema.parse({ expectedActivePlanId: null }), {
+    expectedActivePlanId: null,
+  });
+  assert.equal(activatePlanRequestSchema.safeParse({}).success, false);
+  assert.equal(activatePlanRequestSchema.safeParse({ expectedActivePlanId: "plan_001", force: true }).success, false);
 });
 
 test("Second Brain selectedFields exactly equal the strict context sections", () => {

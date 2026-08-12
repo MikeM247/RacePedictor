@@ -79,7 +79,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("second-brain-context/snapshots/route.ts", apiRoot).href,
   ]);
   const internalRoutes = new Set([new URL("internal/reconciliation/route.ts", apiRoot).href]);
-  assert.equal(routeFiles.length, 40, "route inventory changed; classify every new route explicitly");
+  assert.equal(routeFiles.length, 41, "route inventory changed; classify every new route explicitly");
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;

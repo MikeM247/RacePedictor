@@ -37,6 +37,25 @@ function unwrap(value: unknown): JsonRecord {
   return record.data && typeof record.data === "object" ? asRecord(record.data) : record;
 }
 
+function coachingContentVersion(plan: JsonRecord | null): string | null {
+  if (!plan) return null;
+  const approval = asRecord(plan.approval);
+  const candidates = [plan.contentVersion, approval.summary, approval.rationale, approval.goalRationale, plan.id];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const labelled = candidate.match(/\b(?:coaching\s+)?(?:plan\s+)?version\s+v?(\d+\.\d+(?:\.\d+)?)\b/iu);
+    if (labelled) return labelled[1];
+    const artifact = candidate.match(/@(\d+\.\d+(?:\.\d+)?)\b/u);
+    if (artifact) return artifact[1];
+  }
+  return null;
+}
+
+function coachingPlanLabel(plan: JsonRecord | null) {
+  const contentVersion = coachingContentVersion(plan);
+  return contentVersion ? `Coaching version ${contentVersion}` : `Approved record ${String(plan?.version ?? 1)}`;
+}
+
 async function apiRequest(url: string, init?: RequestInit): Promise<JsonRecord> {
   const response = await fetch(url, init);
   const body = await response.json().catch(() => ({}));
@@ -142,6 +161,9 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   const [planHistory, setPlanHistory] = useState<JsonRecord[]>([]);
   const [historyState, setHistoryState] = useState<RequestState>("loading");
   const [historyMessage, setHistoryMessage] = useState<string>();
+  const [activationCandidate, setActivationCandidate] = useState<JsonRecord | null>(null);
+  const [activationState, setActivationState] = useState<RequestState>("idle");
+  const [activationMessage, setActivationMessage] = useState<string>();
   const creationHeadingRef = useRef<HTMLHeadingElement>(null);
   const proposalHeadingRef = useRef<HTMLHeadingElement>(null);
   const shouldFocusCreation = useRef(false);
@@ -195,6 +217,37 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
       setHistoryState("success"); setHistoryMessage(undefined);
     } catch (error) {
       setHistoryState("error"); setHistoryMessage(error instanceof Error ? error.message : "Plan history could not be loaded.");
+    }
+  }
+
+  async function confirmPlanActivation() {
+    if (!activationCandidate) return;
+    const planId = String(activationCandidate.id ?? "");
+    if (!planId) {
+      setActivationCandidate(null);
+      setActivationState("error");
+      setActivationMessage("This approved plan has no identifier and cannot be selected.");
+      return;
+    }
+    setActivationState("loading");
+    setActivationMessage(`Making ${coachingPlanLabel(activationCandidate).toLowerCase()} active…`);
+    try {
+      const response = await apiRequest(`/api/v1/coaching/plans/${encodeURIComponent(planId)}/activate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedActivePlanId: activePlan?.id ?? null }),
+      });
+      const selected = asRecord(response.activePlan);
+      setActivePlan(selected);
+      await loadPlanHistory();
+      setActivationState("success");
+      setActivationMessage(`${coachingPlanLabel(selected)} is now active. Today and Calendar use this approved version.`);
+      setActivationCandidate(null);
+    } catch (error) {
+      setActivationState("error");
+      setActivationMessage(error instanceof Error ? error.message : "The approved plan could not be made active.");
+      setActivationCandidate(null);
+      await loadPlanPage();
     }
   }
 
@@ -283,10 +336,11 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
     ? `${Number(goalTarget.distanceMeters ?? 0) / 1000} km by ${String(goalTarget.targetDate ?? "unspecified date")}${goalTarget.targetTimeSeconds ? ` in ${String(goalTarget.targetTimeSeconds)} seconds` : ""}`
     : `${String(goalTarget.metric ?? "consistency")} ${String(goalTarget.threshold ?? "")} from ${String(goalTarget.startsOn ?? "—")} to ${String(goalTarget.endsOn ?? "—")}`;
   const creationActionLabel = proposal ? "Review saved draft" : activePlan ? "Create a new plan with Codex" : "Create a plan with Codex";
-  return <CoachShell page="plan" title="Plan" subtitle={onlineMode ? "Read-only view of explicitly approved structured plans" : "Set your goal and explicitly approve each plan version"} meta={activePlan ? `Active · v${String(activePlan.version ?? 1)}` : "No active plan"}>
+  const activeContentVersion = coachingContentVersion(activePlan);
+  return <CoachShell page="plan" title="Plan" subtitle={onlineMode ? "Choose which explicitly approved structured plan is active" : "Set your goal and explicitly approve each plan version"} meta={activePlan ? `Active · ${activeContentVersion ?? `record ${String(activePlan.version ?? 1)}`}` : "No active plan"}>
     <section className="coach-panel coach-panel--plan-focus" aria-labelledby="active-plan-heading">
-      <div className="coach-panel-heading plan-focus-heading"><div><p className="eyebrow">Your training focus</p><h3 id="active-plan-heading">Active plan</h3></div>{onlineMode ? <span className="status-chip">Online read-only</span> : <button className="button button-primary" type="button" aria-controls="plan-creation-workflow" aria-expanded={creationOpen} onClick={openPlanCreation}>{creationActionLabel}</button>}</div>
-      {activePlan ? <><dl className="summary-list active-plan-summary"><div><dt>Status</dt><dd>Active approved version</dd></div><div><dt>Version</dt><dd>Plan v{String(activePlan.version ?? 1)}</dd></div><div><dt>Date range</dt><dd>{String(activePlan.startsOn ?? "—")} to {String(activePlan.endsOn ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{activeWorkouts.length}</dd></div><div><dt>Timezone</dt><dd>{String(activePlan.timezone ?? timezoneDefault)}</dd></div></dl><p>{onlineMode ? "This is the last approved structured plan synced by your local device. It has not been adapted online." : "Follow this approved version in Calendar. Creating a replacement never changes it until you review and approve the new draft."}</p><Link className="text-link" href="/dashboard/calendar">Open active plan in Calendar</Link></> : <div className="plan-focus-empty"><p>{onlineMode ? "No approved plan has been synced yet. Your local coaching workflow remains the authority for creating and approving plans." : "No plan is active yet. Start with Codex, then return here to review and approve the proposal before it affects Today or Calendar."}</p></div>}
+      <div className="coach-panel-heading plan-focus-heading"><div><p className="eyebrow">Your training focus</p><h3 id="active-plan-heading">Active plan</h3></div>{onlineMode ? <span className="status-chip">Online plan control</span> : <button className="button button-primary" type="button" aria-controls="plan-creation-workflow" aria-expanded={creationOpen} onClick={openPlanCreation}>{creationActionLabel}</button>}</div>
+      {activePlan ? <><dl className="summary-list active-plan-summary"><div><dt>Status</dt><dd>Active approved version</dd></div><div><dt>Coaching version</dt><dd>{activeContentVersion ?? "Not supplied"}</dd></div><div><dt>Approval record</dt><dd>{String(activePlan.version ?? 1)}</dd></div><div><dt>Date range</dt><dd>{String(activePlan.startsOn ?? "—")} to {String(activePlan.endsOn ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{activeWorkouts.length}</dd></div><div><dt>Timezone</dt><dd>{String(activePlan.timezone ?? timezoneDefault)}</dd></div></dl><p>{onlineMode ? "This plan was explicitly approved before publication. Selecting another approved version changes Today and Calendar, but does not alter any workout prescription." : "Follow this approved version in Calendar. Creating a replacement never changes it until you review and approve the new draft."}</p><Link className="text-link" href="/dashboard/calendar">Open active plan in Calendar</Link></> : <div className="plan-focus-empty"><p>{onlineMode ? "No approved plan has been synced yet. Your local coaching workflow remains the authority for creating and approving plans." : "No plan is active yet. Start with Codex, then return here to review and approve the proposal before it affects Today or Calendar."}</p></div>}
       {proposal ? <p className="plan-draft-note" role="status">A newer saved draft is ready for review. Your active plan remains unchanged until you explicitly approve it.</p> : null}
     </section>
     {!onlineMode && creationOpen ? <div className="plan-creation-workflow" id="plan-creation-workflow">
@@ -323,23 +377,28 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
     </section>
     </div> : null}
     <section className="coach-panel" aria-labelledby="plan-history-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Immutable record</p><h3 id="plan-history-heading">Approved plan version history</h3></div><span className="status-chip">{planHistory.length} version{planHistory.length === 1 ? "" : "s"}</span></div>
+      {onlineMode ? <p className="quiet-copy">Open any inactive approved version below and choose <strong>Make this approved plan active</strong>. A new coaching version appears here only after its normal approval and publication.</p> : null}
+      <StatusLine state={activationState} message={activationMessage} />
       {historyState === "loading" ? <StatusLine state="loading" message={historyMessage} /> : null}
       {historyState === "error" ? <div className="history-error" role="alert"><p>{historyMessage}</p><button className="button button-secondary" type="button" onClick={() => void loadPlanHistory()}>Retry version history</button></div> : null}
       {historyState === "success" && planHistory.length === 0 ? <p className="quiet-copy">No approved plan versions yet. Imported drafts never appear here before approval.</p> : null}
-      {historyState === "success" && planHistory.length > 0 ? <div className="plan-history-list">{planHistory.map((plan) => {
+      {historyState === "success" && planHistory.length > 0 ? <div className="plan-history-list">{planHistory.map((plan, index) => {
         const approval = asRecord(plan.approval);
-        const review = asRecord(approval.review);
         const workouts = Array.isArray(plan.workouts) ? plan.workouts : [];
         const isActive = plan.status === "active" || plan.id === activePlan?.id;
+        const isLatestApproved = index === 0;
+        const contentVersion = coachingContentVersion(plan);
         return <details className="plan-version" key={String(plan.id)} open={isActive}>
-          <summary><span><strong>Plan v{String(plan.version ?? 1)}</strong><small>{String(plan.startsOn ?? "—")} to {String(plan.endsOn ?? "—")}</small></span><span className={`status-chip${isActive ? " status-chip--active" : ""}`}>{isActive ? "Active" : "Retired"}</span></summary>
-          <div className="plan-version-details"><dl className="summary-list"><div><dt>Status</dt><dd>{isActive ? "Active approved version" : "Retired approved version"}</dd></div><div><dt>Source decision</dt><dd>User approved proposal {String(plan.id ?? "—")}</dd></div><div><dt>Replaced plan</dt><dd>{String(review.comparedActivePlanId ?? "First approved version")}</dd></div><div><dt>Goal snapshot</dt><dd>{String(plan.goalId ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{workouts.length}</dd></div></dl>
+          <summary><span><strong>{contentVersion ? `Coaching version ${contentVersion}` : `Approved record ${String(plan.version ?? 1)}`}</strong><small>Approval record {String(plan.version ?? 1)} · {String(plan.startsOn ?? "—")} to {String(plan.endsOn ?? "—")}</small></span><span className={`status-chip${isActive ? " status-chip--active" : ""}`}>{isActive ? "Active" : isLatestApproved ? "Latest approved" : "Retired"}</span></summary>
+          <div className="plan-version-details"><dl className="summary-list"><div><dt>Status</dt><dd>{isActive ? "Active approved version" : "Available approved version"}</dd></div><div><dt>Coaching version</dt><dd>{contentVersion ?? "Not supplied"}</dd></div><div><dt>Approval record</dt><dd>{String(plan.version ?? 1)}</dd></div><div><dt>Goal snapshot</dt><dd>{String(plan.goalId ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{workouts.length}</dd></div></dl>
             <p><strong>Approved rationale:</strong> {String(approval.rationale ?? "No rationale supplied.")}</p>
+            {onlineMode && !isActive ? <div className="coach-actions"><button className="button button-primary" type="button" disabled={activationState === "loading"} onClick={() => setActivationCandidate(plan)}>Make this approved plan active</button><span className="quiet-copy">No session prescription will be changed.</span></div> : null}
             <div className="plan-history-sessions">{workouts.map((value, index) => { const workout = asRecord(value); return <article key={String(workout.id ?? index)}><h4>{String(workout.title ?? "Approved session")}</h4><p>{String(workout.prescription ?? "No prescription supplied.")}</p><small>{String(workout.scheduledDate ?? "—")} · {String(workout.durationMinutes ?? "—")} min</small></article>; })}</div>
           </div>
         </details>;
       })}</div> : null}
     </section>
+    {activationCandidate ? <div className="coach-dialog-backdrop"><section className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="plan-activation-title"><h3 id="plan-activation-title">Make {coachingPlanLabel(activationCandidate).toLowerCase()} active?</h3><p>{activePlan ? `This will retire ${coachingPlanLabel(activePlan).toLowerCase()} and make the selected approved plan the source for Today and Calendar.` : "This will make the selected approved plan the source for Today and Calendar."} The approved workouts will not be edited or adapted.</p><div className="coach-actions"><button autoFocus className="button button-primary" type="button" disabled={activationState === "loading"} onClick={() => void confirmPlanActivation()}>{activationState === "loading" ? "Making active…" : "Make active"}</button><button className="button button-secondary" type="button" disabled={activationState === "loading"} onClick={() => setActivationCandidate(null)}>Cancel</button></div></section></div> : null}
     {decision ? <div className="coach-dialog-backdrop"><section className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="plan-decision-title"><h3 id="plan-decision-title">{decision === "approve" ? "Activate this plan version?" : "Reject this draft?"}</h3><p>{decision === "approve" ? activePlan ? `This explicitly settles the proposed goal, retires active plan v${String(activePlan.version ?? 1)}, and activates the new immutable version.` : "This explicitly settles the proposed goal and makes this immutable plan version active." : "The draft will be durably rejected. Your current active goal and plan, if any, will not change."}</p>{decision === "approve" && historyIsStale ? <label className="checkbox-field"><input autoFocus type="checkbox" checked={acknowledgeStale} onChange={(event) => setAcknowledgeStale(event.target.checked)} /><span>I reviewed the stale-history warning and explicitly approve using this proposal.</span></label> : null}<div className="coach-actions"><button autoFocus={!historyIsStale} disabled={decision === "approve" && historyIsStale && !acknowledgeStale} className={decision === "approve" ? "button button-primary" : "button button-secondary"} type="button" onClick={() => void confirmDecision()}>Confirm {decision}</button><button className="button button-secondary" type="button" onClick={() => { setDecision(null); setAcknowledgeStale(false); }}>Cancel</button></div></section></div> : null}
   </CoachShell>;
 }

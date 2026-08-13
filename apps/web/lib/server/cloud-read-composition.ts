@@ -2,6 +2,7 @@ import {
   getCloudPrismaClient,
   PrismaCloudActivityRepository,
   PrismaCloudCoachingRepository,
+  PrismaCalendarSessionAmendmentRepository,
   PrismaCloudDashboardRepository,
   PrismaOnlineStatusRepository,
   PrismaSyncChangeRepository,
@@ -18,6 +19,7 @@ function buildComposition() {
   return Object.freeze({
     activities: new PrismaCloudActivityRepository({ prisma }),
     coaching: new PrismaCloudCoachingRepository({ prisma }),
+    calendarSessions: new PrismaCalendarSessionAmendmentRepository({ prisma }),
     planActivation: new PrismaTrainingPlanProjectionActivator({ prisma }),
     dashboard: new PrismaCloudDashboardRepository({ prisma }),
     status: new PrismaOnlineStatusRepository({ prisma }),

@@ -3,16 +3,23 @@ import { syncChangesQuerySchema } from "../../../../packages/core/src/contracts/
 import { projectOnlineStatus } from "../../../../packages/core/src/services/online-status.ts";
 import {
   activatePlanRequestSchema,
+  calendarEditHttpRequestSchema,
   calendarQueryRequestSchema,
+  calendarRouteDataSchema,
+  coachingReviewContextRouteDataSchema,
+  plannedWorkoutSchema,
+  todayRouteDataSchema,
   todayQueryRequestSchema,
 } from "../../../../packages/core/src/contracts/coaching.ts";
-import { projectCloudCalendar, projectCloudToday } from "../../../../packages/core/src/services/cloud-coaching.ts";
+import { projectCloudToday } from "../../../../packages/core/src/services/cloud-coaching.ts";
 import {
   CloudActivityCursorError,
   CloudCoachingProjectionError,
   CloudSyncCursorError,
+  CalendarSessionAmendmentError,
   TrainingPlanActivationError,
 } from "../../../../packages/db/src/cloud/index.js";
+import type { CloudCalendarSession } from "../../../../packages/db/src/cloud/index.js";
 import { ApiHttpError, success } from "./api-response.ts";
 import { getCloudReadComposition } from "./cloud-read-composition.ts";
 import type { SensitiveRouteContext } from "./route-security.ts";
@@ -208,8 +215,8 @@ export async function handleCloudCalendar(
   const parsed = calendarQueryRequestSchema.safeParse({ from: params.get("from"), to: params.get("to") });
   if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Calendar date range is invalid");
   const scope = requireScope(security);
-  const plan = await safelyReadCoaching(() => getComposition().coaching.getActivePlan(scope));
-  return success(projectCloudCalendar({ plan, ...parsed.data }));
+  const sessions = await safelyReadCoaching(() => getComposition().calendarSessions.listActiveCalendar(scope, parsed.data));
+  return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions }));
 }
 
 export async function handleCloudToday(
@@ -223,7 +230,93 @@ export async function handleCloudToday(
   if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Today date is invalid");
   const scope = requireScope(security);
   const plan = await safelyReadCoaching(() => getComposition().coaching.getActivePlan(scope));
-  return success(projectCloudToday({ athleteId: scope.athleteId, plan, date: parsed.data.date, generatedAt: now() }));
+  if (!plan) return success(projectCloudToday({ athleteId: scope.athleteId, plan, date: parsed.data.date, generatedAt: now() }));
+  const allSessions = await safelyReadCoaching(() => getComposition().calendarSessions.listActiveCalendar(scope, {
+    from: plan.startsOn,
+    to: plan.endsOn,
+  }));
+  const effectivePlan = {
+    ...plan,
+    workouts: allSessions.map(toEffectiveWorkout),
+  };
+  const projected = projectCloudToday({ athleteId: scope.athleteId, plan: effectivePlan, date: parsed.data.date, generatedAt: now() });
+  const effectiveSession = allSessions.find((session: { effectiveDate: string }) => session.effectiveDate === projected.date) ?? null;
+  if (!effectiveSession) return success(projected);
+  const state = effectiveSession.status === "skipped"
+    ? "skipped"
+    : projected.state;
+  return success(todayRouteDataSchema.parse({
+    ...projected,
+    session: effectiveSession,
+    sessionId: effectiveSession.id,
+    state,
+    status: state,
+    message: state === "skipped"
+      ? `${effectiveSession.title} is explicitly skipped. Its approved prescription remains unchanged.`
+      : effectiveSession.amendments.length > 0
+        ? "Follow the latest athlete-approved effective session; the approved source prescription remains available for review."
+        : projected.message,
+    localCue: effectiveSession.amendments.length > 0
+      ? "This session reflects a reasoned manual change and has not been reviewed or adapted by AI."
+      : projected.localCue,
+  }));
+}
+
+export async function handleCloudSessionAmendment(
+  security: SensitiveRouteContext,
+  sessionId: string,
+  request: Request,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  const body = await readJson(request);
+  const parsed = calendarEditHttpRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "Session amendment request is invalid", parsed.error.issues.map((issue) => ({
+      path: issue.path.map(String), message: issue.message,
+    })));
+  }
+  const idempotencyKey = request.headers.get("idempotency-key")?.trim() || scope.actor.requestId;
+  const input = {
+    operation: parsed.data.operation,
+    expectedRevision: parsed.data.expectedRevision,
+    reason: parsed.data.reason,
+    idempotencyKey,
+    changes: parsed.data.operation === "amend"
+      ? parsed.data.changes
+      : parsed.data.operation === "reschedule" ? { effectiveDate: parsed.data.date } : {},
+  };
+  try {
+    return success(await getComposition().calendarSessions.amend(scope, decodeId(sessionId), input), 201);
+  } catch (error) {
+    throw mapAmendmentError(error);
+  }
+}
+
+export async function handleCloudSessionAmendmentHistory(
+  security: SensitiveRouteContext,
+  sessionId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  try {
+    return success({ amendments: await getComposition().calendarSessions.listHistory(scope, decodeId(sessionId)) });
+  } catch (error) {
+    throw mapAmendmentError(error);
+  }
+}
+
+export async function handleCloudCoachingReviewContext(
+  security: SensitiveRouteContext,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  try {
+    const context = await getComposition().calendarSessions.getReviewContext(scope);
+    return success(coachingReviewContextRouteDataSchema.parse({ context }));
+  } catch (error) {
+    throw mapAmendmentError(error);
+  }
 }
 
 async function safelyReadCoaching<T>(read: () => Promise<T>) {
@@ -242,4 +335,54 @@ function requireScope(security: SensitiveRouteContext) {
     throw new ApiHttpError(503, "CONFIGURATION_ERROR", "Cloud data is unavailable in local mode");
   }
   return athleteScopeFor(security.actor);
+}
+
+function requireOwnerScope(security: SensitiveRouteContext) {
+  const scope = requireScope(security);
+  if (scope.actor.credentialKind !== "session") {
+    throw new ApiHttpError(403, "FORBIDDEN", "A signed-in owner session is required");
+  }
+  return scope;
+}
+
+function decodeId(value: string) {
+  try {
+    const decoded = decodeURIComponent(value).trim();
+    if (!decoded) throw new Error();
+    return decoded;
+  } catch {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "sessionId is invalid");
+  }
+}
+
+async function readJson(request: Request) {
+  try { return await request.json(); }
+  catch { throw new ApiHttpError(400, "VALIDATION_ERROR", "Request body must be valid JSON"); }
+}
+
+function mapAmendmentError(error: unknown) {
+  if (!(error instanceof CalendarSessionAmendmentError)) return error;
+  if (error.code === "SESSION_NOT_FOUND") return new ApiHttpError(404, "NOT_FOUND", "Active plan session was not found");
+  if (["REVISION_CONFLICT", "IDEMPOTENCY_CONFLICT"].includes(error.code)) {
+    return new ApiHttpError(409, "CONFLICT", "The session changed; reload and review the latest values");
+  }
+  if (error.code === "SESSION_REQUIRED") return new ApiHttpError(403, "FORBIDDEN", "A signed-in owner session is required");
+  if (error.code === "INCONSISTENT_PROJECTION") return new ApiHttpError(503, "UNAVAILABLE", "The active calendar projection is unavailable");
+  return new ApiHttpError(400, "VALIDATION_ERROR", error.message);
+}
+
+function toEffectiveWorkout(session: CloudCalendarSession) {
+  return plannedWorkoutSchema.parse({
+    id: session.id,
+    kind: session.kind,
+    scheduledDate: session.effectiveDate,
+    ...(session.startTime === undefined ? {} : { startTime: session.startTime }),
+    title: session.title,
+    purpose: session.purpose,
+    prescription: session.prescription,
+    cautions: session.cautions,
+    durationMinutes: session.durationMinutes,
+    ...(session.distanceMeters === undefined ? {} : { distanceMeters: session.distanceMeters }),
+    ...(session.intensityRpe === undefined ? {} : { intensityRpe: session.intensityRpe }),
+  });
 }

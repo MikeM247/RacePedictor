@@ -162,6 +162,91 @@ test("all migrations apply to PostgreSQL and enforce tenant-safe cloud persisten
     `);
     assert.deepEqual(rolledBackChange.rows, []);
 
+    const prescribedSession = {
+      id: "run_concurrent",
+      kind: "run",
+      scheduledDate: "2026-08-20",
+      title: "Easy run",
+      purpose: "Aerobic base",
+      prescription: "Run easily for 30 minutes.",
+      cautions: [],
+      durationMinutes: 30,
+    };
+    await database.query(`
+      INSERT INTO "training_plan_projections" (
+        "id", "athleteId", "planId", "planVersion", "planStatus", "active",
+        "contentHash", "plan", "publishedAt", "updatedAt"
+      ) VALUES (
+        'projection_concurrent', 'athlete_legacy', 'plan_concurrent', 1, 'active', true,
+        $1, $2::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    `, [
+      "d".repeat(64),
+      JSON.stringify({ id: "plan_concurrent", revision: 2, workouts: [prescribedSession] }),
+    ]);
+    await database.query(`
+      INSERT INTO "calendar_session_projections" (
+        "id", "athleteId", "planId", "sessionId", "prescribedSession",
+        "effectiveSession", "status", "revision"
+      ) VALUES (
+        'session_concurrent', 'athlete_legacy', 'plan_concurrent', 'run_concurrent',
+        $1::jsonb, $1::jsonb, 'upcoming', 2
+      )
+    `, [
+      JSON.stringify(prescribedSession),
+    ]);
+
+    const attemptConcurrentAmendment = (id, title, reason) => database.query(`
+      WITH updated AS (
+        UPDATE "calendar_session_projections"
+        SET "effectiveSession" = jsonb_set("effectiveSession", '{title}', to_jsonb($2::text), true),
+            "revision" = "revision" + 1,
+            "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "athleteId" = 'athlete_legacy'
+          AND "planId" = 'plan_concurrent'
+          AND "sessionId" = 'run_concurrent'
+          AND "revision" = 2
+        RETURNING "athleteId", "planId", "sessionId", "revision", "effectiveSession"
+      )
+      INSERT INTO "calendar_session_amendments" (
+        "id", "athleteId", "planId", "sessionId", "revision", "operation", "reason",
+        "changedFields", "beforeValues", "afterValues", "actorUserId", "actorKind",
+        "requestedAt", "idempotencyKey", "requestHash"
+      )
+      SELECT
+        $1, updated."athleteId", updated."planId", updated."sessionId", updated."revision",
+        'amend', $3, '["title"]'::jsonb,
+        jsonb_build_object('session', $4::jsonb, 'status', 'upcoming'),
+        jsonb_build_object('session', updated."effectiveSession", 'status', 'upcoming'),
+        'user_owner', 'user', CURRENT_TIMESTAMP, $1, repeat('e', 64)
+      FROM updated
+      RETURNING "id", "revision", "reason"
+    `, [id, title, reason, JSON.stringify(prescribedSession)]);
+
+    const competingResults = await Promise.all([
+      attemptConcurrentAmendment("amendment_concurrent_a", "Short recovery run", "Travel fatigue"),
+      attemptConcurrentAmendment("amendment_concurrent_b", "Steady aerobic run", "Schedule opened up"),
+    ]);
+    assert.equal(
+      competingResults.flatMap((result) => result.rows).length,
+      1,
+      "only one caller can consume the expected revision",
+    );
+    const concurrentProjection = await database.query(`
+      SELECT "revision", "effectiveSession"->>'title' AS "title"
+      FROM "calendar_session_projections"
+      WHERE "id" = 'session_concurrent'
+    `);
+    assert.equal(concurrentProjection.rows[0].revision, 3);
+    const concurrentHistory = await database.query(`
+      SELECT "revision", "reason" FROM "calendar_session_amendments"
+      WHERE "sessionId" = 'run_concurrent'
+    `);
+    assert.equal(concurrentHistory.rows.length, 1);
+    assert.equal(concurrentHistory.rows[0].revision, 3);
+    const winner = competingResults.flatMap((result) => result.rows)[0];
+    assert.equal(concurrentProjection.rows[0].title, winner.reason === "Travel fatigue" ? "Short recovery run" : "Steady aerobic run");
+
     const prohibitedColumns = await database.query(`
       SELECT "column_name" AS "columnName"
       FROM information_schema.columns

@@ -16,6 +16,31 @@ export type CalendarSessionView = {
   status: "upcoming" | "skipped";
   revision: number;
   warnings: string[];
+  original: CalendarSessionOriginal;
+  amendments: CalendarSessionAmendmentView[];
+};
+
+export type CalendarSessionOriginal = {
+  id: string;
+  title: string;
+  kind: string;
+  purpose: string;
+  prescription: string;
+  cautions: string[];
+  durationMinutes: number;
+  distanceMeters?: number;
+  intensityRpe?: number;
+  startTime?: string;
+  scheduledDate: string;
+};
+
+export type CalendarSessionAmendmentView = {
+  id: string;
+  operation: "amend" | "reschedule" | "skip" | "restore";
+  changedAt: string;
+  reason: string;
+  changedFields: string[];
+  resultingRevision: number;
 };
 
 export type ReminderExternalStatus = "not_configured" | "prepared" | "scheduled" | "attention" | "disabled";
@@ -59,6 +84,48 @@ export function normalizeCalendarSessions(payload: unknown): CalendarSessionView
     const prescribedDate = String(item.prescribedDate ?? item.originalDate ?? effectiveDate);
     if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) || !/^\d{4}-\d{2}-\d{2}$/.test(prescribedDate)) return [];
     const status = item.status === "skipped" ? "skipped" : "upcoming";
+    const originalRecord = item.original && typeof item.original === "object"
+      ? item.original as Record<string, unknown>
+      : {};
+    const original: CalendarSessionOriginal = {
+      id: String(originalRecord.id ?? id),
+      title: String(originalRecord.title ?? item.title ?? "Training session"),
+      kind: String(originalRecord.kind ?? item.kind ?? item.sessionType ?? "run"),
+      purpose: String(originalRecord.purpose ?? item.purpose ?? item.intent ?? "Follow the approved prescription."),
+      prescription: String(originalRecord.prescription ?? item.prescription ?? "Follow the approved prescription."),
+      cautions: Array.isArray(originalRecord.cautions)
+        ? originalRecord.cautions.map(String)
+        : Array.isArray(item.cautions) ? item.cautions.map(String) : [],
+      durationMinutes: Number(originalRecord.durationMinutes ?? item.durationMinutes ?? 0),
+      ...(typeof originalRecord.distanceMeters === "number" && originalRecord.distanceMeters > 0
+        ? { distanceMeters: originalRecord.distanceMeters }
+        : typeof item.distanceMeters === "number" && item.distanceMeters > 0 ? { distanceMeters: item.distanceMeters } : {}),
+      ...(typeof originalRecord.intensityRpe === "number" && originalRecord.intensityRpe > 0
+        ? { intensityRpe: originalRecord.intensityRpe }
+        : typeof item.intensityRpe === "number" && item.intensityRpe > 0 ? { intensityRpe: item.intensityRpe } : {}),
+      ...(typeof originalRecord.startTime === "string" && originalRecord.startTime
+        ? { startTime: originalRecord.startTime }
+        : typeof item.startTime === "string" && item.startTime ? { startTime: item.startTime } : {}),
+      scheduledDate: String(originalRecord.scheduledDate ?? prescribedDate),
+    };
+    const amendments: CalendarSessionAmendmentView[] = Array.isArray(item.amendments)
+      ? item.amendments.flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const amendment = value as Record<string, unknown>;
+        const operation = amendment.operation;
+        const reason = typeof amendment.reason === "string" ? amendment.reason.trim() : "";
+        if (operation !== "amend" && operation !== "reschedule" && operation !== "skip" && operation !== "restore") return [];
+        if (!reason) return [];
+        return [{
+          id: String(amendment.id ?? `${id}-${String(amendment.resultingRevision ?? "change")}`),
+          operation,
+          changedAt: String(amendment.changedAt ?? ""),
+          reason,
+          changedFields: Array.isArray(amendment.changedFields) ? amendment.changedFields.map(String) : [],
+          resultingRevision: Number(amendment.resultingRevision ?? item.revision ?? 1),
+        }];
+      })
+      : [];
     return [{
       id,
       title: String(item.title ?? "Training session"),
@@ -77,8 +144,21 @@ export function normalizeCalendarSessions(payload: unknown): CalendarSessionView
       status,
       revision: Number(item.revision ?? 1),
       warnings: Array.isArray(item.warnings) ? item.warnings.map(String) : [],
+      original,
+      amendments,
     }];
   });
+}
+
+export function canAmendFutureSession(session: Pick<CalendarSessionView, "effectiveDate">, currentLocalDate: string): boolean {
+  return session.effectiveDate > currentLocalDate;
+}
+
+export function changeHistoryLabel(amendment: CalendarSessionAmendmentView): string {
+  const fields = amendment.changedFields.length > 0
+    ? amendment.changedFields.join(", ")
+    : amendment.operation;
+  return `${amendment.operation} · ${fields} · revision ${amendment.resultingRevision}`;
 }
 
 export function formatSessionTarget(session: CalendarSessionView): string {

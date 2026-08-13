@@ -67,15 +67,11 @@ export type ContextSnapshot = {
   createdAt: string;
 };
 
-export type PlannedWorkout = {
+export type ApprovedPlannedWorkout = {
   id: string;
   planId: string;
   athleteId: string;
-  /** Effective calendar date retained for backward-compatible consumers. */
   localDate: string;
-  prescribedLocalDate: string;
-  effectiveLocalDate: string;
-  calendarStatus: "upcoming" | "skipped";
   position: number;
   title: string;
   workoutType: string;
@@ -86,6 +82,34 @@ export type PlannedWorkout = {
   revision: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type SessionAmendment = {
+  id: string;
+  planId: string;
+  sessionId: string;
+  operation: "amend" | "reschedule" | "skip" | "restore";
+  actor: string;
+  changedAt: string;
+  reason: string;
+  changedFields: Array<
+    "title" | "purpose" | "prescription" | "durationMinutes" | "distanceMeters"
+    | "intensityRpe" | "startTime" | "cautions" | "effectiveDate" | "status"
+  >;
+  before: JsonRecord;
+  after: JsonRecord;
+  expectedRevision: number;
+  resultingRevision: number;
+};
+
+export type PlannedWorkout = ApprovedPlannedWorkout & {
+  /** Effective calendar date retained for backward-compatible consumers. */
+  localDate: string;
+  prescribedLocalDate: string;
+  effectiveLocalDate: string;
+  calendarStatus: "upcoming" | "skipped";
+  approvedWorkout: ApprovedPlannedWorkout;
+  amendments: SessionAmendment[];
 };
 
 export type CoachingPlan = {
@@ -212,19 +236,30 @@ export type LocalCoachingRepository = {
   loadActivePlan(): CoachingPlan | null;
   adjustWorkout(input: {
     workoutId: string;
-    operation: "reschedule" | "skip" | "restore";
+    operation: "amend" | "reschedule" | "skip" | "restore";
     toDate?: string | null;
+    changes?: Partial<{
+      title: string;
+      purpose: string;
+      prescription: string;
+      durationMinutes: number;
+      distanceMeters: number | null;
+      intensityRpe: number | null;
+      startTime: string | null;
+      cautions: string[];
+    }> | null;
     expectedRevision: number;
     actor?: string;
-    reason?: string | null;
+    reason: string;
     requestedAt?: string | null;
   }): PlannedWorkout;
   moveWorkout(input: {
     workoutId: string;
     toDate: string;
     expectedRevision: number;
-    reason?: string | null;
+    reason: string;
   }): PlannedWorkout;
+  listWorkoutAmendments(workoutId: string): SessionAmendment[];
   storeDailyBrief(input: {
     localDate: string;
     message: string;

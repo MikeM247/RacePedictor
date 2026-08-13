@@ -10,7 +10,6 @@
 - Persistent left navigation:
   - Overview
   - Activities
-  - Performance
   - Data Quality
   - Settings
 - Top bar:
@@ -28,11 +27,6 @@
 - Filter panel + sortable table/list.
 - Activity detail drawer/panel on selection.
 - Clear empty/loading/error states.
-
-### Performance Page
-- Metric selector.
-- Multi-series chart region.
-- Comparison controls (period-over-period).
 
 ### Data Quality Page
 - Ingestion health stats.
@@ -73,3 +67,30 @@
 - Detail Drawer
 - Filter Panel
 - Insight Panel
+
+## Phase 1 Digital Coach UX Addendum
+
+`docs/design/screens.md` is the screen source of truth. Navigation becomes **Today, Plan, Calendar, Activities, Data Quality, Settings**; Today evolves Overview. AI conversation remains in Codex/Second Brain, not an embedded chat. Existing analytics remain on Today rather than claiming an unimplemented Performance route.
+
+- Today: goal purpose, active plan, local session/rest state, intent/prescription, and calendar link; usable without Codex delivery.
+- Plan: active approved plan first, with a prominent Create a plan with Codex button that reveals the context-publish and proposal-import workflow; Sunday is the default preferred long-run day for new routines. Surface a newer persisted draft from the active-plan panel without automatically expanding the workflow, hide superseded drafts, then provide schema/freshness feedback and review/diff with Approve/Reject. Online approved history distinguishes coaching version from approval record and lets the signed-in owner explicitly confirm an inactive approved version as active. The confirmation states that prescriptions are unchanged; drafts never expose this control.
+- Calendar: week/agenda views and confirmed, keyboard-accessible amend/reschedule/skip/restore for future sessions while preserving the approved source prescription. Every change requires a 1–500 character reason, shows current effective values separately from the approved source, and exposes readable reasoned history without claiming an AI review occurred. Past and current-day sessions remain read-only.
+- Activities/Data Quality: explicit bounded CSV or one-activity GPX import with duplicate/rejected/warning feedback.
+- Settings: timezone/reminder defaults (06:30 `Africa/Johannesburg`), exchange setup, and Codex handoff; app preference, handoff, and external automation statuses remain separate.
+
+Every screen distinguishes loading/empty/error/stale. Today also distinguishes no plan, rest, upcoming, missed/unconfirmed, and skipped. Phase 1 does not infer completion from an unmatched imported activity and does not claim automatic Garmin sync, post-run review, or adaptation.
+
+Future-session amendment and schedule-change dialogs use labelled native form controls and announce validation, saving, success, conflict, and error states. Opening a dialog moves focus to its first control; Tab and Shift+Tab stay within it; Escape closes it when no save is in progress; closing returns focus to the launching control; and an invalid submission focuses the first invalid field. These behaviors apply at desktop and supported mobile widths and are covered by browser automation.
+
+## Cloud Strava and Sync UX Addendum
+
+The existing navigation remains. The online phase adds only the status and connection surfaces required for the approved outcome:
+
+- Settings shows Strava connection state/actions and one local-device pairing/revocation surface; it does not add athlete switching, provider choice, or Garmin controls.
+- Today shows workout/activity freshness separately from the latest selected Second Brain snapshot freshness. A local computer outage cannot make fresh cloud workouts appear stale.
+- Activities shows automatic Strava provenance and ingestion states alongside retained manual CSV/GPX history without duplicating an activity.
+- Data Quality shows delayed, retrying, action-required, and terminal provider work with a safe supported action; it never exposes tokens, object keys, raw payload bodies, or stack traces.
+- Second Brain status shows snapshot version/revision, selected section names, publication time, and current/stale/never/error state. It never renders an Obsidian note, local path, arbitrary text, or a claim that context changed the approved plan.
+- Authentication-required, disconnected, local-device-offline, cloud-unavailable, and stale-context states are distinct and recoverable at desktop and responsive baseline widths.
+
+The one-athlete UI has no athlete selector or role-management controls. Automatic review/adaptation and plan mutation remain excluded.

@@ -124,7 +124,7 @@ test("orchestrates the local Codex coaching exchange without implicit activation
       workouts: [{
         id: "workout_today",
         kind: "run",
-        scheduledDate: "2026-08-05",
+        scheduledDate: "2026-08-06",
         startTime: "06:00",
         title: "Easy aerobic run",
         purpose: "Build durable aerobic consistency.",
@@ -182,20 +182,22 @@ test("orchestrates the local Codex coaching exchange without implicit activation
     sessionId: "workout_today",
     operation: "reschedule",
     expectedRevision: 1,
-    effectiveDate: "2026-08-06",
+    reason: "Move around a work commitment",
+    effectiveDate: "2026-08-07",
     requestedAt: fixedNow.toISOString(),
   });
-  assert.equal(moved.scheduledDate, "2026-08-06");
-  assert.equal(moved.prescribedDate, "2026-08-05");
-  assert.equal(moved.effectiveDate, "2026-08-06");
+  assert.equal(moved.scheduledDate, "2026-08-07");
+  assert.equal(moved.prescribedDate, "2026-08-06");
+  assert.equal(moved.effectiveDate, "2026-08-07");
   assert.equal(moved.status, "upcoming");
   assert.equal(moved.revision, 2);
-  assert.equal(service.getActivePlan()?.workouts[0].scheduledDate, "2026-08-05", "approved prescription remains immutable");
+  assert.equal(service.getActivePlan()?.workouts[0].scheduledDate, "2026-08-06", "approved prescription remains immutable");
   const skipped = service.editCalendar({
     planId: active.id,
     sessionId: "workout_today",
     operation: "skip",
     expectedRevision: 2,
+    reason: "Recovery is needed",
     requestedAt: fixedNow.toISOString(),
   });
   assert.equal(skipped.status, "skipped");
@@ -204,10 +206,31 @@ test("orchestrates the local Codex coaching exchange without implicit activation
     sessionId: "workout_today",
     operation: "restore",
     expectedRevision: 3,
+    reason: "Recovery is complete",
     requestedAt: fixedNow.toISOString(),
   });
   assert.equal(restored.status, "upcoming");
   assert.equal(restored.revision, 4);
+  const amended = service.editCalendar({
+    planId: active.id,
+    sessionId: "workout_today",
+    operation: "amend",
+    expectedRevision: 4,
+    reason: "Shorten the session before an early meeting",
+    changes: {
+      title: "Short easy run",
+      durationMinutes: 35,
+      startTime: "05:45",
+      intensityRpe: 3,
+    },
+    requestedAt: fixedNow.toISOString(),
+  });
+  assert.equal(amended.title, "Short easy run");
+  assert.equal(amended.durationMinutes, 35);
+  assert.equal(amended.original.title, "Easy aerobic run");
+  assert.equal(amended.revision, 5);
+  assert.equal(amended.amendments.length, 4);
+  assert.equal(amended.amendments.at(-1)?.reason, "Shorten the session before an early meeting");
 
   const today = service.buildTodayBrief();
   assert.equal(today.date, "2026-08-05");
@@ -232,6 +255,22 @@ test("orchestrates the local Codex coaching exchange without implicit activation
     version: active.version,
     revision: active.revision,
   });
+  assert.equal(activeContextEnvelope.artifact.schemaVersion, 2);
+  assert.equal(activeContextEnvelope.futureSessionChanges.planId, active.id);
+  assert.equal(activeContextEnvelope.futureSessionChanges.amendments.length, 4);
+  assert.equal(
+    activeContextEnvelope.artifact.futureSessionChangesHash,
+    activeContextEnvelope.futureSessionChanges.changesHash,
+  );
+  assert.ok(activeContext.reviewContextPath);
+  const reviewContext = JSON.parse(await readFile(activeContext.reviewContextPath, "utf8"));
+  assert.equal(reviewContext.schema, "coaching-review-context.v1");
+  assert.equal(reviewContext.activePlan.contentHash, active.approval.contentHash);
+  assert.equal(reviewContext.futureSessions[0].prescribed.title, "Easy aerobic run");
+  assert.equal(reviewContext.futureSessions[0].effective.title, "Short easy run");
+  assert.equal(reviewContext.futureSessions[0].amendments.at(-1).reason, "Shorten the session before an early meeting");
+  assert.equal(reviewContext.futureSessions[0].amendments.at(-1).actorKind, "user");
+  assert.deepEqual(await service.getCurrentReviewContext(), reviewContext);
   assert.notEqual(activeContext.fingerprint, firstContext.fingerprint, "complete-history fingerprint changes when history changes");
   assert.equal(service.buildTodayOverview().stale.isStale, false, "acknowledged history remains fresh after active-context republish");
 

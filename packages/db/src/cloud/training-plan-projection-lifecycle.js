@@ -69,6 +69,40 @@ export async function appendPlanSyncChanges(transaction, athleteId, plans, occur
   }
 }
 
+export async function seedPlanSessionProjections(transaction, athleteId, plan) {
+  for (const workout of plan.workouts) {
+    await transaction.calendarSessionProjection.upsert({
+      where: {
+        athleteId_planId_sessionId: { athleteId, planId: plan.id, sessionId: workout.id },
+      },
+      create: {
+        athleteId,
+        planId: plan.id,
+        sessionId: workout.id,
+        prescribedSession: workout,
+        effectiveSession: workout,
+        status: "upcoming",
+        revision: plan.revision,
+      },
+      update: {},
+    });
+  }
+}
+
+export async function appendCalendarSessionSyncChange(transaction, athleteId, session, occurredAt) {
+  const cursor = await nextCursor(transaction, athleteId);
+  await transaction.syncChange.create({ data: {
+    athleteId,
+    cursor,
+    entityType: "calendar_session",
+    entityId: session.id,
+    operation: "upsert",
+    entityVersion: session.revision,
+    selectedFields: session,
+    occurredAt,
+  } });
+}
+
 async function nextCursor(transaction, athleteId) {
   const latest = await transaction.syncChange.aggregate({ where: { athleteId }, _max: { cursor: true } });
   return (latest._max.cursor ?? 0n) + 1n;

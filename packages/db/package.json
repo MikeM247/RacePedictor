@@ -22,7 +22,7 @@
     "db:test:local-coaching": "node --no-warnings --test test/local-coaching-repository.test.js",
     "db:test:local-pipeline": "node --no-warnings --test test/local-garmin-pipeline.test.js",
     "db:test:local-sync": "node --no-warnings --experimental-strip-types --test test/local-sync-agent.test.js",
-    "db:test:cloud": "node --no-warnings --experimental-strip-types --test test/cloud-adapters.test.js test/cloud-migration.integration.test.js test/cloud-schema.test.js test/cloud-read-adapters.test.js test/device-snapshot-adapters.test.js test/operational-usage.test.js test/owner-identity-adapter.test.js test/plan-projection-publisher.test.js test/provider-connection-adapters.test.js test/release-candidate-journey.test.js test/strava-canonical-persistence.test.js test/strava-webhook-infra.test.js test/strava-ingestion-worker.test.js",
+    "db:test:cloud": "node --no-warnings --experimental-strip-types --test test/calendar-session-amendments.test.js test/cloud-adapters.test.js test/cloud-migration.integration.test.js test/cloud-schema.test.js test/cloud-read-adapters.test.js test/device-snapshot-adapters.test.js test/operational-usage.test.js test/owner-identity-adapter.test.js test/plan-projection-publisher.test.js test/provider-connection-adapters.test.js test/release-candidate-journey.test.js test/strava-canonical-persistence.test.js test/strava-webhook-infra.test.js test/strava-ingestion-worker.test.js",
     "db:test:obsidian": "node --no-warnings --test test/obsidian-publisher.test.js",
     "db:test:normalize": "node scripts/normalize-integration-check.js",
     "db:seed": "node src/seed-cli.js",

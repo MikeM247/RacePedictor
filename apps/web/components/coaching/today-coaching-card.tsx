@@ -93,6 +93,11 @@ export function TodayCoachingCard() {
   </section>;
 
   const sessionStatus = String(session.status ?? "");
+  const originalSession = asRecord(session.original);
+  const amendments = Array.isArray(session.amendments)
+    ? session.amendments.map(asRecord).filter((amendment) => typeof amendment.reason === "string")
+    : [];
+  const latestAmendment = amendments[amendments.length - 1];
   const hasPrescribedSession = Boolean(session.id) && sessionStatus !== "skipped" && state !== "rest";
   const heading = state === "rest"
     ? "Intentional recovery day"
@@ -109,13 +114,14 @@ export function TodayCoachingCard() {
       <h3 id="today-coaching-heading">{heading}</h3>
       <p>{String(payload.message ?? "Review the approved local plan before training.")}</p>
       <p className="today-prescription">{hasPrescribedSession
-        ? <><strong>Approved prescription:</strong> {String(session.prescription ?? "Follow the approved prescription.")}</>
+        ? <><strong>{amendments.length > 0 ? "Current prescription:" : "Approved prescription:"}</strong> {String(session.prescription ?? "Follow the approved prescription.")}</>
         : state === "missed"
           ? `Scheduled ${formatCoachingDate(sessionDate, timezone)} and still marked upcoming.`
           : state === "skipped"
             ? "No workout is prescribed after this explicit skip."
             : "No workout is prescribed today."}</p>
       {hasPrescribedSession ? <p><strong>Purpose and target:</strong> {String(session.purpose ?? "Follow the approved plan")} · {String(session.durationMinutes ?? "—")} min</p> : null}
+      {amendments.length > 0 ? <details className="today-change-history"><summary>Why this session changed ({amendments.length})</summary><p><strong>Approved source:</strong> {String(originalSession.prescription ?? "The original approved prescription remains preserved in Calendar.")}</p>{latestAmendment ? <p><strong>Latest reason:</strong> {String(latestAmendment.reason)}</p> : null}<p>No AI review is claimed. Open the session to inspect its complete change history.</p></details> : null}
       <p className="today-local-cue"><strong>Local cue:</strong> {String(payload.localCue ?? "Follow the approved plan as written.")}</p>
       <GoalSummary goal={goal} />
       {warnings.length > 0 ? <div className="today-warnings"><p className="eyebrow">Schedule warnings</p><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}

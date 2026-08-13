@@ -343,6 +343,7 @@ model Athlete {
   pairedDevices           PairedDevice[]
   secondBrainSnapshots    SecondBrainSnapshot[]
   trainingPlanProjections TrainingPlanProjection[]
+  calendarSessions        CalendarSessionProjection[]
 
   @@map("athletes")
 }
@@ -625,11 +626,57 @@ model TrainingPlanProjection {
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
   athlete     Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  sessions    CalendarSessionProjection[]
 
   @@unique([athleteId, planId])
   @@unique([athleteId, contentHash])
   @@index([athleteId, active, planVersion(sort: Desc)])
   @@map("training_plan_projections")
+}
+
+model CalendarSessionProjection {
+  id                String                     @id @default(cuid())
+  athleteId         String
+  planId            String
+  sessionId         String
+  prescribedSession Json
+  effectiveSession  Json
+  status            String                     @default("upcoming")
+  revision          Int
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                   @updatedAt @db.Timestamptz(3)
+  athlete           Athlete                    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  planProjection    TrainingPlanProjection     @relation(fields: [athleteId, planId], references: [athleteId, planId], onDelete: Cascade)
+  amendments        CalendarSessionAmendment[]
+
+  @@unique([athleteId, planId, sessionId])
+  @@index([athleteId, planId, status])
+  @@map("calendar_session_projections")
+}
+
+model CalendarSessionAmendment {
+  id             String                    @id @default(cuid())
+  athleteId      String
+  planId         String
+  sessionId      String
+  revision       Int
+  operation      String
+  reason         String
+  changedFields  Json
+  beforeValues   Json
+  afterValues    Json
+  actorUserId    String
+  actorKind      String
+  requestedAt    DateTime                  @db.Timestamptz(3)
+  idempotencyKey String
+  requestHash    String
+  createdAt      DateTime                  @default(now()) @db.Timestamptz(3)
+  session        CalendarSessionProjection @relation(fields: [athleteId, planId, sessionId], references: [athleteId, planId, sessionId], onDelete: Cascade)
+
+  @@unique([athleteId, planId, sessionId, revision])
+  @@unique([athleteId, idempotencyKey])
+  @@index([athleteId, planId, sessionId, createdAt])
+  @@map("calendar_session_amendments")
 }
 
 model OperationalUsageBucket {

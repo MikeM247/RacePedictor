@@ -166,7 +166,8 @@ test("settling goals and activating plans transactionally supersede prior primar
 
 test("calendar adjustments preserve prescriptions, persist effective state, and enforce revisions", async () => {
   const databasePath = await makeDatabasePath("coaching-revision");
-  let repository = createLocalCoachingRepository({ databasePath });
+  const clock = () => new Date("2026-08-09T06:00:00.000Z");
+  let repository = createLocalCoachingRepository({ databasePath, clock });
   const { plan } = createSettledGoalAndPlan(repository);
   const workout = plan.workouts[0];
 
@@ -196,25 +197,25 @@ test("calendar adjustments preserve prescriptions, persist effective state, and 
       && error.details.currentRevision === 2,
   );
 
-  const skipped = repository.adjustWorkout({ workoutId: workout.id, operation: "skip", expectedRevision: 2 });
+  const skipped = repository.adjustWorkout({ workoutId: workout.id, operation: "skip", expectedRevision: 2, reason: "Take a recovery day" });
   assert.equal(skipped.calendarStatus, "skipped");
   assert.equal(skipped.effectiveLocalDate, "2026-08-11");
   assert.equal(skipped.revision, 3);
   repository.close();
 
-  repository = createLocalCoachingRepository({ databasePath });
+  repository = createLocalCoachingRepository({ databasePath, clock });
   const persisted = repository.loadPlan(plan.id).workouts.find((candidate) => candidate.id === workout.id);
   assert.equal(persisted.prescribedLocalDate, "2026-08-10");
   assert.equal(persisted.effectiveLocalDate, "2026-08-11");
   assert.equal(persisted.calendarStatus, "skipped");
   assert.equal(persisted.revision, 3);
   assert.throws(
-    () => repository.adjustWorkout({ workoutId: workout.id, operation: "restore", expectedRevision: 2 }),
+    () => repository.adjustWorkout({ workoutId: workout.id, operation: "restore", expectedRevision: 2, reason: "Recovery completed" }),
     (error) => error instanceof CoachingRepositoryError
       && error.code === "REVISION_CONFLICT"
       && error.details.currentRevision === 3,
   );
-  const restored = repository.adjustWorkout({ workoutId: workout.id, operation: "restore", expectedRevision: 3 });
+  const restored = repository.adjustWorkout({ workoutId: workout.id, operation: "restore", expectedRevision: 3, reason: "Recovery completed" });
   assert.equal(restored.calendarStatus, "upcoming");
   assert.equal(restored.prescribedLocalDate, "2026-08-10");
   assert.equal(restored.effectiveLocalDate, "2026-08-11");
@@ -242,6 +243,78 @@ test("calendar adjustments preserve prescriptions, persist effective state, and 
   assert.deepEqual(adjustmentEvents[0].event.result, {
     effectiveDate: "2026-08-11", status: "upcoming", revision: 2,
   });
+  repository.close();
+});
+
+test("future session amendments are append-only, reasoned, and preserve approved values", async () => {
+  const databasePath = await makeDatabasePath("coaching-amendment");
+  let current = new Date("2026-08-09T21:59:00.000Z");
+  const repository = createLocalCoachingRepository({ databasePath, clock: () => current });
+  repository.saveProfile({ timezone: "Africa/Johannesburg" });
+  const { plan } = createSettledGoalAndPlan(repository);
+  const workout = plan.workouts[0];
+
+  const amended = repository.adjustWorkout({
+    workoutId: workout.id,
+    operation: "amend",
+    expectedRevision: 1,
+    reason: "A shorter early session fits the workday",
+    changes: {
+      title: "Short early easy run",
+      purpose: "Keep aerobic consistency on a busy day",
+      prescription: "Run easily for 35 minutes.",
+      durationMinutes: 35,
+      distanceMeters: null,
+      intensityRpe: 3,
+      startTime: "05:45",
+      cautions: ["Stop if discomfort changes your stride."],
+    },
+  });
+
+  assert.equal(amended.title, "Short early easy run");
+  assert.equal(amended.durationMinutes, 35);
+  assert.equal(amended.distanceM, null);
+  assert.equal(amended.details.startTime, "05:45");
+  assert.equal(amended.approvedWorkout.title, "Easy run");
+  assert.equal(amended.approvedWorkout.durationMinutes, 45);
+  assert.equal(amended.revision, 2);
+  assert.equal(amended.amendments.length, 1);
+  assert.equal(amended.amendments[0].reason, "A shorter early session fits the workday");
+  assert.deepEqual(amended.amendments[0].changedFields, [
+    "title", "purpose", "prescription", "durationMinutes", "distanceMeters",
+    "intensityRpe", "startTime", "cautions",
+  ]);
+  assert.equal(repository.listWorkoutAmendments(workout.id)[0].resultingRevision, 2);
+
+  const verify = new DatabaseSync(databasePath, { readOnly: true });
+  const stored = verify.prepare(`
+    SELECT title, duration_minutes AS durationMinutes, distance_m AS distanceM, revision
+    FROM coaching_planned_workouts WHERE id = ?
+  `).get(workout.id);
+  assert.equal(stored.title, "Easy run");
+  assert.equal(stored.durationMinutes, 45);
+  assert.equal(stored.distanceM, 7000);
+  assert.equal(stored.revision, 1);
+  verify.close();
+
+  assert.throws(() => repository.adjustWorkout({
+    workoutId: workout.id,
+    operation: "amend",
+    expectedRevision: 2,
+    reason: "   ",
+    changes: { title: "Invalid" },
+  }), (error) => error instanceof CoachingRepositoryError && error.code === "VALIDATION_ERROR");
+
+  current = new Date("2026-08-09T22:01:00.000Z");
+  assert.throws(() => repository.adjustWorkout({
+    workoutId: workout.id,
+    operation: "amend",
+    expectedRevision: 2,
+    reason: "This is now the current local date",
+    changes: { title: "Too late" },
+  }), (error) => error instanceof CoachingRepositoryError
+    && error.code === "NOT_FUTURE_SESSION"
+    && error.details.currentLocalDate === "2026-08-10");
   repository.close();
 });
 

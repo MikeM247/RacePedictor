@@ -168,6 +168,147 @@ export const plannedWorkoutSchema = z.object({
   }
 });
 
+export const sessionAmendmentFieldSchema = z.enum([
+  "title",
+  "purpose",
+  "prescription",
+  "durationMinutes",
+  "distanceMeters",
+  "intensityRpe",
+  "startTime",
+  "cautions",
+  "effectiveDate",
+  "status",
+]);
+
+export const sessionAmendmentValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.array(z.string()),
+  z.null(),
+]);
+
+export const sessionAmendmentValuesSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  purpose: z.string().trim().min(1).max(1000).optional(),
+  prescription: z.string().trim().min(1).max(4000).optional(),
+  durationMinutes: z.number().int().min(0).max(1440).optional(),
+  distanceMeters: z.number().positive().max(500_000).nullable().optional(),
+  intensityRpe: z.number().int().min(1).max(10).nullable().optional(),
+  startTime: timeSchema.nullable().optional(),
+  cautions: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
+  effectiveDate: dateSchema.optional(),
+  status: z.enum(["upcoming", "skipped"]).optional(),
+}).strict();
+
+export const sessionAmendmentPatchSchema = sessionAmendmentValuesSchema.omit({
+  effectiveDate: true,
+  status: true,
+}).refine((changes) => Object.keys(changes).length > 0, {
+  message: "At least one session field must be changed",
+});
+
+export const sessionAmendmentSchema = z.object({
+  id: idSchema,
+  planId: idSchema,
+  sessionId: idSchema,
+  operation: z.enum(["amend", "reschedule", "skip", "restore"]),
+  actor: idSchema,
+  changedAt: z.string().datetime({ offset: true }),
+  reason: z.string().trim().min(1).max(500),
+  changedFields: z.array(sessionAmendmentFieldSchema).min(1),
+  before: sessionAmendmentValuesSchema,
+  after: sessionAmendmentValuesSchema,
+  expectedRevision: revisionSchema,
+  resultingRevision: revisionSchema,
+}).strict().superRefine((amendment, ctx) => {
+  if (amendment.resultingRevision !== amendment.expectedRevision + 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["resultingRevision"], message: "Resulting revision must follow the expected revision" });
+  }
+  if (new Set(amendment.changedFields).size !== amendment.changedFields.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["changedFields"], message: "Changed fields must be unique" });
+  }
+  for (const field of amendment.changedFields) {
+    if (!(field in amendment.before) || !(field in amendment.after)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["changedFields"], message: `Before and after values are required for ${field}` });
+    }
+  }
+});
+
+export const futureSessionChangesSchema = z.object({
+  planId: idSchema.nullable(),
+  changesHash: sha256Schema,
+  amendments: z.array(sessionAmendmentSchema),
+}).strict();
+
+export const coachingReviewAmendmentSchema = z.object({
+  id: idSchema,
+  planId: idSchema,
+  sessionId: idSchema,
+  operation: z.enum(["amend", "reschedule", "skip", "restore"]),
+  actor: idSchema,
+  actorKind: z.literal("user"),
+  changedAt: z.string().datetime({ offset: true }),
+  reason: z.string().trim().min(1).max(500),
+  changedFields: z.array(sessionAmendmentFieldSchema).min(1),
+  before: sessionAmendmentValuesSchema,
+  after: sessionAmendmentValuesSchema,
+  expectedRevision: revisionSchema,
+  resultingRevision: revisionSchema,
+}).strict().superRefine((amendment, ctx) => {
+  if (amendment.resultingRevision !== amendment.expectedRevision + 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["resultingRevision"], message: "Resulting revision must follow the expected revision" });
+  }
+  if (new Set(amendment.changedFields).size !== amendment.changedFields.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["changedFields"], message: "Changed fields must be unique" });
+  }
+  for (const field of amendment.changedFields) {
+    if (!(field in amendment.before) || !(field in amendment.after)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["changedFields"], message: `Before and after values are required for ${field}` });
+    }
+  }
+});
+
+export const coachingReviewSessionSchema = z.object({
+  id: idSchema,
+  prescribed: plannedWorkoutSchema,
+  effective: plannedWorkoutSchema,
+  status: z.enum(["upcoming", "skipped"]),
+  revision: revisionSchema,
+  amendments: z.array(coachingReviewAmendmentSchema),
+}).strict().superRefine((session, ctx) => {
+  if (session.prescribed.id !== session.id || session.effective.id !== session.id) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["id"], message: "Review session identity must match prescribed and effective sessions" });
+  }
+});
+
+export const coachingReviewContextSchema = z.object({
+  schema: z.literal("coaching-review-context.v1"),
+  id: idSchema,
+  athleteId: idSchema,
+  generatedAt: z.string().datetime({ offset: true }),
+  currentLocalDate: dateSchema,
+  activePlan: z.object({
+    id: idSchema,
+    version: revisionSchema,
+    revision: revisionSchema,
+    contentHash: sha256Schema,
+  }).strict(),
+  futureSessions: z.array(coachingReviewSessionSchema),
+  contentHash: sha256Schema,
+}).strict().superRefine((context, ctx) => {
+  for (const [sessionIndex, session] of context.futureSessions.entries()) {
+    if (session.effective.scheduledDate <= context.currentLocalDate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["futureSessions", sessionIndex, "effective", "scheduledDate"], message: "Review context may contain only future sessions" });
+    }
+    for (const [amendmentIndex, amendment] of session.amendments.entries()) {
+      if (amendment.planId !== context.activePlan.id || amendment.sessionId !== session.id) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["futureSessions", sessionIndex, "amendments", amendmentIndex], message: "Amendment must belong to the active plan session" });
+      }
+    }
+  }
+});
+
 export const planWeekSchema = z.object({
   weekStartsOn: dateSchema,
   focus: z.string().trim().min(1).max(500),
@@ -338,10 +479,11 @@ export const contextArtifactSchema = z.object({
   activityCount: z.number().int().nonnegative(),
   earliestActivityDate: dateSchema.nullable(),
   latestActivityDate: dateSchema.nullable(),
-  sources: z.array(z.enum(["gpx", "tcx", "csv", "second_brain", "manual"])).min(1),
+  sources: z.array(z.enum(["gpx", "tcx", "csv", "strava", "second_brain", "manual"])).min(1),
   historyFingerprint: sha256Schema,
   contentHash: sha256Schema,
   digest: sha256Schema,
+  futureSessionChangesHash: sha256Schema.optional(),
   activePlan: activePlanReferenceSchema.nullable(),
   noteReferences: z.array(contextNoteReferenceSchema),
   warnings: z.array(contextWarningSchema),
@@ -358,7 +500,7 @@ export const contextHistoryCoverageSchema = z.object({
   earliestOccurredAt: z.string().datetime({ offset: true }).nullable(),
   latestOccurredAt: z.string().datetime({ offset: true }).nullable(),
   totalDistanceM: z.number().nonnegative(),
-  sourceTypes: z.array(z.enum(["gpx", "tcx", "csv", "manual"])),
+  sourceTypes: z.array(z.enum(["gpx", "tcx", "csv", "strava", "manual"])),
 }).strict();
 
 export const coachingContextEnvelopeSchema = z.object({
@@ -369,6 +511,7 @@ export const coachingContextEnvelopeSchema = z.object({
   planningGoal: goalDraftSchema.nullable(),
   settledGoal: settledGoalSchema.nullable(),
   activePlan: activePlanReferenceSchema.nullable(),
+  futureSessionChanges: futureSessionChangesSchema.optional(),
   historyCoverage: contextHistoryCoverageSchema,
   activities: z.array(activitySummarySchema),
 }).strict().superRefine((context, ctx) => {
@@ -386,6 +529,14 @@ export const coachingContextEnvelopeSchema = z.object({
   }
   if ((context.activePlan?.id ?? null) !== (context.artifact.activePlan?.id ?? null)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activePlan"], message: "Active plan reference must match the artifact" });
+  }
+  if (context.futureSessionChanges) {
+    if (context.futureSessionChanges.planId !== (context.activePlan?.id ?? null)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["futureSessionChanges", "planId"], message: "Session changes must belong to the active plan" });
+    }
+    if (context.futureSessionChanges.changesHash !== context.artifact.futureSessionChangesHash) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["artifact", "futureSessionChangesHash"], message: "Artifact changes hash must match the structured session changes" });
+    }
   }
 });
 
@@ -430,6 +581,8 @@ export const contextPublicationResultSchema = z.object({
   jsonPath: z.string().min(1),
   markdownPath: z.string().min(1),
   snapshotId: idSchema,
+  reviewContext: coachingReviewContextSchema.nullable(),
+  reviewContextPath: z.string().min(1).nullable(),
 }).strict();
 
 export const contextPublishRouteDataSchema = contextPublicationResultSchema.extend({
@@ -450,6 +603,7 @@ export const planActivationRouteDataSchema = z.object({
   reused: z.boolean(),
 }).strict();
 export const currentContextRouteDataSchema = z.object({ context: coachingContextEnvelopeSchema.nullable() }).strict();
+export const coachingReviewContextRouteDataSchema = z.object({ context: coachingReviewContextSchema.nullable() }).strict();
 export const latestProposalRouteDataSchema = z.object({ proposal: planProposalSchema.nullable() }).strict();
 
 export const coachingProfileUpdateRequestSchema = coachingProfileSchema.pick({
@@ -499,6 +653,8 @@ export const calendarSessionSchema = z.object({
   status: z.enum(["upcoming", "skipped"]),
   revision: revisionSchema,
   warnings: z.array(z.string()),
+  original: plannedWorkoutSchema.optional(),
+  amendments: z.array(sessionAmendmentSchema).default([]),
 }).strict().superRefine((session, ctx) => {
   if (session.originalDate !== session.prescribedDate) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["originalDate"], message: "Original date must match the immutable prescribed date" });
@@ -516,25 +672,31 @@ export const calendarRouteDataSchema = z.object({
 }).strict();
 export const calendarEditHttpRequestSchema = z.discriminatedUnion("operation", [
   z.object({
+    operation: z.literal("amend"),
+    expectedRevision: revisionSchema,
+    reason: z.string().trim().min(1).max(500),
+    changes: sessionAmendmentPatchSchema,
+  }).strict(),
+  z.object({
     operation: z.literal("reschedule"),
     expectedRevision: revisionSchema,
-    reason: z.string().trim().min(1).max(500).optional(),
+    reason: z.string().trim().min(1).max(500),
     date: dateSchema,
   }).strict(),
   z.object({
     operation: z.literal("skip"),
     expectedRevision: revisionSchema,
-    reason: z.string().trim().min(1).max(500).optional(),
+    reason: z.string().trim().min(1).max(500),
   }).strict(),
   z.object({
     operation: z.literal("restore"),
     expectedRevision: revisionSchema,
-    reason: z.string().trim().min(1).max(500).optional(),
+    reason: z.string().trim().min(1).max(500),
   }).strict(),
 ]);
 export const calendarEditRouteDataSchema = z.object({
   session: calendarSessionSchema,
-  operation: z.enum(["reschedule", "skip", "restore"]),
+  operation: z.enum(["amend", "reschedule", "skip", "restore"]),
 }).strict();
 
 export const todayQueryRequestSchema = z.object({ date: dateSchema.optional() }).strict();
@@ -624,11 +786,15 @@ const calendarEditBaseSchema = z.object({
   sessionId: idSchema,
   expectedRevision: revisionSchema,
   actor: idSchema.default("user"),
-  reason: z.string().trim().min(1).max(500).optional(),
+  reason: z.string().trim().min(1).max(500),
   requestedAt: z.string().datetime({ offset: true }),
 });
 
 export const calendarEditRequestSchema = z.discriminatedUnion("operation", [
+  calendarEditBaseSchema.extend({
+    operation: z.literal("amend"),
+    changes: sessionAmendmentPatchSchema,
+  }).strict(),
   calendarEditBaseSchema.extend({
     operation: z.literal("reschedule"),
     effectiveDate: dateSchema,
@@ -700,11 +866,33 @@ export type WeeklyRoutine = z.infer<typeof weeklyRoutineSchema>;
 export type PlannedWorkout = z.infer<typeof plannedWorkoutSchema>;
 export type PlanProposal = z.infer<typeof planProposalSchema>;
 export type TrainingPlan = z.infer<typeof trainingPlanSchema>;
+export type SessionAmendment = z.infer<typeof sessionAmendmentSchema>;
+export type SessionAmendmentField = z.infer<typeof sessionAmendmentFieldSchema>;
+export type SessionAmendmentPatch = z.infer<typeof sessionAmendmentPatchSchema>;
+export type FutureSessionChanges = z.infer<typeof futureSessionChangesSchema>;
+export type CoachingReviewAmendment = z.infer<typeof coachingReviewAmendmentSchema>;
+export type CoachingReviewSession = z.infer<typeof coachingReviewSessionSchema>;
+export type CoachingReviewContext = z.infer<typeof coachingReviewContextSchema>;
 export type ContextArtifact = z.infer<typeof contextArtifactSchema>;
 export type CoachingContextEnvelope = z.infer<typeof coachingContextEnvelopeSchema>;
 export type ContextNoteReference = z.infer<typeof contextNoteReferenceSchema>;
 export type PlanProposalReview = z.infer<typeof planProposalReviewSchema>;
 export type DailyBrief = z.infer<typeof dailyBriefSchema>;
+
+export function assertFutureSessionChangeAllowed(input: {
+  effectiveDate: string;
+  currentLocalDate: string;
+  planStatus: "draft" | "active" | "retired" | "proposal" | "superseded";
+}): void {
+  const effectiveDate = dateSchema.parse(input.effectiveDate);
+  const currentLocalDate = dateSchema.parse(input.currentLocalDate);
+  if (input.planStatus !== "active") {
+    throw new Error("Future session changes require the active plan");
+  }
+  if (effectiveDate <= currentLocalDate) {
+    throw new Error("Only sessions after the athlete's current local date can be changed");
+  }
+}
 
 export type WorkoutRequest = Omit<PlannedWorkout, "scheduledDate" | "startTime"> & {
   preferredDay?: z.infer<typeof weekdaySchema>;

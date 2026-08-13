@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import {
+  canAmendFutureSession,
+  changeHistoryLabel,
   externalAutomationStatusLabel,
   formatAdjustmentCue,
   formatApiErrorDetails,
@@ -63,7 +65,9 @@ async function apiRequest(url: string, init?: RequestInit): Promise<JsonRecord> 
     const error = asRecord(asRecord(body).error);
     const message = typeof error.message === "string" ? error.message : "The request could not be completed.";
     const details = formatApiErrorDetails(error.details);
-    throw new Error(details.length > 0 ? `${message}: ${details.join("; ")}` : message);
+    const requestError = new Error(details.length > 0 ? `${message}: ${details.join("; ")}` : message) as Error & { code?: string };
+    requestError.code = typeof error.code === "string" ? error.code : undefined;
+    throw requestError;
   }
   return unwrap(body);
 }
@@ -94,6 +98,60 @@ function StatusLine({ state, message }: { state: RequestState; message?: string 
   return <p className={`coach-status coach-status--${state}`} role={state === "error" ? "alert" : "status"} aria-live="polite">
     {message ?? (state === "loading" ? "Working…" : state === "success" ? "Saved." : "Something went wrong.")}
   </p>;
+}
+
+const dialogFocusableSelector = [
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "textarea:not([disabled])",
+  "select:not([disabled])",
+  "a[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+function useModalKeyboard<T extends HTMLElement>(
+  open: boolean,
+  close: () => void,
+  returnFocusRef?: { current: HTMLElement | null },
+) {
+  const dialogRef = useRef<T>(null);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+
+  useEffect(() => {
+    if (!open) return;
+    const returnTarget = returnFocusRef?.current
+      ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    const frame = window.requestAnimationFrame(() => {
+      const target = dialogRef.current?.querySelector<HTMLElement>("[autofocus]")
+        ?? dialogRef.current?.querySelector<HTMLElement>(dialogFocusableSelector);
+      target?.focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.requestAnimationFrame(() => returnTarget?.focus());
+    };
+  }, [open]);
+
+  function onKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeRef.current();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(dialogFocusableSelector) ?? []);
+    if (focusable.length === 0) { event.preventDefault(); return; }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault(); first.focus();
+    }
+  }
+
+  return { dialogRef, onKeyDown };
 }
 
 export function DataQualityPage() {
@@ -403,8 +461,55 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   </CoachShell>;
 }
 
+type SessionAmendDraft = {
+  session: CalendarSessionView;
+  title: string;
+  purpose: string;
+  prescription: string;
+  durationMinutes: string;
+  distanceMeters: string;
+  intensityRpe: string;
+  startTime: string;
+  cautions: string;
+  reason: string;
+};
+
+function amendmentDraft(session: CalendarSessionView): SessionAmendDraft {
+  return {
+    session,
+    title: session.title,
+    purpose: session.purpose,
+    prescription: session.prescription,
+    durationMinutes: String(session.durationMinutes),
+    distanceMeters: session.distanceMeters === undefined ? "" : String(session.distanceMeters),
+    intensityRpe: session.intensityRpe === undefined ? "" : String(session.intensityRpe),
+    startTime: session.startTime ?? "",
+    cautions: session.cautions.join("\n"),
+    reason: "",
+  };
+}
+
+function sessionAmendmentChanges(draft: SessionAmendDraft): JsonRecord {
+  const current = draft.session;
+  const cautions = draft.cautions.split("\n").map((value) => value.trim()).filter(Boolean);
+  const durationMinutes = Number(draft.durationMinutes);
+  const distanceMeters = draft.distanceMeters === "" ? null : Number(draft.distanceMeters);
+  const intensityRpe = draft.intensityRpe === "" ? null : Number(draft.intensityRpe);
+  const changes: JsonRecord = {};
+  if (draft.title.trim() !== current.title) changes.title = draft.title.trim();
+  if (draft.purpose.trim() !== current.purpose) changes.purpose = draft.purpose.trim();
+  if (draft.prescription.trim() !== current.prescription) changes.prescription = draft.prescription.trim();
+  if (durationMinutes !== current.durationMinutes) changes.durationMinutes = durationMinutes;
+  if (distanceMeters !== (current.distanceMeters ?? null)) changes.distanceMeters = distanceMeters;
+  if (intensityRpe !== (current.intensityRpe ?? null)) changes.intensityRpe = intensityRpe;
+  if ((draft.startTime || null) !== (current.startTime ?? null)) changes.startTime = draft.startTime || null;
+  if (JSON.stringify(cautions) !== JSON.stringify(current.cautions)) changes.cautions = cautions;
+  return changes;
+}
+
 export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }: { initialDate?: string; focusSessionId?: string; onlineMode?: boolean }) {
-  const today = localDateInTimezone(timezoneDefault);
+  const [planTimezone, setPlanTimezone] = useState(timezoneDefault);
+  const today = localDateInTimezone(planTimezone);
   const [anchorDate, setAnchorDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(initialDate ?? "") ? initialDate! : today);
   const [view, setView] = useState<"week" | "agenda">("week");
   const [sessions, setSessions] = useState<CalendarSessionView[]>([]);
@@ -413,14 +518,26 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const [staleMessage, setStaleMessage] = useState<string>();
   const [focusMessage, setFocusMessage] = useState<string>();
   const [planRange, setPlanRange] = useState<{ startsOn: string; endsOn: string } | null>(null);
+  const [actionState, setActionState] = useState<RequestState>("idle");
+  const [actionMessage, setActionMessage] = useState<string>();
+  const [amendDraft, setAmendDraft] = useState<SessionAmendDraft | null>(null);
   const focusHandled = useRef<string | null>(null);
   const [pending, setPending] = useState<{
     session: CalendarSessionView;
     operation: "reschedule" | "skip" | "restore";
     date?: string;
+    reason: string;
     warnings: string[];
     blocksConfirmation?: boolean;
   } | null>(null);
+  const pendingLauncherRef = useRef<HTMLElement | null>(null);
+  const amendmentLauncherRef = useRef<HTMLElement | null>(null);
+  const pendingModal = useModalKeyboard<HTMLFormElement>(Boolean(pending), () => {
+    if (actionState !== "loading") setPending(null);
+  }, pendingLauncherRef);
+  const amendmentModal = useModalKeyboard<HTMLElement>(Boolean(amendDraft), () => {
+    if (actionState !== "loading") setAmendDraft(null);
+  }, amendmentLauncherRef);
   const range = weekRange(anchorDate);
 
   async function loadCalendar(successMessage?: string) {
@@ -434,6 +551,8 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       const activeRecord = asRecord(active);
       const startsOn = String(activeRecord.startsOn ?? "");
       const endsOn = String(activeRecord.endsOn ?? "");
+      const timezone = String(activeRecord.timezone ?? timezoneDefault);
+      setPlanTimezone(timezone);
       setPlanRange(/^\d{4}-\d{2}-\d{2}$/.test(startsOn) && /^\d{4}-\d{2}-\d{2}$/.test(endsOn) ? { startsOn, endsOn } : null);
       const stale = asRecord(asRecord(todayContext).stale);
       setStaleMessage(stale.isStale === true ? String(stale.reason ?? "The approved schedule was built from older activity history.") : undefined);
@@ -464,16 +583,54 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
 
   async function confirmEdit() {
     if (!pending) return;
-    setState("loading");
+    const reason = pending.reason.trim();
+    if (!reason) { setActionState("error"); setActionMessage("Give a reason before confirming this change."); return; }
+    setActionState("loading"); setActionMessage(`Saving ${pending.operation}…`);
     try {
       await apiRequest(`/api/v1/coaching/calendar/sessions/${encodeURIComponent(pending.session.id)}/edits`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
           operation: pending.operation, expectedRevision: pending.session.revision,
+          reason,
           ...(pending.operation === "reschedule" ? { date: pending.date } : {}),
         }),
       });
-      setPending(null); await loadCalendar("Calendar updated. The approved prescription itself was not changed.");
-    } catch (error) { setState("error"); setMessage(error instanceof Error ? error.message : "Calendar edit could not be saved."); }
+      setPending(null); setActionState("success"); setActionMessage("Change saved with its reason. The approved source remains unchanged.");
+      await loadCalendar();
+    } catch (error) {
+      const code = (error as Error & { code?: string }).code;
+      setPending(null); setActionState("error");
+      setActionMessage(code === "REVISION_CONFLICT" || code === "CONFLICT"
+        ? "This session changed elsewhere. Reload the calendar and review its latest values before trying again."
+        : error instanceof Error ? error.message : "Calendar edit could not be saved.");
+    }
+  }
+
+  async function confirmAmendment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!amendDraft) return;
+    const reason = amendDraft.reason.trim();
+    if (!reason) { setActionState("error"); setActionMessage("Give a reason before saving this amendment."); return; }
+    const current = amendDraft.session;
+    const changes = sessionAmendmentChanges(amendDraft);
+    if (Object.keys(changes).length === 0) {
+      setActionState("error"); setActionMessage("Change at least one session detail before saving."); return;
+    }
+    setActionState("loading"); setActionMessage("Saving the reasoned session amendment…");
+    try {
+      await apiRequest(`/api/v1/coaching/calendar/sessions/${encodeURIComponent(current.id)}/edits`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ operation: "amend", expectedRevision: current.revision, reason, changes }),
+      });
+      setAmendDraft(null); setActionState("success");
+      setActionMessage("Session amended. The approved source and your reason are preserved for later coaching review.");
+      await loadCalendar();
+    } catch (error) {
+      const code = (error as Error & { code?: string }).code;
+      setAmendDraft(null); setActionState("error");
+      setActionMessage(code === "REVISION_CONFLICT" || code === "CONFLICT"
+        ? "This session changed elsewhere. Reload the calendar and review its latest values before trying again."
+        : error instanceof Error ? error.message : "The session amendment could not be saved.");
+    }
   }
 
   const weekDates = Array.from({ length: 7 }, (_, index) => {
@@ -481,8 +638,13 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     date.setUTCDate(date.getUTCDate() + index);
     return date.toISOString().slice(0, 10);
   });
+  const firstEditableDate = (() => {
+    const date = new Date(`${today}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + 1);
+    return date.toISOString().slice(0, 10);
+  })();
 
-  function reviewMove(session: CalendarSessionView) {
+  function reviewMove(session: CalendarSessionView, launcher: HTMLElement) {
     const input = document.getElementById(`move-${session.id}`) as HTMLInputElement | null;
     const date = input?.value || session.effectiveDate;
     const rangeWarning = planRange
@@ -490,16 +652,24 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       : "The approved plan range could not be verified. Retry the calendar before moving this session.";
     const warnings = [sameDayConflictWarning(sessions, session.id, date), rangeWarning]
       .filter((warning): warning is string => Boolean(warning));
-    setPending({ session, operation: "reschedule", date, warnings, blocksConfirmation: Boolean(rangeWarning) });
+    pendingLauncherRef.current = launcher;
+    setPending({ session, operation: "reschedule", date, reason: "", warnings, blocksConfirmation: Boolean(rangeWarning) });
   }
 
   function renderSessionCard(session: CalendarSessionView) {
     const isToday = session.effectiveDate === today;
+    const isFuture = canAmendFutureSession(session, today);
+    const original = session.original;
+    const originalTarget = [
+      original.distanceMeters ? `${Number((original.distanceMeters / 1000).toFixed(2))} km` : null,
+      original.durationMinutes ? `${original.durationMinutes} min` : null,
+      original.intensityRpe ? `RPE ${original.intensityRpe}` : null,
+    ].filter(Boolean).join(" · ") || "Follow the approved prescription";
     return <article className={`session-card${isToday ? " session-card--today" : ""}`} id={`session-${session.id}`} tabIndex={-1} key={session.id}>
       <div className="session-card-top"><div><p className="eyebrow">{session.kind.replace("_", " ")} · {session.status}</p>{isToday ? <span className="today-marker">Today</span> : null}</div><time dateTime={session.effectiveDate}>{formatCoachingDate(session.effectiveDate)}</time></div>
-      <h3>{session.title}</h3><p><strong>Purpose:</strong> {session.purpose}</p>
-      <p className="session-prescription"><strong>Approved prescription:</strong> {session.prescription}</p>
-      <p><strong>Target:</strong> {formatSessionTarget(session)}</p>
+      <h3>{session.title}</h3><p><strong>Current purpose:</strong> {session.purpose}</p>
+      <p className="session-prescription"><strong>Current prescription:</strong> {session.prescription}</p>
+      <p><strong>Current target:</strong> {formatSessionTarget(session)}</p>
       <p className="adjustment-cue">{formatAdjustmentCue(session)}</p>
       <dl>
         <div><dt>Start</dt><dd>{session.startTime ?? "Flexible"}</dd></div>
@@ -507,22 +677,26 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
         <div><dt>Effective date</dt><dd>{formatCoachingDate(session.effectiveDate)}</dd></div>
         <div><dt>Cautions</dt><dd>{session.cautions.length > 0 ? session.cautions.join("; ") : "None supplied"}</dd></div>
       </dl>
+      <details className="session-source"><summary>Approved source prescription</summary><div><strong>{original.title}</strong><p>{original.purpose}</p><p>{original.prescription}</p><small>{originalTarget} · prescribed {formatCoachingDate(original.scheduledDate, planTimezone)}</small></div></details>
+      {session.amendments.length > 0 ? <details className="session-history"><summary>Change history ({session.amendments.length})</summary><ol>{session.amendments.map((amendment) => <li key={amendment.id}><strong>{changeHistoryLabel(amendment)}</strong><span>{amendment.reason}</span>{amendment.changedAt ? <time dateTime={amendment.changedAt}>{new Date(amendment.changedAt).toLocaleString("en-ZA", { timeZone: planTimezone })}</time> : null}</li>)}</ol><p>No AI review is claimed; this history will be available in the next coaching context.</p></details> : null}
       {session.warnings.map((warning) => <p className="coach-status coach-status--error" role="alert" key={warning}>{warning}</p>)}
-      {onlineMode ? <p className="adjustment-cue">Schedule changes remain available in the local coaching workflow and will appear here after sync.</p> : <div className="session-actions">
-        <label><span>Move to date</span><input type="date" defaultValue={session.effectiveDate} id={`move-${session.id}`} /></label>
-        <button className="button button-secondary" type="button" onClick={() => reviewMove(session)}>Review move</button>
+      {isFuture ? <div className="session-actions">
+        <label><span>Move to date</span><input type="date" min={firstEditableDate} defaultValue={session.effectiveDate} id={`move-${session.id}`} /></label>
+        <button className="button button-secondary" type="button" onClick={(event) => reviewMove(session, event.currentTarget)}>Review move</button>
+        <button className="button button-secondary" type="button" onClick={(event) => { amendmentLauncherRef.current = event.currentTarget; setActionState("idle"); setActionMessage(undefined); setAmendDraft(amendmentDraft(session)); }}>Amend session</button>
         {session.status === "skipped"
-          ? <button className="button button-secondary" type="button" onClick={() => setPending({ session, operation: "restore", warnings: [] })}>Restore</button>
-          : <button className="button button-secondary" type="button" onClick={() => setPending({ session, operation: "skip", warnings: [] })}>Skip</button>}
-      </div>}
+          ? <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "restore", reason: "", warnings: [] }); }}>Restore</button>
+          : <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "skip", reason: "", warnings: [] }); }}>Skip</button>}
+      </div> : <p className="adjustment-cue">Past and current-day sessions are read-only. Future changes belong in Calendar.</p>}
     </article>;
   }
 
-  return <CoachShell page="calendar" title="Calendar" subtitle={onlineMode ? "Read-only approved schedule available while your local device is offline" : "Approved sessions and auditable schedule changes"} meta={`${range.from} – ${range.to} · ${timezoneDefault}`}>
+  return <CoachShell page="calendar" title="Calendar" subtitle={onlineMode ? "Owner-managed future sessions with preserved approved sources" : "Approved sessions and reasoned, auditable future changes"} meta={`${range.from} – ${range.to} · ${planTimezone}`}>
     <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="coach-actions"><button className="button button-secondary" type="button" onClick={() => moveWeek(-7)}>Previous week</button><button className="button button-secondary" type="button" onClick={() => setAnchorDate(today)}>Today</button><button className="button button-secondary" type="button" onClick={() => moveWeek(7)}>Next week</button></div><div className="segmented" aria-label="Calendar view"><button type="button" aria-pressed={view === "week"} onClick={() => setView("week")}>Week</button><button type="button" aria-pressed={view === "agenda"} onClick={() => setView("agenda")}>Agenda</button></div></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
     {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h3>Calendar could not be loaded</h3><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
     {state === "success" && message ? <StatusLine state="success" message={message} /> : null}
+    <StatusLine state={actionState} message={actionMessage} />
     {state === "success" && staleMessage ? <section className="coach-panel calendar-state-panel calendar-state-panel--stale" role="status"><h3>Schedule context needs review</h3><p>{staleMessage} The approved plan has not been changed.</p><Link className="text-link" href="/dashboard/plan">Review Plan</Link></section> : null}
     {state === "success" && focusMessage ? <p className="coach-status coach-status--error" role="alert">{focusMessage}</p> : null}
     {state === "success" && sessions.length === 0
@@ -533,12 +707,26 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
           <div className="calendar-day-sessions">{daySessions.length > 0 ? daySessions.map(renderSessionCard) : <p className="calendar-day-empty">No session</p>}</div>
         </section>; })}
       </section> : state === "success" ? <section className="session-grid session-grid--agenda" aria-label="Agenda training schedule">{sessions.map(renderSessionCard)}</section> : null}
-    {pending ? <div className="coach-dialog-backdrop"><section className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">
+    {pending ? <div className="coach-dialog-backdrop"><form ref={pendingModal.dialogRef} onKeyDown={pendingModal.onKeyDown} onSubmit={(event) => { event.preventDefault(); void confirmEdit(); }} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">
       <h3 id="calendar-edit-title">Confirm {pending.operation}</h3>
       <p><strong>{pending.session.title}</strong>{pending.date ? ` will move from ${pending.session.effectiveDate} to ${pending.date}.` : ` will be marked ${pending.operation === "skip" ? "skipped" : "upcoming"}.`} Its prescribed date remains {pending.session.prescribedDate}.</p>
       {pending.warnings.length > 0 ? <div className="coach-status coach-status--error" role="alert"><strong>Review before confirming</strong><ul>{pending.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
-      <div className="coach-actions"><button autoFocus disabled={pending.blocksConfirmation} className="button button-primary" type="button" onClick={() => void confirmEdit()}>Confirm change</button><button className="button button-secondary" type="button" onClick={() => setPending(null)}>Cancel</button></div>
-    </section></div> : null}
+      <label className="reason-field" htmlFor="calendar-change-reason"><span>Reason for this change</span><textarea autoFocus id="calendar-change-reason" required maxLength={500} rows={3} value={pending.reason} onChange={(event) => setPending({ ...pending, reason: event.target.value })} aria-describedby="calendar-change-reason-help" /><small id="calendar-change-reason-help">Required · 1–500 characters · saved for later coaching review</small></label>
+      <div className="coach-actions"><button disabled={pending.blocksConfirmation || actionState === "loading"} className="button button-primary" type="submit">{actionState === "loading" ? "Saving…" : "Confirm change"}</button><button className="button button-secondary" type="button" disabled={actionState === "loading"} onClick={() => setPending(null)}>Cancel</button></div>
+    </form></div> : null}
+    {amendDraft ? <div className="coach-dialog-backdrop"><section ref={amendmentModal.dialogRef} onKeyDown={amendmentModal.onKeyDown} className="coach-dialog coach-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="session-amend-title"><form className="coach-form coach-form-grid" onSubmit={(event) => void confirmAmendment(event)}>
+      <div className="field-wide"><h3 id="session-amend-title">Amend future session</h3><p>Update the working session for <strong>{amendDraft.session.title}</strong>. Its approved source prescription remains unchanged.</p></div>
+      <label><span>Title</span><input autoFocus required maxLength={200} value={amendDraft.title} onChange={(event) => setAmendDraft({ ...amendDraft, title: event.target.value })} /></label>
+      <label><span>Start time</span><input type="time" value={amendDraft.startTime} onChange={(event) => setAmendDraft({ ...amendDraft, startTime: event.target.value })} /></label>
+      <label className="field-wide"><span>Purpose</span><textarea required maxLength={1000} rows={2} value={amendDraft.purpose} onChange={(event) => setAmendDraft({ ...amendDraft, purpose: event.target.value })} /></label>
+      <label className="field-wide"><span>Prescription</span><textarea required maxLength={4000} rows={4} value={amendDraft.prescription} onChange={(event) => setAmendDraft({ ...amendDraft, prescription: event.target.value })} /></label>
+      <label><span>Duration (minutes)</span><input required type="number" min={amendDraft.session.kind === "rest" ? 0 : 1} max={1440} value={amendDraft.durationMinutes} onChange={(event) => setAmendDraft({ ...amendDraft, durationMinutes: event.target.value })} /></label>
+      <label><span>Distance (metres, optional)</span><input type="number" min={1} max={500000} value={amendDraft.distanceMeters} onChange={(event) => setAmendDraft({ ...amendDraft, distanceMeters: event.target.value })} /></label>
+      <label><span>RPE (optional)</span><input type="number" min={1} max={10} value={amendDraft.intensityRpe} onChange={(event) => setAmendDraft({ ...amendDraft, intensityRpe: event.target.value })} /></label>
+      <label className="field-wide"><span>Cautions (one per line)</span><textarea rows={3} value={amendDraft.cautions} onChange={(event) => setAmendDraft({ ...amendDraft, cautions: event.target.value })} /></label>
+      <label className="field-wide" htmlFor="session-amend-reason"><span>Reason for this amendment</span><textarea id="session-amend-reason" required maxLength={500} rows={3} value={amendDraft.reason} onChange={(event) => setAmendDraft({ ...amendDraft, reason: event.target.value })} aria-describedby="session-amend-reason-help" /><small id="session-amend-reason-help">Required · saved with the before and after values for later coaching review</small></label>
+      <div className="coach-actions field-wide"><button className="button button-primary" disabled={actionState === "loading" || amendDraft.reason.trim().length === 0 || Object.keys(sessionAmendmentChanges(amendDraft)).length === 0} type="submit">{actionState === "loading" ? "Saving…" : "Save reasoned amendment"}</button><button className="button button-secondary" disabled={actionState === "loading"} type="button" onClick={() => setAmendDraft(null)}>Cancel</button></div>
+    </form></section></div> : null}
   </CoachShell>;
 }
 

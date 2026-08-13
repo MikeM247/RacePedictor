@@ -67,6 +67,75 @@ const requireNonnegativeNumber = (value, fieldName, { integer = false, nullable 
   return value;
 };
 
+const localDateInTimezone = (value, timezone) => {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value);
+    const part = (type) => parts.find((candidate) => candidate.type === type)?.value;
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  } catch {
+    fail("INVALID_TIMEZONE", "A valid IANA timezone is required for future session changes");
+  }
+};
+
+const normalizeAmendmentChanges = (value) => {
+  const input = requireRecord(value, "changes");
+  const allowed = new Set([
+    "title", "purpose", "prescription", "durationMinutes", "distanceMeters",
+    "intensityRpe", "startTime", "cautions",
+  ]);
+  for (const field of Object.keys(input)) {
+    if (!allowed.has(field)) fail("VALIDATION_ERROR", `changes.${field} is not editable`);
+  }
+  if (Object.keys(input).length === 0) fail("VALIDATION_ERROR", "changes must contain at least one editable field");
+  const changes = {};
+  for (const field of ["title", "purpose", "prescription"]) {
+    if (!Object.hasOwn(input, field)) continue;
+    const maximum = field === "title" ? 200 : field === "purpose" ? 1000 : 4000;
+    const normalized = requireString(input[field], `changes.${field}`);
+    if (normalized.length > maximum) fail("VALIDATION_ERROR", `changes.${field} is too long`);
+    changes[field] = normalized;
+  }
+  if (Object.hasOwn(input, "durationMinutes")) {
+    const duration = requireNonnegativeNumber(input.durationMinutes, "changes.durationMinutes", { integer: true, nullable: false });
+    if (duration > 1440) fail("VALIDATION_ERROR", "changes.durationMinutes must not exceed 1440");
+    changes.durationMinutes = duration;
+  }
+  if (Object.hasOwn(input, "distanceMeters")) {
+    if (input.distanceMeters === null) changes.distanceMeters = null;
+    else if (typeof input.distanceMeters !== "number" || !Number.isFinite(input.distanceMeters) || input.distanceMeters <= 0 || input.distanceMeters > 500_000) {
+      fail("VALIDATION_ERROR", "changes.distanceMeters must be null or a positive number not exceeding 500000");
+    } else changes.distanceMeters = input.distanceMeters;
+  }
+  if (Object.hasOwn(input, "intensityRpe")) {
+    if (input.intensityRpe === null) changes.intensityRpe = null;
+    else if (!Number.isInteger(input.intensityRpe) || input.intensityRpe < 1 || input.intensityRpe > 10) {
+      fail("VALIDATION_ERROR", "changes.intensityRpe must be null or an integer from 1 to 10");
+    } else changes.intensityRpe = input.intensityRpe;
+  }
+  if (Object.hasOwn(input, "startTime")) {
+    if (input.startTime === null) changes.startTime = null;
+    else if (typeof input.startTime !== "string" || !TIME_PATTERN.test(input.startTime)) {
+      fail("VALIDATION_ERROR", "changes.startTime must be null or use HH:mm");
+    } else changes.startTime = input.startTime;
+  }
+  if (Object.hasOwn(input, "cautions")) {
+    if (!Array.isArray(input.cautions) || input.cautions.length > 20) {
+      fail("VALIDATION_ERROR", "changes.cautions must be an array with no more than 20 items");
+    }
+    changes.cautions = input.cautions.map((caution, index) => {
+      const normalized = requireString(caution, `changes.cautions[${index}]`);
+      if (normalized.length > 500) fail("VALIDATION_ERROR", `changes.cautions[${index}] is too long`);
+      return normalized;
+    });
+  }
+  return changes;
+};
+
 const parseJson = (value, fallback) => {
   if (typeof value !== "string") return fallback;
   try {
@@ -246,16 +315,59 @@ export const createLocalCoachingRepository = ({
   const newId = (prefix) => `${prefix}_${idFactory()}`;
 
   const listWorkoutCalendarEvents = (workoutId) => database.prepare(`
-    SELECT event_type AS eventType, event_json AS eventJson, created_at AS createdAt
+    SELECT id, event_type AS eventType, event_json AS eventJson, created_at AS createdAt
     FROM coaching_plan_audit_events
     WHERE athlete_id = ? AND workout_id = ?
       AND event_type IN ('calendar_adjusted', 'workout_moved')
     ORDER BY created_at, id
   `).all(normalizedAthleteId, workoutId).map((row) => ({
+    id: row.id,
     eventType: row.eventType,
     event: parseJson(row.eventJson, {}),
     createdAt: row.createdAt,
-  }));
+  })).sort((left, right) => {
+    const revision = (candidate) => Number(candidate.event.result?.revision ?? candidate.event.revision ?? 0);
+    return revision(left) - revision(right) || left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+  });
+
+  const workoutValues = (workout) => {
+    const details = requireRecord(workout.details, "workout.details");
+    const rpe = typeof details.intensityRpe === "number" ? details.intensityRpe : null;
+    return {
+      title: workout.title,
+      purpose: typeof details.purpose === "string" ? details.purpose : workout.title,
+      prescription: typeof details.prescription === "string"
+        ? details.prescription
+        : typeof details.purpose === "string" ? details.purpose : workout.title,
+      durationMinutes: workout.durationMinutes,
+      distanceMeters: workout.distanceM,
+      intensityRpe: rpe,
+      startTime: typeof details.startTime === "string" ? details.startTime : null,
+      cautions: Array.isArray(details.cautions) ? details.cautions.map(String) : [],
+    };
+  };
+
+  const applyWorkoutValues = (workout, values) => {
+    const details = { ...requireRecord(workout.details, "workout.details") };
+    if (Object.hasOwn(values, "purpose")) details.purpose = values.purpose;
+    if (Object.hasOwn(values, "prescription")) details.prescription = values.prescription;
+    if (Object.hasOwn(values, "intensityRpe")) {
+      if (values.intensityRpe === null) delete details.intensityRpe;
+      else details.intensityRpe = values.intensityRpe;
+    }
+    if (Object.hasOwn(values, "startTime")) {
+      if (values.startTime === null) delete details.startTime;
+      else details.startTime = values.startTime;
+    }
+    if (Object.hasOwn(values, "cautions")) details.cautions = values.cautions;
+    return {
+      ...workout,
+      title: Object.hasOwn(values, "title") ? values.title : workout.title,
+      durationMinutes: Object.hasOwn(values, "durationMinutes") ? values.durationMinutes : workout.durationMinutes,
+      distanceM: Object.hasOwn(values, "distanceMeters") ? values.distanceMeters : workout.distanceM,
+      details,
+    };
+  };
 
   const deriveEffectiveWorkout = (workout) => {
     if (!workout) return null;
@@ -267,12 +379,15 @@ export const createLocalCoachingRepository = ({
     const prescribedLocalDate = typeof firstLegacyMove?.fromDate === "string"
       ? firstLegacyMove.fromDate
       : workout.localDate;
+    const approvedWorkout = { ...workout, details: { ...workout.details } };
+    let effectiveWorkout = { ...workout, details: { ...workout.details } };
     let effectiveLocalDate = workout.localDate;
     let calendarStatus = "upcoming";
     let effectiveRevision = workout.revision;
     let effectiveUpdatedAt = workout.updatedAt;
+    const amendments = [];
 
-    for (const { eventType, event, createdAt } of events) {
+    for (const { id, eventType, event, createdAt } of events) {
       if (eventType === "workout_moved") {
         const revision = Number(event.revision);
         if (Number.isInteger(revision) && revision >= effectiveRevision && typeof event.toDate === "string") {
@@ -289,18 +404,53 @@ export const createLocalCoachingRepository = ({
       if (!Number.isInteger(revision) || revision <= effectiveRevision) continue;
       if (typeof result.effectiveDate === "string") effectiveLocalDate = result.effectiveDate;
       if (result.status === "upcoming" || result.status === "skipped") calendarStatus = result.status;
+      const changedFields = Array.isArray(event.changedFields)
+        ? event.changedFields.filter((field) => typeof field === "string")
+        : [];
+      const after = event.after && typeof event.after === "object" && !Array.isArray(event.after)
+        ? event.after
+        : {};
+      if (changedFields.some((field) => !new Set(["effectiveDate", "status"]).has(field))) {
+        effectiveWorkout = applyWorkoutValues(effectiveWorkout, after);
+      }
       effectiveRevision = revision;
       effectiveUpdatedAt = createdAt;
+      if (typeof event.operation === "string") {
+        const before = event.before && typeof event.before === "object" && !Array.isArray(event.before)
+          ? event.before
+          : event.prior ?? {};
+        const normalizedAfter = Object.keys(after).length > 0 ? after : event.result ?? {};
+        amendments.push({
+          id: typeof event.id === "string" ? event.id : event.amendmentId ?? id,
+          planId: workout.planId,
+          sessionId: workout.id,
+          operation: event.operation,
+          actor: typeof event.actor === "string" && event.actor.trim() ? event.actor : "user",
+          changedAt: createdAt,
+          reason: typeof event.reason === "string" && event.reason.trim()
+            ? event.reason.trim()
+            : "Reason not recorded for this legacy change.",
+          changedFields: changedFields.length > 0
+            ? changedFields
+            : event.operation === "reschedule" ? ["effectiveDate"] : ["status"],
+          before,
+          after: normalizedAfter,
+          expectedRevision: Number(event.expectedRevision ?? before.revision ?? effectiveRevision - 1),
+          resultingRevision: revision,
+        });
+      }
     }
 
     return {
-      ...workout,
+      ...effectiveWorkout,
       localDate: effectiveLocalDate,
       prescribedLocalDate,
       effectiveLocalDate,
       calendarStatus,
       revision: effectiveRevision,
       updatedAt: effectiveUpdatedAt,
+      approvedWorkout,
+      amendments,
     };
   };
 
@@ -363,13 +513,13 @@ export const createLocalCoachingRepository = ({
     };
   };
 
-  const insertAuditEvent = ({ planId, workoutId = null, eventType, event = {}, createdAt }) => {
+  const insertAuditEvent = ({ id = newId("audit"), planId, workoutId = null, eventType, event = {}, createdAt }) => {
     database.prepare(`
       INSERT INTO coaching_plan_audit_events (
         id, athlete_id, plan_id, workout_id, event_type, event_json, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
-      newId("audit"),
+      id,
       normalizedAthleteId,
       planId,
       workoutId,
@@ -377,6 +527,7 @@ export const createLocalCoachingRepository = ({
       JSON.stringify(event),
       createdAt,
     );
+    return id;
   };
 
   const loadProfile = () => {
@@ -1043,6 +1194,7 @@ export const createLocalCoachingRepository = ({
     workoutId,
     operation,
     toDate = null,
+    changes = null,
     expectedRevision,
     actor = "user",
     reason = null,
@@ -1050,8 +1202,8 @@ export const createLocalCoachingRepository = ({
   } = {}) => transaction(() => {
     const normalizedWorkoutId = requireString(workoutId, "workoutId");
     const normalizedOperation = requireString(operation, "operation");
-    if (!new Set(["reschedule", "skip", "restore"]).has(normalizedOperation)) {
-      fail("VALIDATION_ERROR", "operation must be reschedule, skip, or restore");
+    if (!new Set(["amend", "reschedule", "skip", "restore"]).has(normalizedOperation)) {
+      fail("VALIDATION_ERROR", "operation must be amend, reschedule, skip, or restore");
     }
     if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
       fail("VALIDATION_ERROR", "expectedRevision must be a positive integer");
@@ -1063,9 +1215,25 @@ export const createLocalCoachingRepository = ({
     if (plan.lifecycle !== "active") {
       fail("INVALID_STATE", "Calendar adjustments require an active plan");
     }
+    const timezone = loadProfile()?.timezone ?? loadRoutine()?.timezone ?? DEFAULT_TIMEZONE;
+    const currentLocalDate = localDateInTimezone(new Date(now()), timezone);
+    if (workout.effectiveLocalDate <= currentLocalDate) {
+      fail("NOT_FUTURE_SESSION", "Only sessions after the athlete's current local date can be changed", {
+        currentLocalDate,
+        effectiveDate: workout.effectiveLocalDate,
+        timezone,
+      });
+    }
     const normalizedDate = normalizedOperation === "reschedule" ? requireDate(toDate, "toDate") : null;
     if (normalizedDate && (normalizedDate < plan.startDate || normalizedDate > plan.endDate)) {
       fail("VALIDATION_ERROR", "toDate must fall within the plan range");
+    }
+    if (normalizedDate && normalizedDate <= currentLocalDate) {
+      fail("NOT_FUTURE_SESSION", "A rescheduled session must remain after the athlete's current local date", {
+        currentLocalDate,
+        effectiveDate: normalizedDate,
+        timezone,
+      });
     }
     if (workout.revision !== expectedRevision) {
       fail("REVISION_CONFLICT", "Planned workout has changed", {
@@ -1080,12 +1248,35 @@ export const createLocalCoachingRepository = ({
       fail("INVALID_STATE", "Only a skipped workout can be restored");
     }
     const normalizedActor = requireString(actor, "actor");
-    const normalizedReason = optionalString(reason, "reason");
+    const normalizedReason = requireString(reason, "reason");
+    if (normalizedReason.length > 500) fail("VALIDATION_ERROR", "reason must not exceed 500 characters");
     const normalizedRequestedAt = optionalString(requestedAt, "requestedAt");
     if (normalizedRequestedAt && Number.isNaN(new Date(normalizedRequestedAt).getTime())) {
       fail("VALIDATION_ERROR", "requestedAt must be a valid ISO date-time");
     }
     const timestamp = now();
+    const currentValues = workoutValues(workout);
+    let changedFields;
+    let before;
+    let after;
+    if (normalizedOperation === "amend") {
+      const normalizedChanges = normalizeAmendmentChanges(changes);
+      changedFields = Object.keys(normalizedChanges).filter((field) => (
+        JSON.stringify(currentValues[field]) !== JSON.stringify(normalizedChanges[field])
+      ));
+      if (changedFields.length === 0) fail("NO_CHANGES", "At least one session field must change");
+      before = Object.fromEntries(changedFields.map((field) => [field, currentValues[field]]));
+      after = Object.fromEntries(changedFields.map((field) => [field, normalizedChanges[field]]));
+    } else if (normalizedOperation === "reschedule") {
+      if (normalizedDate === workout.effectiveLocalDate) fail("NO_CHANGES", "The session is already scheduled on that date");
+      changedFields = ["effectiveDate"];
+      before = { effectiveDate: workout.effectiveLocalDate };
+      after = { effectiveDate: normalizedDate };
+    } else {
+      changedFields = ["status"];
+      before = { status: workout.calendarStatus };
+      after = { status: normalizedOperation === "skip" ? "skipped" : "upcoming" };
+    }
     const result = {
       effectiveDate: normalizedDate ?? workout.effectiveLocalDate,
       status: normalizedOperation === "skip"
@@ -1093,14 +1284,24 @@ export const createLocalCoachingRepository = ({
         : normalizedOperation === "restore" ? "upcoming" : workout.calendarStatus,
       revision: expectedRevision + 1,
     };
+    const amendmentId = newId("amendment");
     insertAuditEvent({
+      id: amendmentId,
       planId: rawWorkout.planId,
       workoutId: normalizedWorkoutId,
       eventType: "calendar_adjusted",
       event: {
         operation: normalizedOperation,
+        id: amendmentId,
+        amendmentId,
         actor: normalizedActor,
         reason: normalizedReason,
+        changedAt: timestamp,
+        changedFields,
+        before,
+        after,
+        expectedRevision,
+        resultingRevision: result.revision,
         requestedAt: normalizedRequestedAt,
         prescribedDate: workout.prescribedLocalDate,
         prior: {
@@ -1122,6 +1323,13 @@ export const createLocalCoachingRepository = ({
     expectedRevision,
     reason,
   });
+
+  const listWorkoutAmendments = (workoutId) => {
+    ensureOpen();
+    const workout = getWorkout(requireString(workoutId, "workoutId"));
+    if (!workout) fail("NOT_FOUND", "Planned workout was not found");
+    return workout.amendments;
+  };
 
   const storeDailyBrief = (input = {}) => transaction(() => {
     const localDate = requireDate(input.localDate, "localDate");
@@ -1252,7 +1460,9 @@ export const createLocalCoachingRepository = ({
         event_type AS eventType, event_json AS eventJson, created_at AS createdAt
       FROM coaching_plan_audit_events
       WHERE athlete_id = ? AND plan_id = ?
-      ORDER BY created_at, id LIMIT ?
+      ORDER BY created_at,
+        COALESCE(json_extract(event_json, '$.resultingRevision'), json_extract(event_json, '$.result.revision'), 0),
+        id LIMIT ?
     `).all(normalizedAthleteId, normalizedPlanId, limit).map((row) => ({
       id: row.id,
       athleteId: row.athleteId,
@@ -1294,6 +1504,7 @@ export const createLocalCoachingRepository = ({
     loadActivePlan,
     adjustWorkout,
     moveWorkout,
+    listWorkoutAmendments,
     storeDailyBrief,
     getDailyBrief,
     saveReminderPreferences,

@@ -126,6 +126,7 @@ function fakePrisma() {
   const devices = new Map([["device-a", { id: "device-a", athleteId: "athlete-a", status: "active" }]]);
   const projections = [];
   const changes = [];
+  const sessions = [];
   const transaction = {
     pairedDevice: { findUnique: async ({ where }) => {
       const row = devices.get(where.id_athleteId.id);
@@ -149,13 +150,21 @@ function fakePrisma() {
         return row;
       },
     },
+    calendarSessionProjection: {
+      upsert: async ({ where, create }) => {
+        const key = where.athleteId_planId_sessionId;
+        let row = sessions.find((item) => item.athleteId === key.athleteId && item.planId === key.planId && item.sessionId === key.sessionId);
+        if (!row) { row = { id: `session-${sessions.length + 1}`, ...create }; sessions.push(row); }
+        return row;
+      },
+    },
     syncChange: {
       aggregate: async ({ where }) => ({ _max: { cursor: changes.filter((item) => item.athleteId === where.athleteId).at(-1)?.cursor ?? null } }),
       create: async ({ data }) => { changes.push({ ...data }); return data; },
     },
   };
   return {
-    devices, projections, changes,
+    devices, projections, changes, sessions,
     trainingPlanProjection: transaction.trainingPlanProjection,
     $transaction: async (operation) => operation(transaction),
   };

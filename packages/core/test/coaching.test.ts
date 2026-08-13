@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertPlanCanActivate,
+  assertFutureSessionChangeAllowed,
   buildDailyBrief,
   calendarApiResponseSchema,
   calendarEditApiResponseSchema,
   calendarEditHttpRequestSchema,
   calendarEditRequestSchema,
   calendarQueryRequestSchema,
+  sessionAmendmentSchema,
   coachingProfileApiResponseSchema,
   coachingProfileUpdateRequestSchema,
   coachingContextEnvelopeSchema,
@@ -142,7 +144,7 @@ test("shared endpoint schemas cover profile, routine, calendar, Today, and remin
     warnings: [],
   };
   assert.equal(calendarQueryRequestSchema.safeParse({ from: "2026-08-03", to: "2026-08-09" }).success, true);
-  assert.equal(calendarEditHttpRequestSchema.safeParse({ operation: "reschedule", expectedRevision: 1, date: "2026-08-05" }).success, true);
+  assert.equal(calendarEditHttpRequestSchema.safeParse({ operation: "reschedule", expectedRevision: 1, reason: "Travel changed", date: "2026-08-05" }).success, true);
   assert.equal(calendarApiResponseSchema.safeParse({ data: { from: "2026-08-03", to: "2026-08-09", sessions: [session] } }).success, true);
   assert.equal(calendarEditApiResponseSchema.safeParse({ data: { session, operation: "reschedule" } }).success, true);
 
@@ -272,7 +274,7 @@ test("shared context and coaching route schemas validate complete runtime envelo
       earliestOccurredAt: activity.occurredAt,
       latestOccurredAt: activity.occurredAt,
       totalDistanceM: activity.distanceM,
-      sourceTypes: ["csv"],
+      sourceTypes: ["csv", "strava"],
     },
     activities: [activity],
   });
@@ -289,6 +291,8 @@ test("shared context and coaching route schemas validate complete runtime envelo
     jsonPath: "Coach Exchange/Generated/coaching-context.v1.json",
     markdownPath: "Coach Exchange/Generated/coaching-context.v1.md",
     snapshotId: "snapshot-1",
+    reviewContext: null,
+    reviewContextPath: null,
     artifactId: artifact.id,
     profile,
     routine,
@@ -321,14 +325,47 @@ test("calendar edit contract requires operation-specific fields and optimistic r
     planId: "plan-1",
     sessionId: "run-1",
     expectedRevision: 2,
+    reason: "Adjust around a work commitment",
     requestedAt: now,
   };
+  assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "amend", changes: { title: "Progressive easy run", intensityRpe: 4 } }).success, true);
   assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "reschedule", effectiveDate: "2026-08-06" }).success, true);
   assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "skip" }).success, true);
   assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "restore" }).success, true);
   assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "reschedule" }).success, false);
   assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "skip", effectiveDate: "2026-08-06" }).success, false);
   assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "restore", expectedRevision: 0 }).success, false);
+  assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "amend", reason: "   ", changes: { title: "Changed" } }).success, false);
+  assert.equal(calendarEditRequestSchema.safeParse({ ...base, operation: "amend", changes: {} }).success, false);
+});
+
+test("reasoned session amendment records and future-date eligibility are strict", () => {
+  const amendment = {
+    id: "amendment-1",
+    planId: "plan-1",
+    sessionId: "run-1",
+    operation: "amend" as const,
+    actor: "user",
+    changedAt: now,
+    reason: "Shorten the session before an early meeting",
+    changedFields: ["durationMinutes", "startTime"] as const,
+    before: { durationMinutes: 45, startTime: "07:00" },
+    after: { durationMinutes: 35, startTime: "06:00" },
+    expectedRevision: 2,
+    resultingRevision: 3,
+  };
+  assert.equal(sessionAmendmentSchema.safeParse(amendment).success, true);
+  assert.equal(sessionAmendmentSchema.safeParse({ ...amendment, reason: " " }).success, false);
+  assert.equal(sessionAmendmentSchema.safeParse({ ...amendment, resultingRevision: 4 }).success, false);
+  assert.doesNotThrow(() => assertFutureSessionChangeAllowed({
+    effectiveDate: "2026-08-06", currentLocalDate: "2026-08-05", planStatus: "active",
+  }));
+  assert.throws(() => assertFutureSessionChangeAllowed({
+    effectiveDate: "2026-08-05", currentLocalDate: "2026-08-05", planStatus: "active",
+  }), /after the athlete's current local date/);
+  assert.throws(() => assertFutureSessionChangeAllowed({
+    effectiveDate: "2026-08-06", currentLocalDate: "2026-08-05", planStatus: "retired",
+  }), /active plan/);
 });
 
 test("standard coaching envelopes match the runtime HTTP data and error shapes", () => {

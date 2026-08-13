@@ -7,3 +7,4 @@ export * from "./cloud-coaching.ts";
 export * from "./second-brain-publisher.ts";
 export * from "./operational-guardrails.ts";
 export * from "./shadow-reconciliation.ts";
+export * from "./coaching-review-context.ts";

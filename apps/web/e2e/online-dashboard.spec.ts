@@ -1,5 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const localDate = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Johannesburg", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
+const addDays = (date: string, days: number) => {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
+
 const dashboard = {
   fetchStatus: "success",
   stale: { isStale: false },
@@ -142,7 +156,7 @@ test("online Plan selects an approved version while Calendar remains prescriptio
   await page.goto("/dashboard/plan");
   await expect(page.getByText("Online plan control")).toBeVisible();
   await expect(page.getByText("Coaching version 1.1.0").first()).toBeVisible();
-  await expect(page.getByText("Cloud easy run")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Create a plan/u })).toHaveCount(0);
   await page.getByText("Coaching version 1.0.0").click();
   await page.getByRole("button", { name: "Make this approved plan active" }).click();
@@ -152,9 +166,68 @@ test("online Plan selects an approved version while Calendar remains prescriptio
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/dashboard/calendar?date=2026-08-10");
-  await expect(page.getByText("Cloud easy run")).toBeVisible();
-  await expect(page.getByText("Schedule changes remain available in the local coaching workflow and will appear here after sync.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
+  await expect(page.getByText("Past and current-day sessions are read-only. Future changes belong in Calendar.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Review move" })).toHaveCount(0);
+});
+
+test("online Calendar saves a reasoned amendment to a future owner session", async ({ page }) => {
+  const today = localDate();
+  const futureDate = addDays(today, 2);
+  const planEnd = addDays(today, 14);
+  const original = {
+    id: "run-future", kind: "run", scheduledDate: futureDate, title: "Cloud future run",
+    purpose: "Build aerobic consistency.", prescription: "Run easily for 40 minutes.",
+    cautions: [], durationMinutes: 40, distanceMeters: 6500, intensityRpe: 3,
+  };
+  let session = {
+    ...original, prescribedDate: futureDate, effectiveDate: futureDate, originalDate: futureDate,
+    status: "upcoming", revision: 1, warnings: [], original, amendments: [],
+  } as Record<string, unknown>;
+
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ data: { ...plan, startsOn: today, endsOn: planEnd, timezone: "Africa/Johannesburg" } }),
+  }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ data: { stale: { isStale: false } } }),
+  }));
+  await page.route("**/api/v1/coaching/calendar**", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      expect(body).toMatchObject({
+        operation: "amend", expectedRevision: 1,
+        reason: "Work travel requires a shorter treadmill session.",
+        changes: { prescription: "Run easily for 30 minutes on the treadmill." },
+      });
+      const amendment = {
+        id: "amendment-online", operation: "amend", reason: body.reason,
+        changedAt: new Date().toISOString(), changedFields: ["prescription"], resultingRevision: 2,
+      };
+      session = { ...session, prescription: body.changes.prescription, revision: 2, amendments: [amendment] };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { session, operation: "amend" } }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ data: { from: today, to: planEnd, sessions: [session] } }),
+    });
+  });
+
+  await page.goto(`/dashboard/calendar?date=${futureDate}`);
+  const card = page.getByRole("article").filter({ hasText: "Cloud future run" });
+  await card.getByRole("button", { name: "Amend session" }).click();
+  const dialog = page.getByRole("dialog", { name: "Amend future session" });
+  await expect(dialog.getByRole("button", { name: "Save reasoned amendment" })).toBeDisabled();
+  await dialog.getByLabel("Prescription").fill("Run easily for 30 minutes on the treadmill.");
+  await dialog.getByLabel("Reason for this amendment").fill("Work travel requires a shorter treadmill session.");
+  await dialog.getByRole("button", { name: "Save reasoned amendment" }).click();
+
+  await expect(page.getByRole("status").filter({ hasText: "approved source and your reason are preserved" })).toBeVisible();
+  await expect(card).toContainText("Current prescription: Run easily for 30 minutes on the treadmill.");
+  await card.getByText("Change history (1)").click();
+  await expect(card).toContainText("Work travel requires a shorter treadmill session.");
+  await expect(card).toContainText("No AI review is claimed");
 });
 
 test("online Settings connects and disconnects Strava, pairs once, reports status, and revokes only local sync", async ({ page }) => {

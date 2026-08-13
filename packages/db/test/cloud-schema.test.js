@@ -168,3 +168,21 @@ test("forward migration preserves existing rows before adding tenant foreign key
     /"(accessToken|refreshToken|rawBody|payloadJson|providerPayload)"/,
   );
 });
+
+test("future session amendments use tenant-scoped append-only projections", async () => {
+  const session = modelBlock("CalendarSessionProjection");
+  const amendment = modelBlock("CalendarSessionAmendment");
+  assert.match(session, /@@unique\(\[athleteId, planId, sessionId\]\)/u);
+  assert.match(session, /\bprescribedSession\s+Json\b/u);
+  assert.match(session, /\beffectiveSession\s+Json\b/u);
+  assert.match(amendment, /@@unique\(\[athleteId, planId, sessionId, revision\]\)/u);
+  assert.match(amendment, /@@unique\(\[athleteId, idempotencyKey\]\)/u);
+  assert.match(amendment, /\breason\s+String\b/u);
+  assert.match(amendment, /\bbeforeValues\s+Json\b/u);
+  assert.match(amendment, /\bafterValues\s+Json\b/u);
+
+  const migration = await readFile(new URL("20260813120000_future_session_amendments/migration.sql", migrationsUrl), "utf8");
+  assert.match(migration, /jsonb_array_elements/u, "existing approved plan workouts must be backfilled");
+  assert.match(migration, /ON CONFLICT \("athleteId", "planId", "sessionId"\) DO NOTHING/u);
+  assert.doesNotMatch(migration, /\bDROP\s+(TABLE|COLUMN)\b/iu);
+});

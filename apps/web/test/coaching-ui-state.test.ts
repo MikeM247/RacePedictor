@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canAmendFutureSession,
+  changeHistoryLabel,
   externalAutomationStatusLabel,
   formatAdjustmentCue,
   formatApiErrorDetails,
@@ -25,7 +27,39 @@ test("normalizes API sessions while preserving prescribed dates and revision", (
     scheduledDate: "2026-08-05", prescribedDate: "2026-08-04",
     effectiveDate: "2026-08-05", originalDate: "2026-08-04", status: "upcoming", revision: 3,
     warnings: [],
+    original: {
+      id: "run-1", title: "Easy run", kind: "run", purpose: "Follow the approved prescription.",
+      prescription: "Follow the approved prescription.", cautions: [], durationMinutes: 0,
+      scheduledDate: "2026-08-04",
+    },
+    amendments: [],
   });
+});
+
+test("normalizes immutable source values and reasoned change history", () => {
+  const [session] = normalizeCalendarSessions({ sessions: [{
+    id: "run-amended", kind: "run", title: "Short treadmill run", purpose: "Maintain rhythm.",
+    prescription: "Run easily for 30 minutes.", durationMinutes: 30,
+    prescribedDate: "2026-08-20", effectiveDate: "2026-08-21", revision: 3,
+    original: {
+      id: "run-amended", kind: "run", title: "Aerobic run", purpose: "Build aerobic fitness.",
+      prescription: "Run easily for 50 minutes.", cautions: [], durationMinutes: 50, scheduledDate: "2026-08-20",
+    },
+    amendments: [{
+      id: "change-2", operation: "amend", reason: "Limited time after work travel.",
+      changedAt: "2026-08-18T16:00:00.000Z", changedFields: ["title", "durationMinutes"], resultingRevision: 3,
+    }],
+  }] });
+  assert.equal(session.original.prescription, "Run easily for 50 minutes.");
+  assert.equal(session.prescription, "Run easily for 30 minutes.");
+  assert.equal(session.amendments[0].reason, "Limited time after work travel.");
+  assert.equal(changeHistoryLabel(session.amendments[0]), "amend · title, durationMinutes · revision 3");
+});
+
+test("allows only sessions after the athlete's current local date", () => {
+  assert.equal(canAmendFutureSession({ effectiveDate: "2026-08-14" }, "2026-08-13"), true);
+  assert.equal(canAmendFutureSession({ effectiveDate: "2026-08-13" }, "2026-08-13"), false);
+  assert.equal(canAmendFutureSession({ effectiveDate: "2026-08-12" }, "2026-08-13"), false);
 });
 
 test("preserves the approved prescription and formats a concrete session target", () => {

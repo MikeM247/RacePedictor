@@ -41,7 +41,8 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   const today = localDate();
   const tomorrow = addDays(today, 1);
   const isSunday = new Date(`${today}T12:00:00.000Z`).getUTCDay() === 0;
-  const sameWeekConflictDate = isSunday ? addDays(today, -1) : tomorrow;
+  const sameWeekConflictDate = tomorrow;
+  const strengthDate = addDays(today, 2);
   const targetDate = addDays(today, 42);
 
   await page.goto("/dashboard/data-quality");
@@ -126,12 +127,13 @@ test("manual history becomes an explicitly approved and safely scheduled digital
       startsOn: weekStartsOn(today),
       endsOn: targetDate,
       timezone: "Africa/Johannesburg",
-      weeklyStructure: Array.from(new Set([weekStartsOn(today), weekStartsOn(sameWeekConflictDate)])).map((week) => ({
+      weeklyStructure: Array.from(new Set([weekStartsOn(today), weekStartsOn(strengthDate)])).map((week) => ({
         weekStartsOn: week,
         focus: "Build a sustainable aerobic and strength rhythm",
         sessionIds: [
           ...(weekStartsOn(today) === week ? ["synthetic_easy_session"] : []),
-          ...(weekStartsOn(sameWeekConflictDate) === week ? ["synthetic_strength_session"] : []),
+          ...(weekStartsOn(strengthDate) === week ? ["synthetic_strength_session"] : []),
+          ...(weekStartsOn(tomorrow) === week ? ["synthetic_future_session"] : []),
         ],
       })),
       workouts: [
@@ -151,7 +153,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
         {
           id: "synthetic_strength_session",
           kind: "strength",
-          scheduledDate: sameWeekConflictDate,
+          scheduledDate: strengthDate,
           startTime: "17:30",
           title: "Synthetic strength foundation",
           purpose: "Support durable running form.",
@@ -159,6 +161,18 @@ test("manual history becomes an explicitly approved and safely scheduled digital
           cautions: ["Use controlled movement throughout."],
           durationMinutes: 30,
           intensityRpe: 4,
+        },
+        {
+          id: "synthetic_future_session",
+          kind: "run",
+          scheduledDate: tomorrow,
+          startTime: "06:15",
+          title: "Synthetic future aerobic run",
+          purpose: "Continue the approved aerobic progression.",
+          prescription: "Run easily for 35 minutes at conversational effort.",
+          cautions: ["Keep the effort easy."],
+          durationMinutes: 35,
+          intensityRpe: 3,
         },
       ],
       contextArtifactId: context.artifact.id,
@@ -201,33 +215,23 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await expect(page.getByRole("link", { name: "Open active plan" })).toHaveAttribute("href", "/dashboard/plan#active-plan-heading");
 
   await page.goto("/dashboard/calendar");
-  const sessionCard = page.getByRole("article").filter({ hasText: "Synthetic easy aerobic run" });
+  const sessionCard = page.getByRole("article").filter({ hasText: "Synthetic future aerobic run" });
   await expect(sessionCard).toBeVisible();
-  await sessionCard.getByLabel("Move to date").fill(sameWeekConflictDate);
-  await sessionCard.getByRole("button", { name: "Review move" }).click();
-  const moveDialog = page.getByRole("alertdialog", { name: "Confirm reschedule" });
-  await expect(moveDialog).toContainText(`${today} to ${sameWeekConflictDate}`);
-  await expect(moveDialog.getByRole("alert")).toContainText("Same-day conflict");
-  await moveDialog.getByRole("button", { name: "Confirm change" }).click();
-  await expect(moveDialog).toBeHidden();
-  await page.reload();
-  await expect(sessionCard.getByLabel("Move to date")).toHaveValue(sameWeekConflictDate);
-  await expect(sessionCard).toContainText("Prescribed date");
-  await expect(sessionCard).toContainText("Effective date");
-  await expect(sessionCard.getByRole("alert")).toContainText("Same-day conflict");
-
   await sessionCard.getByRole("button", { name: "Skip" }).click();
   const skipDialog = page.getByRole("alertdialog", { name: "Confirm skip" });
-  await expect(skipDialog).toContainText(`prescribed date remains ${today}`);
+  await expect(skipDialog).toContainText(`prescribed date remains ${tomorrow}`);
+  await skipDialog.getByRole("button", { name: "Confirm change" }).click();
+  await expect(skipDialog.getByLabel("Reason for this change")).toBeFocused();
+  await skipDialog.getByLabel("Reason for this change").fill("Recovery is more important after a difficult work week.");
   await skipDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(skipDialog).toBeHidden();
   await page.reload();
   await expect(sessionCard).toContainText("skipped");
   await expect(sessionCard.getByRole("button", { name: "Restore" })).toBeVisible();
-  await expect(sessionCard.getByLabel("Move to date")).toHaveValue(sameWeekConflictDate);
 
   await sessionCard.getByRole("button", { name: "Restore" }).click();
   const restoreDialog = page.getByRole("alertdialog", { name: "Confirm restore" });
+  await restoreDialog.getByLabel("Reason for this change").fill("Recovery is complete and the session is appropriate again.");
   await restoreDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(restoreDialog).toBeHidden();
   await page.reload();
@@ -236,9 +240,9 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await expect(sessionCard.getByLabel("Move to date")).toHaveValue(sameWeekConflictDate);
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: isSunday ? "Past session needs attention" : "Intentional recovery day" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Synthetic easy aerobic run" })).toBeVisible();
   await expect(page.getByText("Plan v1")).toBeVisible();
-  await expect(page.getByText(isSunday ? /past and still marked upcoming/ : /synthetic coaching journey/).first()).toBeVisible();
+  await expect(page.getByText(/synthetic coaching journey/).first()).toBeVisible();
 
   await page.goto("/dashboard/settings");
   await expect(page.getByLabel("Local time")).toHaveValue("06:30");
@@ -337,9 +341,9 @@ test("manual history becomes an explicitly approved and safely scheduled digital
     buffer: Buffer.from(JSON.stringify({ schema: "coaching-plan-proposal.v1", proposal: replacementProposalBody })),
   });
   await expect(page.getByRole("status").filter({ hasText: "Draft imported for review. Nothing is active yet." })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Plan v1");
+  await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record1");
   const versionHistory = page.getByRole("region", { name: "Approved plan version history" });
-  await expect(versionHistory).toContainText("Plan v1");
+  await expect(versionHistory).toContainText("Approved record 1");
   await expect(versionHistory).toContainText("Active");
 
   await page.getByRole("button", { name: "Review and approve" }).click();
@@ -348,9 +352,9 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   const decisionRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().includes("/api/v1/coaching/proposals/") && request.url().endsWith("/decision"));
   await replacementDialog.getByRole("button", { name: "Confirm approve" }).click();
   expect((await decisionRequest).postDataJSON()).toMatchObject({ replacingPlanId: replacementContext.activePlan.id });
-  await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Plan v2");
-  await expect(versionHistory).toContainText("Plan v2");
-  const retiredVersion = versionHistory.locator("details").filter({ hasText: "Plan v1" });
+  await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record2");
+  await expect(versionHistory).toContainText("Approved record 2");
+  const retiredVersion = versionHistory.locator("details").filter({ hasText: "Approved record 1" });
   await expect(retiredVersion).toContainText("Retired");
   await retiredVersion.locator("summary").click();
   await expect(retiredVersion).toContainText("Run easily for 45 minutes at conversational effort.");
@@ -360,7 +364,7 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   await page.setViewportSize({ width: 390, height: 844 });
   const today = localDate();
   const tomorrow = addDays(today, 1);
-  const moveDate = new Date(`${today}T12:00:00.000Z`).getUTCDay() === 0 ? addDays(today, -1) : tomorrow;
+  const moveDate = addDays(tomorrow, 1);
   const targetDate = addDays(today, 42);
   let approved = false;
   let moved = false;
@@ -370,7 +374,7 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
     id: "session_mobile_journey", kind: "run", title: "Mobile confidence run",
     purpose: "Build confidence through repeatable easy running.", prescription: "Run easily for 40 minutes at conversational effort.",
     cautions: ["Stop if pain changes your gait."], durationMinutes: 40, distanceMeters: 6000, intensityRpe: 3,
-    scheduledDate: today, prescribedDate: today, effectiveDate: moved ? moveDate : today,
+    scheduledDate: tomorrow, prescribedDate: tomorrow, effectiveDate: moved ? moveDate : tomorrow,
     status: "upcoming", revision: moved ? 2 : 1, warnings: [],
   });
   const proposal = {
@@ -435,13 +439,14 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   await page.getByRole("alertdialog").getByRole("button", { name: "Confirm approve" }).click();
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Active");
 
-  await page.goto(`/dashboard/calendar?date=${today}`);
+  await page.goto(`/dashboard/calendar?date=${tomorrow}`);
   const mobileSession = page.locator("#session-session_mobile_journey");
   await expect(mobileSession).toContainText("Run easily for 40 minutes");
   await mobileSession.getByLabel("Move to date").fill(moveDate);
   await mobileSession.getByRole("button", { name: "Review move" }).click();
+  await page.getByRole("alertdialog").getByLabel("Reason for this change").fill("Move the run around a work commitment.");
   await page.getByRole("alertdialog").getByRole("button", { name: "Confirm change" }).click();
-  await expect(mobileSession).toContainText(`moved from ${today} to ${moveDate}`);
+  await expect(mobileSession).toContainText(`moved from ${tomorrow} to ${moveDate}`);
   await expect(mobileSession).toContainText("Run easily for 40 minutes");
 
   await page.goto("/dashboard");
@@ -490,7 +495,7 @@ test("Plan keeps the active version in focus across Today navigation and hides s
 
   await page.goto("/dashboard/plan");
   const activePlanRegion = page.getByRole("region", { name: "Active plan" });
-  await expect(activePlanRegion).toContainText("Plan v2");
+  await expect(activePlanRegion).toContainText("Approval record2");
   await expect(page.getByLabel("Goal", { exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Create a new plan with Codex" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Review saved draft" })).toHaveCount(0);
@@ -500,7 +505,7 @@ test("Plan keeps the active version in focus across Today navigation and hides s
   await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Plan", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard\/plan$/);
-  await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Plan v2");
+  await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record2");
   await expect(page.getByLabel("Goal", { exact: true })).toBeHidden();
   await expect(page.getByRole("heading", { name: "This page couldn’t load" })).toHaveCount(0);
 });
@@ -643,8 +648,9 @@ test("Calendar deep links reveal a prescribed session outside the current week a
   await expect(page.getByRole("region", { name: "Seven-day training week" })).toBeVisible();
   await expect(page.locator(".calendar-day")).toHaveCount(7);
   const card = page.locator("#session-session_deep_link");
-  await expect(card).toContainText("Approved prescription: Run 50 minutes");
-  await expect(card).toContainText("Target: 8 km · 50 min · RPE 5");
+  await expect(card).toContainText("Current prescription: Run 50 minutes");
+  await expect(card).toContainText("Approved source prescription");
+  await expect(card).toContainText("Current target: 8 km · 50 min · RPE 5");
   await expect(page.getByRole("heading", { name: "Schedule context needs review" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("session-session_deep_link");
 });
@@ -660,6 +666,7 @@ test("Calendar recovers from errors, marks today, and warns before conflicting o
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { sessions: [
       { id: "session_today", kind: "run", title: "Today easy run", purpose: "Build consistency.", prescription: "Run easily for 35 minutes.", durationMinutes: 35, scheduledDate: today, prescribedDate: today, effectiveDate: today, status: "upcoming", revision: 1, warnings: [] },
       { id: "session_tomorrow", kind: "strength", title: "Tomorrow strength", purpose: "Support running.", prescription: "Complete two controlled sets.", durationMinutes: 25, scheduledDate: tomorrow, prescribedDate: tomorrow, effectiveDate: tomorrow, status: "upcoming", revision: 1, warnings: [] },
+      { id: "session_future_two", kind: "run", title: "Future easy run", purpose: "Build consistency.", prescription: "Run easily for 30 minutes.", durationMinutes: 30, scheduledDate: addDays(today, 2), prescribedDate: addDays(today, 2), effectiveDate: addDays(today, 2), status: "upcoming", revision: 1, warnings: [] },
     ] } }) });
   });
   await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { id: "plan_mobile", version: 1, startsOn: today, endsOn: planEnd } }) }));
@@ -673,20 +680,99 @@ test("Calendar recovers from errors, marks today, and warns before conflicting o
   const todayCard = page.locator("#session-session_today");
   await expect(todayCard).toBeVisible();
   await expect(todayCard.getByText("Today", { exact: true })).toBeVisible();
+  await expect(todayCard.getByRole("button", { name: "Amend session" })).toHaveCount(0);
+  await expect(todayCard).toContainText("Past and current-day sessions are read-only");
 
-  await todayCard.getByLabel("Move to date").fill(tomorrow);
-  await todayCard.getByRole("button", { name: "Review move" }).click();
+  const tomorrowCard = page.locator("#session-session_tomorrow");
+  await tomorrowCard.getByLabel("Move to date").fill(addDays(today, 2));
+  const reviewMoveButton = tomorrowCard.getByRole("button", { name: "Review move" });
+  await reviewMoveButton.click();
   let dialog = page.getByRole("alertdialog", { name: "Confirm reschedule" });
+  await expect(dialog.getByLabel("Reason for this change")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(reviewMoveButton).toBeFocused();
+  await reviewMoveButton.click();
+  dialog = page.getByRole("alertdialog", { name: "Confirm reschedule" });
   await expect(dialog.getByRole("alert")).toContainText("Same-day conflict");
+  await dialog.getByRole("button", { name: "Confirm change" }).click();
+  await expect(dialog.getByLabel("Reason for this change")).toBeFocused();
+  await dialog.getByLabel("Reason for this change").fill("Avoid overlapping work meetings.");
   await expect(dialog.getByRole("button", { name: "Confirm change" })).toBeEnabled();
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
-  await todayCard.getByLabel("Move to date").fill(addDays(planEnd, 1));
-  await todayCard.getByRole("button", { name: "Review move" }).click();
+  await tomorrowCard.getByLabel("Move to date").fill(addDays(planEnd, 1));
+  await tomorrowCard.getByRole("button", { name: "Review move" }).click();
   dialog = page.getByRole("alertdialog", { name: "Confirm reschedule" });
   await expect(dialog.getByRole("alert")).toContainText("Outside approved plan range");
   await expect(dialog.getByRole("button", { name: "Confirm change" })).toBeDisabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("Calendar saves a reasoned future-session amendment and preserves its approved source", async ({ page }) => {
+  const today = localDate();
+  const sessionDate = addDays(today, 1);
+  const original = {
+    id: "session_reasoned_amendment", kind: "run", title: "Approved aerobic run",
+    purpose: "Build aerobic durability.", prescription: "Run easily for 50 minutes.",
+    cautions: ["Keep the effort conversational."], durationMinutes: 50, distanceMeters: 8000,
+    intensityRpe: 4, startTime: "06:00", scheduledDate: sessionDate,
+  };
+  let effective = { ...original, prescribedDate: sessionDate, effectiveDate: sessionDate, originalDate: sessionDate, status: "upcoming", revision: 1, warnings: [], original, amendments: [] as Record<string, unknown>[] };
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { id: "plan_reasoned", startsOn: today, endsOn: addDays(today, 30), timezone: "Africa/Johannesburg" } }) }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { stale: { isStale: false, reason: null } } }) }));
+  await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { sessions: [effective] } }) }));
+  await page.route("**/api/v1/coaching/calendar/sessions/session_reasoned_amendment/edits", async (route) => {
+    const request = route.request().postDataJSON();
+    expect(request).toMatchObject({ operation: "amend", expectedRevision: 1, reason: "Work travel leaves a shorter treadmill window." });
+    expect(request.changes).toMatchObject({ prescription: "Run easily on the treadmill for 30 minutes.", durationMinutes: 30 });
+    effective = {
+      ...effective,
+      prescription: request.changes.prescription,
+      durationMinutes: request.changes.durationMinutes,
+      revision: 2,
+      amendments: [{ id: "amendment_2", planId: "plan_reasoned", sessionId: original.id, operation: "amend", actor: "owner", changedAt: new Date().toISOString(), reason: request.reason, changedFields: ["prescription", "durationMinutes"], before: { prescription: original.prescription, durationMinutes: 50 }, after: { prescription: request.changes.prescription, durationMinutes: 30 }, expectedRevision: 1, resultingRevision: 2 }],
+    };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { session: effective, operation: "amend" } }) });
+  });
+
+  await page.goto(`/dashboard/calendar?date=${sessionDate}`);
+  const card = page.locator("#session-session_reasoned_amendment");
+  const amendButton = card.getByRole("button", { name: "Amend session" });
+  await amendButton.click();
+  let dialog = page.getByRole("dialog", { name: "Amend future session" });
+  await expect(dialog.getByLabel("Title")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByLabel("Title")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(amendButton).toBeFocused();
+  await amendButton.click();
+  dialog = page.getByRole("dialog", { name: "Amend future session" });
+  const saveAmendment = dialog.getByRole("button", { name: "Save reasoned amendment" });
+  await expect(saveAmendment).toBeDisabled();
+  await dialog.getByLabel("Reason for this amendment").fill("Work travel leaves a shorter treadmill window.");
+  await expect(saveAmendment).toBeDisabled();
+  await dialog.getByLabel("Title").fill("");
+  await expect(saveAmendment).toBeEnabled();
+  await saveAmendment.click();
+  await expect(dialog.getByLabel("Title")).toBeFocused();
+  await dialog.getByLabel("Title").fill("Approved aerobic run");
+  await expect(saveAmendment).toBeDisabled();
+  await dialog.getByLabel("Prescription").fill("Run easily on the treadmill for 30 minutes.");
+  await dialog.getByLabel("Duration (minutes)").fill("30");
+  await expect(saveAmendment).toBeEnabled();
+  await saveAmendment.click();
+  await expect(page.getByRole("status").filter({ hasText: "Session amended" })).toBeVisible();
+  await expect(card).toContainText("Current prescription: Run easily on the treadmill for 30 minutes.");
+  await card.getByText("Approved source prescription").click();
+  await expect(card).toContainText("Run easily for 50 minutes.");
+  await card.getByText("Change history (1)").click();
+  await expect(card).toContainText("Work travel leaves a shorter treadmill window.");
 });
 
 test("Settings rehydrates prepared handoff status and its coaching-context reference", async ({ page }) => {

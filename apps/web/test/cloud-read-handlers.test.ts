@@ -1,18 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { trainingPlanSchema } from "../../../packages/core/src/contracts/coaching.ts";
+import { buildCoachingReviewContext } from "../../../packages/core/src/services/coaching-review-context.ts";
 import { buildActorContext } from "../../../packages/core/src/contracts/auth.ts";
 import { ApiHttpError } from "../lib/server/api-response.ts";
-import { TrainingPlanActivationError } from "../../../packages/db/src/cloud/index.js";
+import {
+  CalendarSessionAmendmentError,
+  TrainingPlanActivationError,
+} from "../../../packages/db/src/cloud/index.js";
 import { createSyntheticTestActor } from "../lib/server/auth.ts";
 import {
   handleCloudActivities,
   handleCloudActivePlan,
   handleCloudCalendar,
+  handleCloudCoachingReviewContext,
   handleCloudOnlineStatus,
   handleCloudPlan,
   handleCloudPlanActivation,
   handleCloudPlanHistory,
+  handleCloudSessionAmendment,
+  handleCloudSessionAmendmentHistory,
   handleCloudSyncChanges,
   handleCloudToday,
   type CloudReadComposition,
@@ -145,8 +152,109 @@ test("cloud plan activation is owner-scoped, validates optimistic state, and map
   );
 });
 
+test("cloud session amendment handlers require a reason and pass owner-scoped optimistic writes", async () => {
+  const scopes: string[] = [];
+  const composition = fakeComposition(scopes);
+  const response = await handleCloudSessionAmendment(
+    ownerSecurity,
+    "run-a",
+    new Request("http://localhost/api/v1/coaching/calendar/sessions/run-a/amendments", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "browser-edit-1" },
+      body: JSON.stringify({ operation: "amend", expectedRevision: 2, reason: "Work travel", changes: { durationMinutes: 25 } }),
+    }),
+    () => composition,
+  );
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).data.amendment.reason, "Work travel");
+  const history = await handleCloudSessionAmendmentHistory(ownerSecurity, "run-a", () => composition);
+  assert.equal((await history.json()).data.amendments[0].reason, "Work travel");
+  assert.deepEqual(scopes, ["athlete-a", "athlete-a"]);
+
+  await assert.rejects(
+    () => handleCloudSessionAmendment(
+      ownerSecurity,
+      "run-a",
+      new Request("http://localhost/api/v1/coaching/calendar/sessions/run-a/amendments", {
+        method: "POST", body: JSON.stringify({ operation: "skip", expectedRevision: 2 }),
+      }),
+      () => composition,
+    ),
+    (error: unknown) => error instanceof ApiHttpError && error.status === 400 && error.code === "VALIDATION_ERROR",
+  );
+});
+
+test("cloud coaching review context is owner-scoped and retains structured amendment reasons", async () => {
+  const scopes: string[] = [];
+  const composition = fakeComposition(scopes);
+  const response = await handleCloudCoachingReviewContext(ownerSecurity, () => composition);
+  const context = (await response.json()).data.context;
+  assert.equal(context.schema, "coaching-review-context.v1");
+  assert.equal(context.futureSessions[0].amendments[0].reason, "Work travel");
+  assert.equal(context.futureSessions[0].amendments[0].actorKind, "user");
+  assert.deepEqual(scopes, ["athlete-a"]);
+});
+
+test("cloud session amendment conflicts return a reload-and-review response", async () => {
+  const composition = fakeComposition([]);
+  composition.calendarSessions.amend = async () => {
+    throw new CalendarSessionAmendmentError(
+      "REVISION_CONFLICT",
+      "The session changed; reload before editing again",
+    );
+  };
+
+  await assert.rejects(
+    () => handleCloudSessionAmendment(
+      ownerSecurity,
+      "run-a",
+      new Request("http://localhost/api/v1/coaching/calendar/sessions/run-a/amendments", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": "browser-conflict-1" },
+        body: JSON.stringify({ operation: "skip", expectedRevision: 2, reason: "Recovery day" }),
+      }),
+      () => composition,
+    ),
+    (error: unknown) => error instanceof ApiHttpError
+      && error.status === 409
+      && error.code === "CONFLICT"
+      && error.message === "The session changed; reload and review the latest values",
+  );
+});
+
 function fakeComposition(scopes: string[]): CloudReadComposition {
   const record = (scope: { athleteId: string }) => scopes.push(scope.athleteId);
+  const calendarSession = {
+    ...plan.workouts[0],
+    prescribedDate: plan.workouts[0].scheduledDate,
+    effectiveDate: plan.workouts[0].scheduledDate,
+    originalDate: plan.workouts[0].scheduledDate,
+    status: "upcoming" as const,
+    revision: 2,
+    warnings: [],
+    original: plan.workouts[0],
+    amendments: [],
+  };
+  const amendment = {
+    id: "amendment-a", planId: "plan-a", sessionId: "run-a", operation: "amend" as const,
+    actor: "owner-a", changedAt: "2026-08-10T06:00:00.000Z", reason: "Work travel",
+    changedFields: ["durationMinutes" as const], before: { durationMinutes: 30 }, after: { durationMinutes: 25 },
+    expectedRevision: 2, resultingRevision: 3,
+  };
+  const reviewContext = buildCoachingReviewContext({
+    athleteId: "athlete-a",
+    generatedAt: "2026-08-10T06:00:00.000Z",
+    currentLocalDate: "2026-08-09",
+    activePlan: { id: plan.id, version: plan.version, revision: plan.revision, contentHash: plan.approval.contentHash },
+    sessions: [{
+      id: calendarSession.id,
+      prescribed: plan.workouts[0],
+      effective: { ...plan.workouts[0], durationMinutes: 25 },
+      status: "upcoming",
+      revision: 3,
+      amendments: [{ ...amendment, actorKind: "user" }],
+    }],
+  });
   return {
     activities: {
       list: async (scope: { athleteId: string }) => {
@@ -179,6 +287,27 @@ function fakeComposition(scopes: string[]): CloudReadComposition {
       getActivePlan: async (scope: { athleteId: string }) => { record(scope); return scope.athleteId === "athlete-a" ? plan : null; },
       listHistory: async (scope: { athleteId: string }) => { record(scope); return scope.athleteId === "athlete-a" ? [plan] : []; },
       findPlan: async (scope: { athleteId: string }, planId: string) => { record(scope); return scope.athleteId === "athlete-a" && planId === plan.id ? plan : null; },
+    },
+    calendarSessions: {
+      listActiveCalendar: async (scope: { athleteId: string }, range: { from: string; to: string }) => {
+        record(scope);
+        return calendarSession.effectiveDate >= range.from && calendarSession.effectiveDate <= range.to ? [calendarSession] : [];
+      },
+      amend: async (scope: { athleteId: string }, sessionId: string, input: { reason: string }) => {
+        record(scope);
+        assert.equal(sessionId, "run-a");
+        assert.equal(input.reason, "Work travel");
+        return { session: { ...calendarSession, durationMinutes: 25, revision: 3, amendments: [amendment] }, amendment, reused: false };
+      },
+      listHistory: async (scope: { athleteId: string }, sessionId: string) => {
+        record(scope);
+        assert.equal(sessionId, "run-a");
+        return [amendment];
+      },
+      getReviewContext: async (scope: { athleteId: string }) => {
+        record(scope);
+        return reviewContext;
+      },
     },
     planActivation: {
       activate: async (scope: { athleteId: string }, planId: string, expectedActivePlanId: string | null) => {

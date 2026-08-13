@@ -4,6 +4,7 @@ import {
   appendPlanSyncChanges,
   parsePlanProjection,
   retireApprovedPlan,
+  seedPlanSessionProjections,
 } from "./training-plan-projection-lifecycle.js";
 
 export class TrainingPlanProjectionConflictError extends Error {
@@ -76,6 +77,7 @@ export class PrismaTrainingPlanProjectionPublisher {
           publishedAt: occurredAt,
         },
       });
+      await seedPlanSessionProjections(transaction, athleteId, plan);
       await appendPlanSyncChanges(
         transaction,
         athleteId,

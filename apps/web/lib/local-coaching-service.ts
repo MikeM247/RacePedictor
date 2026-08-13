@@ -4,9 +4,11 @@ import path from "node:path";
 import { z } from "zod";
 import {
   assertPlanCanActivate,
+  assertFutureSessionChangeAllowed,
   buildDailyBrief as buildCoreDailyBrief,
   calendarEditRequestSchema,
   coachingContextEnvelopeSchema,
+  coachingReviewContextSchema,
   coachingProfileSchema,
   contextArtifactSchema,
   goalDraftSchema,
@@ -20,6 +22,7 @@ import {
   weeklyRoutineSchema,
   type CoachingProfile,
   type CoachingContextEnvelope,
+  type CoachingReviewContext,
   type CoachingGoal,
   type ContextNoteReference,
   type DailyBrief,
@@ -28,10 +31,12 @@ import {
   type PlanProposalReview,
   type PlannedWorkout,
   type ReminderPreferences,
+  type SessionAmendment,
   type SettledGoal,
   type TrainingPlan,
   type WeeklyRoutine,
 } from "../../../packages/core/src/contracts/coaching.ts";
+import { buildCoachingReviewContext } from "../../../packages/core/src/services/coaching-review-context.ts";
 import { listLocalActivities } from "../../../packages/db/src/local-activities.js";
 import {
   CoachingRepositoryError,
@@ -106,6 +111,8 @@ export type CalendarSession = PlannedWorkout & {
   status: "upcoming" | "skipped";
   revision: number;
   warnings: string[];
+  original: PlannedWorkout;
+  amendments: SessionAmendment[];
 };
 export type TodayGoalSummary = {
   id: string;
@@ -376,7 +383,7 @@ const asCoachingGoal = (stored: StoredGoal): CoachingGoal => stored.lifecycle ==
   ? asSettledGoal(stored)
   : asGoalDraft(stored);
 
-const asWorkout = (stored: StoredWorkout): PlannedWorkout => {
+const asWorkout = (stored: StoredWorkout | StoredWorkout["approvedWorkout"]): PlannedWorkout => {
   const details = jsonObject(stored.details);
   const rawKind = details.kind ?? stored.workoutType;
   const kind: PlannedWorkout["kind"] = rawKind === "strength" || rawKind === "cross_train" || rawKind === "rest"
@@ -389,7 +396,7 @@ const asWorkout = (stored: StoredWorkout): PlannedWorkout => {
   return {
     id: stored.id,
     kind,
-    scheduledDate: stored.prescribedLocalDate,
+    scheduledDate: "prescribedLocalDate" in stored ? stored.prescribedLocalDate : stored.localDate,
     startTime: kind === "rest" ? undefined : startTime,
     title: stored.title,
     purpose: String(details.purpose ?? stored.title),
@@ -411,6 +418,8 @@ const asCalendarSessions = (workouts: StoredWorkout[]): CalendarSession[] => {
     status: workout.calendarStatus,
     revision: workout.revision,
     warnings: [] as string[],
+    original: asWorkout(workout.approvedWorkout),
+    amendments: workout.amendments,
   }));
   const activeDateCounts = new Map<string, number>();
   for (const session of sessions) {
@@ -853,6 +862,12 @@ export class LocalCoachingService {
     const activePlan = storedActivePlan
       ? { id: storedActivePlan.id, version: storedActivePlan.version, revision: storedActivePlan.revision }
       : null;
+    const amendments = (storedActivePlan?.workouts ?? []).flatMap((workout) => workout.amendments);
+    const futureSessionChanges = {
+      planId: storedActivePlan?.id ?? null,
+      changesHash: sha256(amendments),
+      amendments,
+    };
     const { noteReferences, warnings } = await collectContextNoteReferences(this.vaultPath);
     const contentHash = sha256({
       athleteId: this.athleteId,
@@ -861,20 +876,42 @@ export class LocalCoachingService {
       planningGoal,
       settledGoal,
       activePlan,
+      futureSessionChanges,
       coverage,
       historyFingerprint,
       noteReferences,
       warnings,
     });
     const capturedAt = this.clock().toISOString();
+    const reviewContext = storedActivePlan
+      ? buildCoachingReviewContext({
+        athleteId: this.athleteId,
+        generatedAt: capturedAt,
+        currentLocalDate: localDateInIanaTimezone(new Date(capturedAt), planSourceBody(storedActivePlan).timezone),
+        activePlan: {
+          id: storedActivePlan.id,
+          version: storedActivePlan.version,
+          revision: storedActivePlan.revision,
+          contentHash: approvalMetadata(storedActivePlan).contentHash,
+        },
+        sessions: storedActivePlan.workouts.map((workout) => ({
+          id: workout.id,
+          prescribed: asWorkout(workout.approvedWorkout),
+          effective: { ...asWorkout(workout), scheduledDate: workout.effectiveLocalDate },
+          status: workout.calendarStatus,
+          revision: workout.revision,
+          amendments: workout.amendments.map((amendment) => ({ ...amendment, actorKind: "user" as const })),
+        })),
+      })
+      : null;
     const sources = Array.from(new Set([
-      ...coverage.sourceTypes.filter((source) => ["gpx", "tcx", "csv", "manual"].includes(source)),
+      ...coverage.sourceTypes.filter((source) => ["gpx", "tcx", "csv", "strava", "manual"].includes(source)),
       "second_brain",
     ]));
     const artifact = contextArtifactSchema.parse({
       id: `context_${contentHash.slice(0, 24)}`,
       athleteId: this.athleteId,
-      schemaVersion: 1,
+      schemaVersion: 2,
       capturedAt,
       activityCount: coverage.activityCount,
       earliestActivityDate: coverage.earliestOccurredAt?.slice(0, 10) ?? null,
@@ -883,6 +920,7 @@ export class LocalCoachingService {
       historyFingerprint,
       contentHash,
       digest: contentHash,
+      futureSessionChangesHash: futureSessionChanges.changesHash,
       activePlan,
       noteReferences,
       warnings,
@@ -895,11 +933,15 @@ export class LocalCoachingService {
       planningGoal,
       settledGoal,
       activePlan,
+      futureSessionChanges,
       historyCoverage: coverage,
       activities,
     });
     const jsonPath = path.join(this.generatedPath, "coaching-context.v1.json");
     const markdownPath = path.join(this.generatedPath, "coaching-context.v1.md");
+    const reviewContextPath = reviewContext
+      ? path.join(this.generatedPath, "coaching-review-context.v1.json")
+      : null;
     const markdown = [
       "<!-- RacePredictor generated file. Personal notes elsewhere in Coach Exchange are never modified. -->",
       "# Coaching Context",
@@ -910,6 +952,8 @@ export class LocalCoachingService {
       `- Planning goal: ${planningGoal?.title ?? "None"}`,
       `- Active goal: ${settledGoal?.title ?? "None"}`,
       `- Active plan: ${activePlan ? `${activePlan.id} v${activePlan.version} (revision ${activePlan.revision})` : "None"}`,
+      `- Reasoned future-session changes: ${futureSessionChanges.amendments.length}`,
+      `- Future-session changes hash: \`${futureSessionChanges.changesHash}\``,
       `- History fingerprint: \`${historyFingerprint}\``,
       `- Context content hash: \`${contentHash}\``,
       "",
@@ -924,6 +968,9 @@ export class LocalCoachingService {
     await Promise.all([
       atomicWrite(jsonPath, `${JSON.stringify(envelope, null, 2)}\n`),
       atomicWrite(markdownPath, markdown),
+      ...(reviewContext && reviewContextPath
+        ? [atomicWrite(reviewContextPath, `${JSON.stringify(reviewContext, null, 2)}\n`)]
+        : []),
     ]);
     const snapshot = this.repository.saveContextSnapshot({
       inputChecksum: contentHash,
@@ -933,6 +980,10 @@ export class LocalCoachingService {
         historyFingerprint,
         contentHash,
         activePlan,
+        futureSessionChanges,
+        coachingReviewContext: reviewContext
+          ? { id: reviewContext.id, contentHash: reviewContext.contentHash, jsonPath: reviewContextPath }
+          : null,
         planningGoalId: planningGoal?.id ?? null,
         planningGoalRevision: planningGoal?.revision ?? null,
         noteReferences,
@@ -941,7 +992,16 @@ export class LocalCoachingService {
         markdownPath,
       },
     });
-    return { artifact, fingerprint: historyFingerprint, contentHash, jsonPath, markdownPath, snapshotId: snapshot.id };
+    return {
+      artifact,
+      fingerprint: historyFingerprint,
+      contentHash,
+      jsonPath,
+      markdownPath,
+      snapshotId: snapshot.id,
+      reviewContext,
+      reviewContextPath,
+    };
   }
 
   async importPlanProposal(filePath = path.join(this.exchangePath, "coaching-plan-proposal.v1.json")) {
@@ -1164,6 +1224,16 @@ export class LocalCoachingService {
     }
   }
 
+  async getCurrentReviewContext(): Promise<CoachingReviewContext | null> {
+    if (!this.repository.loadActivePlan()) return null;
+    const contextPath = path.join(this.generatedPath, "coaching-review-context.v1.json");
+    try {
+      return coachingReviewContextSchema.parse(JSON.parse(await readFile(contextPath, "utf8")));
+    } catch (error) {
+      throw new LocalCoachingServiceError("CONTEXT_ARTIFACT_UNREADABLE", "The latest coaching review context artifact could not be loaded", undefined, { cause: error });
+    }
+  }
+
   listActiveCalendar() {
     return this.run(() => asCalendarSessions(this.repository.loadActivePlan()?.workouts ?? []));
   }
@@ -1175,10 +1245,29 @@ export class LocalCoachingService {
       if (!active || active.id !== request.planId) {
         throw new LocalCoachingServiceError("ACTIVE_PLAN_REQUIRED", "Calendar adjustments require the active plan");
       }
+      const target = active.workouts.find((workout) => workout.id === request.sessionId);
+      if (!target) throw new LocalCoachingServiceError("NOT_FOUND", "Calendar session was not found in the active plan");
+      const profile = this.loadProfile();
+      const timezone = profile?.timezone ?? this.loadRoutine()?.timezone ?? DEFAULT_TIMEZONE;
+      try {
+        assertFutureSessionChangeAllowed({
+          effectiveDate: target.effectiveLocalDate,
+          currentLocalDate: localDateInIanaTimezone(this.clock(), timezone),
+          planStatus: "active",
+        });
+      } catch (error) {
+        throw new LocalCoachingServiceError(
+          "NOT_FUTURE_SESSION",
+          error instanceof Error ? error.message : "Only future sessions can be changed",
+          undefined,
+          { cause: error },
+        );
+      }
       const adjusted = this.repository.adjustWorkout({
         workoutId: request.sessionId,
         operation: request.operation,
         toDate: request.operation === "reschedule" ? request.effectiveDate : null,
+        changes: request.operation === "amend" ? request.changes : null,
         expectedRevision: request.expectedRevision,
         actor: request.actor,
         reason: request.reason,

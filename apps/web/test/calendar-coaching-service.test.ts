@@ -24,8 +24,8 @@ test("calendar service derives persisted effective state and same-day conflicts 
     startDate: "2026-08-05",
     endDate: "2026-09-06",
     workouts: [
-      { id: "easy-run", localDate: "2026-08-05", title: "Easy run", workoutType: "run", durationMinutes: 45 },
-      { id: "strength", localDate: "2026-08-06", title: "Strength", workoutType: "strength", durationMinutes: 30 },
+      { id: "easy-run", localDate: "2026-08-06", title: "Easy run", workoutType: "run", durationMinutes: 45 },
+      { id: "strength", localDate: "2026-08-07", title: "Strength", workoutType: "strength", durationMinutes: 30 },
     ],
   });
   repository.activatePlan(proposal.id);
@@ -37,24 +37,26 @@ test("calendar service derives persisted effective state and same-day conflicts 
     planId: proposal.id,
     sessionId: "easy-run",
     operation: "reschedule",
-    effectiveDate: "2026-08-06",
+    reason: "Move around a work commitment",
+    effectiveDate: "2026-08-07",
     expectedRevision: 1,
     requestedAt: timestamp,
   });
-  assert.equal(moved.prescribedDate, "2026-08-05");
-  assert.equal(moved.effectiveDate, "2026-08-06");
+  assert.equal(moved.prescribedDate, "2026-08-06");
+  assert.equal(moved.effectiveDate, "2026-08-07");
   assert.equal(moved.warnings.length, 1);
   service.close();
 
   service = createLocalCoachingService({ databasePath, clock: () => new Date(timestamp) });
   const persisted = service.listActiveCalendar().find((session) => session.id === "easy-run")!;
-  assert.equal(persisted.prescribedDate, "2026-08-05");
-  assert.equal(persisted.effectiveDate, "2026-08-06");
+  assert.equal(persisted.prescribedDate, "2026-08-06");
+  assert.equal(persisted.effectiveDate, "2026-08-07");
   assert.equal(persisted.revision, 2);
   const skipped = service.editCalendar({
     planId: proposal.id,
     sessionId: "easy-run",
     operation: "skip",
+    reason: "Recovery is needed",
     expectedRevision: 2,
     requestedAt: timestamp,
   });
@@ -65,6 +67,7 @@ test("calendar service derives persisted effective state and same-day conflicts 
       planId: proposal.id,
       sessionId: "easy-run",
       operation: "restore",
+      reason: "Recovery is complete",
       expectedRevision: 2,
       requestedAt: timestamp,
     }),
@@ -74,6 +77,7 @@ test("calendar service derives persisted effective state and same-day conflicts 
     planId: proposal.id,
     sessionId: "easy-run",
     operation: "restore",
+    reason: "Recovery is complete",
     expectedRevision: 3,
     requestedAt: timestamp,
   });

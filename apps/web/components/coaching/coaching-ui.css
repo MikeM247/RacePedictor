@@ -16,3 +16,27 @@
 .external-confirmation{display:grid;gap:12px;margin-top:18px;padding:16px;border:1px solid #dce2ec;border-radius:8px;background:#f8f9fc}.external-confirmation h4,.external-confirmation p{margin:0}.external-confirmation label{display:grid;gap:6px;color:#404a61;font-size:.84rem;font-weight:600}.external-confirmation input{width:100%;min-height:40px;padding:8px 10px;border:1px solid #bec7d8;border-radius:7px;background:#fff;color:#161c2b;font:inherit}.external-confirmation input:focus-visible{outline:3px solid rgba(49,87,213,.2);outline-offset:2px;border-color:#3157d5}
 .today-coach-card{min-width:0;padding:20px;align-items:center;border-left:4px solid #3157d5}.today-coach-main{display:grid;min-width:0;gap:9px}.today-coach-card p{margin:0;color:#56607a;line-height:1.5;overflow-wrap:anywhere}.today-coach-card .today-prescription{color:#263047;font-weight:600}.today-coach-card .today-local-cue{padding-top:9px;border-top:1px solid #e3e7ef;color:#3f4960}.today-meta,.today-actions{display:grid;justify-items:end;gap:8px;color:#687188;font-size:.84rem;white-space:nowrap}.today-goal-summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 12px;align-items:baseline;margin-top:4px;padding:12px;border:1px solid #e1e6ef;border-radius:8px;background:#f8f9fc}.today-goal-summary .eyebrow{grid-column:1/-1;margin:0}.today-goal-summary span{color:#59647b;font-size:.85rem}.today-warnings{display:grid;gap:6px;margin-top:2px;padding:12px;border-left:3px solid #a96c1f;background:#fffaf2}.today-warnings ul{display:grid;gap:5px;margin:0;padding-left:20px;color:#5f4b2e}.today-coach-card--empty,.today-coach-card--loading{border-left-color:#8a93a5}.today-coach-card--error{border-left-color:#b43b3b;background:#fffafa}.today-coach-card--stale,.today-coach-card--missed{border-left-color:#a96c1f}.today-coach-card--skipped{border-left-color:#6f7788}.text-link{color:#3157d5;font-weight:600;text-underline-offset:2px}
 @media(max-width:1050px){.session-grid--week{grid-template-columns:repeat(2,minmax(0,1fr))}.calendar-week{grid-template-columns:repeat(4,minmax(0,1fr))}.summary-list{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:760px){.coaching-content{padding:16px}.coaching-toolbar{align-items:stretch}.toolbar-context{text-align:left}.coach-form-grid,.session-grid--week,.result-grid,.summary-list,.calendar-week,.plan-history-sessions{grid-template-columns:1fr}.weekday-options{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-focus-heading,.calendar-controls,.today-coach-card{align-items:stretch;flex-direction:column}.plan-focus-heading .button{width:100%}.calendar-controls .coach-actions{display:grid;grid-template-columns:1fr}.calendar-controls .coach-actions .button{width:100%}.today-meta,.today-actions{justify-items:start;white-space:normal}.today-goal-summary{grid-template-columns:1fr}.today-goal-summary .eyebrow{grid-column:auto}.today-actions .button{width:100%}.session-actions{grid-template-columns:1fr}.session-actions .button{width:100%}.status-list div{grid-template-columns:1fr}}
+
+/* Reasoned future-session amendments */
+.session-actions{grid-template-columns:minmax(8rem,1fr) repeat(3,auto)}
+.session-source,.session-history{border:1px solid #dce2ec;border-radius:7px;background:#f8f9fc}
+.session-source summary,.session-history summary{padding:9px 11px;color:#34405a;cursor:pointer;font-size:.84rem;font-weight:650}
+.session-source>div{display:grid;gap:5px;padding:0 11px 11px}
+.session-source p,.session-source small{margin:0;color:#59647b;line-height:1.45}
+.session-history ol{display:grid;gap:10px;margin:0;padding:0 28px 10px 36px}
+.session-history li{padding-left:3px}
+.session-history li strong,.session-history li span,.session-history li time{display:block}
+.session-history li span{margin:3px 0;color:#3f4960;overflow-wrap:anywhere}
+.session-history li time{color:#687188;font-size:.76rem}
+.session-history>p{margin:0;padding:0 11px 11px;color:#687188;font-size:.78rem;line-height:1.45}
+.reason-field{display:grid;gap:6px;margin:14px 0;color:#404a61;font-size:.84rem;font-weight:600}
+.reason-field textarea{width:100%;min-height:76px;padding:8px 10px;resize:vertical;border:1px solid #bec7d8;border-radius:7px;background:#fff;color:#161c2b;font:inherit}
+.reason-field textarea:focus-visible{outline:3px solid rgba(49,87,213,.2);outline-offset:2px;border-color:#3157d5}
+.reason-field small,.coach-form label small{color:#687188;font-weight:400;line-height:1.4}
+.coach-dialog-backdrop{overflow-y:auto}
+.coach-dialog{max-height:calc(100vh - 40px);overflow-y:auto}
+.coach-dialog--wide{width:min(720px,100%)}
+.today-change-history{padding:9px 11px;border:1px solid #dce2ec;border-radius:7px;background:#f8f9fc}
+.today-change-history summary{cursor:pointer;color:#34405a;font-weight:650}
+.today-change-history p{margin-top:8px!important}
+@media(max-width:760px){.session-actions{grid-template-columns:1fr}.coach-dialog-backdrop{place-items:start center;padding:12px}.coach-dialog{max-height:calc(100vh - 24px)}}

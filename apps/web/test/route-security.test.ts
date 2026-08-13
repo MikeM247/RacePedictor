@@ -79,7 +79,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("second-brain-context/snapshots/route.ts", apiRoot).href,
   ]);
   const internalRoutes = new Set([new URL("internal/reconciliation/route.ts", apiRoot).href]);
-  assert.equal(routeFiles.length, 41, "route inventory changed; classify every new route explicitly");
+  assert.equal(routeFiles.length, 43, "route inventory changed; classify every new route explicitly");
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;
@@ -105,6 +105,36 @@ test("every current sensitive API handler uses the route-level security wrapper"
       `${routeFile.pathname} must wrap its exported handler`,
     );
   }
+});
+
+test("future-session amendment routes use authenticated actor-scoped cloud handling", async () => {
+  const amendments = await readFile(
+    new URL("../app/api/v1/coaching/calendar/sessions/[sessionId]/amendments/route.ts", import.meta.url),
+    "utf8",
+  );
+  const legacyEdits = await readFile(
+    new URL("../app/api/v1/coaching/calendar/sessions/[sessionId]/edits/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  for (const source of [amendments, legacyEdits]) {
+    assert.match(source, /export const POST = withSensitiveRoute/u);
+    assert.match(source, /handleCloudSessionAmendment/u);
+    assert.match(source, /cloudHandling: "actor-scoped"/u);
+  }
+  assert.match(amendments, /export const GET = withSensitiveRoute/u);
+  assert.match(amendments, /handleCloudSessionAmendmentHistory/u);
+  assert.match(legacyEdits, /security\.mode === "authenticated"/u);
+});
+
+test("coaching review context uses the sensitive actor-scoped boundary", async () => {
+  const source = await readFile(
+    new URL("../app/api/v1/coaching/review-context/current/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /export const GET = withSensitiveRoute/u);
+  assert.match(source, /handleCloudCoachingReviewContext/u);
+  assert.match(source, /cloudHandling: "actor-scoped"/u);
 });
 
 test("representative sensitive reads and writes fail before local operations in production", { concurrency: false }, async () => {

@@ -54,7 +54,7 @@ export class PrismaCalendarSessionAmendmentRepository {
         : fallbackSessions(plan, rows);
       return projected.filter((session) => session.effectiveDate >= from && session.effectiveDate <= to);
     } catch (error) {
-      reportProjectionReadFailure("calendar", error);
+      if (!(error instanceof CalendarSessionAmendmentError)) reportProjectionReadFailure("calendar", error);
       throw error;
     }
   }
@@ -93,21 +93,22 @@ export class PrismaCalendarSessionAmendmentRepository {
   }
 
   async getReviewContext(scope) {
-    const athleteId = assertAthleteScope(scope);
-    if (scope.actor.credentialKind !== "session") {
-      throw new CalendarSessionAmendmentError("SESSION_REQUIRED", "A signed-in owner session is required");
-    }
-    const active = await activeProjection(this.#prisma, athleteId);
-    if (!active) return null;
-    const plan = safePlan(active, athleteId);
-    const rows = await this.#prisma.calendarSessionProjection.findMany({
-      where: { athleteId, planId: plan.id },
-      orderBy: [{ sessionId: "asc" }],
-      include: { amendments: { orderBy: [{ revision: "asc" }] } },
-    });
-    const rowBySessionId = new Map(rows.map((row) => [row.sessionId, row]));
-    const generatedAt = this.#now();
-    return buildCoachingReviewContext({
+    try {
+      const athleteId = assertAthleteScope(scope);
+      if (scope.actor.credentialKind !== "session") {
+        throw new CalendarSessionAmendmentError("SESSION_REQUIRED", "A signed-in owner session is required");
+      }
+      const active = await activeProjection(this.#prisma, athleteId);
+      if (!active) return null;
+      const plan = safePlan(active, athleteId);
+      const rows = await this.#prisma.calendarSessionProjection.findMany({
+        where: { athleteId, planId: plan.id },
+        orderBy: [{ sessionId: "asc" }],
+        include: { amendments: { orderBy: [{ revision: "asc" }] } },
+      });
+      const rowBySessionId = new Map(rows.map((row) => [row.sessionId, row]));
+      const generatedAt = this.#now();
+      return buildCoachingReviewContext({
       athleteId,
       generatedAt: generatedAt.toISOString(),
       currentLocalDate: localDateInTimezone(generatedAt, plan.timezone),
@@ -117,18 +118,22 @@ export class PrismaCalendarSessionAmendmentRepository {
         revision: plan.revision,
         contentHash: plan.approval.contentHash,
       },
-      sessions: plan.workouts.map((prescribed) => {
-        const row = rowBySessionId.get(prescribed.id);
-        return {
-          id: prescribed.id,
-          prescribed: row ? plannedWorkoutSchema.parse(row.prescribedSession) : prescribed,
-          effective: row ? plannedWorkoutSchema.parse(row.effectiveSession) : prescribed,
-          status: row?.status ?? "upcoming",
-          revision: row?.revision ?? plan.revision,
-          amendments: (row?.amendments ?? []).map(projectReviewAmendment),
-        };
-      }),
-    });
+        sessions: plan.workouts.map((prescribed) => {
+          const row = rowBySessionId.get(prescribed.id);
+          return {
+            id: prescribed.id,
+            prescribed: row ? plannedWorkoutSchema.parse(row.prescribedSession) : prescribed,
+            effective: row ? plannedWorkoutSchema.parse(row.effectiveSession) : prescribed,
+            status: row?.status ?? "upcoming",
+            revision: row?.revision ?? plan.revision,
+            amendments: (row?.amendments ?? []).map(projectReviewAmendment),
+          };
+        }),
+      });
+    } catch (error) {
+      if (!(error instanceof CalendarSessionAmendmentError)) reportProjectionReadFailure("review-context", error);
+      throw error;
+    }
   }
 
   async amend(scope, sessionId, input) {

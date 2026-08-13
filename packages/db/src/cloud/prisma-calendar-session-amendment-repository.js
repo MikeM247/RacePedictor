@@ -39,19 +39,24 @@ export class PrismaCalendarSessionAmendmentRepository {
   }
 
   async listActiveCalendar(scope, { from, to }) {
-    const athleteId = assertAthleteScope(scope);
-    const active = await activeProjection(this.#prisma, athleteId);
-    if (!active) return [];
-    const plan = safePlan(active, athleteId);
-    const rows = await this.#prisma.calendarSessionProjection.findMany({
-      where: { athleteId, planId: plan.id },
-      orderBy: [{ sessionId: "asc" }],
-      include: { amendments: { orderBy: [{ revision: "asc" }] } },
-    });
-    const projected = rows.length === plan.workouts.length
-      ? rows.map(projectSession)
-      : fallbackSessions(plan, rows);
-    return projected.filter((session) => session.effectiveDate >= from && session.effectiveDate <= to);
+    try {
+      const athleteId = assertAthleteScope(scope);
+      const active = await activeProjection(this.#prisma, athleteId);
+      if (!active) return [];
+      const plan = safePlan(active, athleteId);
+      const rows = await this.#prisma.calendarSessionProjection.findMany({
+        where: { athleteId, planId: plan.id },
+        orderBy: [{ sessionId: "asc" }],
+        include: { amendments: { orderBy: [{ revision: "asc" }] } },
+      });
+      const projected = rows.length === plan.workouts.length
+        ? rows.map(projectSession)
+        : fallbackSessions(plan, rows);
+      return projected.filter((session) => session.effectiveDate >= from && session.effectiveDate <= to);
+    } catch (error) {
+      reportProjectionReadFailure("calendar", error);
+      throw error;
+    }
   }
 
   async getActiveSession(scope, sessionId) {
@@ -218,6 +223,19 @@ export class PrismaCalendarSessionAmendmentRepository {
       throw error;
     }
   }
+}
+
+function reportProjectionReadFailure(operation, error) {
+  const issues = Array.isArray(error?.issues)
+    ? error.issues.map((issue) => ({ path: issue.path?.map(String) ?? [], message: issue.message }))
+    : [];
+  console.error("Calendar session projection read failed", {
+    operation,
+    name: error?.name ?? "Error",
+    code: error?.code ?? null,
+    message: error?.message ?? "Unknown projection error",
+    issues,
+  });
 }
 
 function isPrismaWriteConflict(error) {

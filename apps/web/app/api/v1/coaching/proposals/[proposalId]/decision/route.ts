@@ -9,7 +9,7 @@ type RouteContext = { params: Promise<{ proposalId: string }> };
 async function decideProposal(request: Request, context: RouteContext) {
   const body = await readJson(request).catch((error) => error);
   const { proposalId: encoded } = await context.params;
-  return withCoachingService((service) => {
+  return withCoachingService(async (service) => {
     if (body instanceof Error) throw body;
     const proposalId = decodeURIComponent(encoded).trim();
     if (!proposalId) throw new CoachingHttpError(400, "VALIDATION_ERROR", "proposalId is required");
@@ -29,6 +29,9 @@ async function decideProposal(request: Request, context: RouteContext) {
       replacingPlanId: input.replacingPlanId,
       acknowledgeStale: input.acknowledgeStale,
     });
+    // The recurring coach consumes this artifact outside the dashboard request,
+    // so refresh it as part of the approval that makes a plan active.
+    await service.publishCoachingContext();
     return { proposalId, decision: "approve", goal: service.getSettledGoal(), plan, activePlan: plan };
   });
 }

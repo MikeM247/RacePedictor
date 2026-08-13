@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @racepredictor/web",
     "build": "npm run build --workspace @racepredictor/web",
-    "vercel-build": "npm run db:generate && npm run build --workspace @racepredictor/web",
+    "vercel-build": "npm run db:generate && npm run db:migrate:deploy && npm run build --workspace @racepredictor/web",
     "start": "npm run start --workspace @racepredictor/web",
     "lint": "npm run lint --workspace @racepredictor/web",
     "test:cloud": "npm test --workspace @racepredictor/core && npm run db:test:cloud && npm test --workspace @racepredictor/web && npm run lint --workspace @racepredictor/web",

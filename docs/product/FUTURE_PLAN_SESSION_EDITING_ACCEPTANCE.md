@@ -43,3 +43,5 @@ The UI says that reasons are saved and available for later AI review. It does no
 ## Launch Decision
 
 Approved to apply the additive production migration, deploy the application, and run authenticated production smoke tests. Rollback may disable amendment writes and the edit UI while retaining append-only history; no destructive down-migration is required.
+
+The Vercel release build applies pending Prisma migrations before compiling the application so the additive session-projection tables are present before new application traffic is served.

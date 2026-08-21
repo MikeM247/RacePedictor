@@ -1,4 +1,4 @@
-import type { ImportStatus, Prisma, StagingNormalizeStatus } from "@prisma/client";
+import type { ImportStatus, Prisma, StagingRowStatus } from "@prisma/client";
 
 export type ImportCreateInput = Prisma.ImportCreateInput;
 
@@ -7,24 +7,30 @@ export interface ImportProgressPatch {
   normalizedCount?: number;
   duplicateCount?: number;
   rejectedCount?: number;
+  skippedCount?: number;
   errorCount?: number;
-  normalizeCursor?: string | null;
-  normalizeHasMore?: boolean;
+  nextCursor?: string | null;
+  hasMore?: boolean;
+  parseWarnings?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
   status?: ImportStatus;
 }
 
 export interface ImportRecord {
   id: string;
+  athleteId: string;
   status: ImportStatus;
-  sourceType: string;
   idempotencyKey: string | null;
   stagedCount: number;
   normalizedCount: number;
   duplicateCount: number;
   rejectedCount: number;
+  skippedCount: number;
   errorCount: number;
-  normalizeCursor: string | null;
-  normalizeHasMore: boolean;
+  nextCursor: string | null;
+  hasMore: boolean;
+  parseWarnings: Prisma.JsonValue | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,12 +40,15 @@ export type RawFileCreateInput = Prisma.RawFileCreateInput;
 export interface RawFileRecord {
   id: string;
   importId: string;
-  fileName: string;
-  fileChecksum: string;
-  fileSizeBytes: number | null;
+  athleteId: string;
+  sourceType: string;
+  filename: string;
   mimeType: string | null;
-  parserSummary: string | null;
-  metadataSummary: string | null;
+  byteSize: number | null;
+  checksum: string;
+  storagePath: string | null;
+  parserVersion: string | null;
+  parseWarnings: Prisma.JsonValue | null;
   createdAt: Date;
 }
 
@@ -48,16 +57,20 @@ export type StagingActivityCreateManyInput = Prisma.StagingActivityCreateManyInp
 export interface StagingActivityRecord {
   id: string;
   importId: string;
+  rawFileId: string | null;
   athleteId: string;
   sourceType: string;
-  stagingIndex: number;
-  normalizeStatus: StagingNormalizeStatus;
   sourceActivityId: string | null;
   dedupeHash: string | null;
   occurredAt: Date | null;
-  parsePayload: string | null;
-  parseError: string | null;
-  normalizedActivityId: string | null;
+  endedAt: Date | null;
+  elapsedTimeS: number | null;
+  distanceM: Prisma.Decimal | null;
+  sport: string | null;
+  status: StagingRowStatus;
+  errorCode: string | null;
+  errorMessage: string | null;
+  payloadJson: Prisma.JsonValue;
   createdAt: Date;
   updatedAt: Date;
 }

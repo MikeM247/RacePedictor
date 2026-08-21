@@ -19,10 +19,10 @@ export interface ActivityRecord {
   elapsedTimeS: number;
   movingTimeS: number | null;
   sport: string;
-  distanceM: number;
-  avgPaceSecPerKm: number;
-  elevationGainM: number;
-  elevationLossM: number;
+  distanceM: Prisma.Decimal;
+  avgPaceSecPerKm: Prisma.Decimal;
+  elevationGainM: Prisma.Decimal;
+  elevationLossM: Prisma.Decimal;
   hrAvailable: boolean;
   cadenceAvailable: boolean;
   createdAt: Date;
@@ -38,13 +38,13 @@ export interface ActivitySplitKmRecord {
   startOffsetS: number;
   endOffsetS: number;
   durationS: number;
-  distanceM: number;
-  paceSecPerKm: number;
-  elevGainM: number;
-  elevLossM: number;
+  distanceM: Prisma.Decimal;
+  paceSecPerKm: Prisma.Decimal;
+  elevGainM: Prisma.Decimal;
+  elevLossM: Prisma.Decimal;
   avgHrBpm: number | null;
   maxHrBpm: number | null;
-  avgCadenceSpm: number | null;
+  avgCadenceSpm: Prisma.Decimal | null;
   createdAt: Date;
 }
 
@@ -57,19 +57,19 @@ export interface WeeklyFeatureRecord {
   weekStartDate: Date;
   weekEndDate: Date;
   runCount: number;
-  totalDistanceM: number;
+  totalDistanceM: Prisma.Decimal;
   totalElapsedTimeS: number;
-  totalElevationGainM: number;
-  longRunDistanceM: number;
+  totalElevationGainM: Prisma.Decimal;
+  longRunDistanceM: Prisma.Decimal;
   longestRunId: string | null;
-  easyDistanceM: number;
-  moderateDistanceM: number;
-  hardDistanceM: number;
-  avgPaceSecPerKm: number | null;
+  easyDistanceM: Prisma.Decimal;
+  moderateDistanceM: Prisma.Decimal;
+  hardDistanceM: Prisma.Decimal;
+  avgPaceSecPerKm: Prisma.Decimal | null;
   avgHrBpm: number | null;
-  strainScore: number | null;
-  monotonyScore: number | null;
-  consistencyScore: number | null;
-  dataCompleteness: number;
+  strainScore: Prisma.Decimal | null;
+  monotonyScore: Prisma.Decimal | null;
+  consistencyScore: Prisma.Decimal | null;
+  dataCompleteness: Prisma.Decimal;
   createdAt: Date;
 }

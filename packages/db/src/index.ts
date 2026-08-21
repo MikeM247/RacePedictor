@@ -1,2 +1,2 @@
-export * from "./repositories/activity-repository";
-export * from "./repositories/import-repository";
+export * from "./repositories/activity-repository.js";
+export * from "./repositories/import-repository.js";

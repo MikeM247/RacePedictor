@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type {
   ActivitiesListResponse,
   ActivityDetail,
@@ -61,6 +61,9 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
   const [selectedActivity, setSelectedActivity] = useState<ActivityDetail | null>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailError, setDetailError] = useState<string>();
+  const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
+  const detailRequest = useRef<AbortController | null>(null);
+  const selectedRowRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (onlineMode) void loadList(initialFilters);
@@ -78,9 +81,12 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
       setNextCursor(data.nextCursor);
       setListStatus("idle");
       if (!cursor) {
+        detailRequest.current?.abort();
         setSelectedId(null);
         setSelectedActivity(null);
         setDetailStatus("idle");
+        setDetailError(undefined);
+        setIsMobileDetailOpen(false);
       }
     } catch (error) {
       setListStatus("error");
@@ -101,19 +107,33 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
   }
 
   async function selectActivity(activityId: string) {
+    detailRequest.current?.abort();
+    const request = new AbortController();
+    detailRequest.current = request;
     setSelectedId(activityId);
     setSelectedActivity(null);
     setDetailStatus("loading");
     setDetailError(undefined);
+    setIsMobileDetailOpen(true);
     try {
-      const response = await fetch(`/api/v1/activities/${encodeURIComponent(activityId)}`);
+      const response = await fetch(`/api/v1/activities/${encodeURIComponent(activityId)}`, { signal: request.signal });
       const data = await readActivityDetailResponse(response);
+      if (detailRequest.current !== request) return;
       setSelectedActivity(data.activity);
       setDetailStatus("idle");
     } catch (error) {
+      if (request.signal.aborted || detailRequest.current !== request) return;
       setDetailStatus("error");
       setDetailError(error instanceof Error ? error.message : "The activity could not be loaded.");
     }
+  }
+
+  function closeDetail() {
+    detailRequest.current?.abort();
+    setDetailStatus("idle");
+    setDetailError(undefined);
+    setIsMobileDetailOpen(false);
+    requestAnimationFrame(() => selectedRowRef.current?.focus());
   }
 
   const hasActiveFilters = Object.values(activeFilters).some(Boolean);
@@ -184,7 +204,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
             </div>
           </form>
 
-          {listStatus === "error" ? (
+          {listStatus === "error" && activities.length === 0 ? (
             <section className="activity-state activity-state-error" role="alert">
               <h3>Unable to load activities</h3>
               <p>{listError}</p>
@@ -201,7 +221,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
               ) : null}
             </section>
           ) : (
-            <div className="activity-browser">
+            <div className={isMobileDetailOpen ? "activity-browser activity-browser-detail-open" : "activity-browser"}>
               <section className="activity-list-panel" aria-labelledby="activity-list-heading">
                 <div className="panel-heading">
                   <div>
@@ -210,29 +230,43 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
                   </div>
                   {listStatus === "loading" ? <span className="loading-label">Loading…</span> : null}
                 </div>
-                <ol className="activity-list">
-                  {activities.map((activity) => (
-                    <li key={activity.id}>
-                      <button
-                        type="button"
-                        className={selectedId === activity.id ? "activity-row selected" : "activity-row"}
-                        aria-pressed={selectedId === activity.id}
-                        onClick={() => void selectActivity(activity.id)}
-                      >
-                        <span className="activity-row-main">
-                          <span className="activity-title">{activity.title || sportLabel(activity.sport)}</span>
-                          <span className="activity-date">{formatActivityDate(activity.localOccurredAt, activity.occurredAt)}</span>
-                        </span>
-                        <span className="activity-row-metrics">
-                          <strong>{formatDistance(activity.distanceM)}</strong>
-                          <span>{formatDuration(activity.elapsedTimeS)}</span>
-                          <span>{formatPace(activity.avgPaceSecPerKm)}</span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-                {nextCursor ? (
+                {listStatus === "error" ? (
+                  <section className="activity-list-error" role="alert">
+                    <p>Could not refresh the activity list. Your loaded history is still available.</p>
+                    <button className="button button-secondary" type="button" onClick={() => void loadList(activeFilters)}>Try again</button>
+                  </section>
+                ) : null}
+                {listStatus === "loading" && activities.length === 0 ? (
+                  <div className="activity-list-skeleton" aria-live="polite" aria-label="Loading activities">
+                    <span /><span /><span /><span />
+                  </div>
+                ) : (
+                  <ol className="activity-list">
+                    {activities.map((activity) => (
+                      <li key={activity.id}>
+                        <button
+                          type="button"
+                          className={selectedId === activity.id ? "activity-row selected" : "activity-row"}
+                          aria-current={selectedId === activity.id ? "true" : undefined}
+                          aria-label={`${activity.title || sportLabel(activity.sport)}, ${formatActivityDate(activity.localOccurredAt, activity.occurredAt)}, ${formatDistance(activity.distanceM)}, ${formatDuration(activity.elapsedTimeS)}, ${formatPace(activity.avgPaceSecPerKm)}${selectedId === activity.id ? ", selected" : ""}`}
+                          ref={selectedId === activity.id ? (node) => { if (node) selectedRowRef.current = node; } : undefined}
+                          onClick={() => void selectActivity(activity.id)}
+                        >
+                          <span className="activity-row-main">
+                            <span className="activity-title">{activity.title || sportLabel(activity.sport)}</span>
+                            <span className="activity-date">{formatActivityDate(activity.localOccurredAt, activity.occurredAt)}</span>
+                          </span>
+                          <span className="activity-row-metrics" aria-hidden="true">
+                            <strong>{formatDistance(activity.distanceM)}</strong>
+                            <span>{formatDuration(activity.elapsedTimeS)}</span>
+                            <span>{formatPace(activity.avgPaceSecPerKm)}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {nextCursor && activities.length > 0 ? (
                   <button
                     className="button button-load-more"
                     type="button"
@@ -241,12 +275,18 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
                   >
                     {listStatus === "loading-more" ? "Loading more…" : "Load more activities"}
                   </button>
-                ) : (
+                ) : activities.length > 0 ? (
                   <p className="list-end">You’ve reached the start of your imported history.</p>
-                )}
+                ) : null}
               </section>
 
-              <ActivityDetailPanel activity={selectedActivity} status={detailStatus} error={detailError} />
+              <ActivityDetailPanel
+                activity={selectedActivity}
+                status={detailStatus}
+                error={detailError}
+                onClose={closeDetail}
+                onRetry={selectedId ? () => void selectActivity(selectedId) : undefined}
+              />
             </div>
           )}
         </section>
@@ -259,25 +299,32 @@ function ActivityDetailPanel({
   activity,
   status,
   error,
+  onClose,
+  onRetry,
 }: {
   activity: ActivityDetail | null;
   status: "idle" | "loading" | "error";
   error?: string;
+  onClose: () => void;
+  onRetry?: () => void;
 }) {
   if (status === "loading") {
-    return <aside className="activity-detail activity-detail-state" aria-live="polite">Loading activity details…</aside>;
+    return <aside className="activity-detail activity-detail-state" aria-live="polite"><DetailBackButton onClose={onClose} />Loading activity details…</aside>;
   }
   if (status === "error") {
     return (
       <aside className="activity-detail activity-detail-state activity-detail-error" role="alert">
+        <DetailBackButton onClose={onClose} />
         <h3>Unable to load this activity</h3>
         <p>{error}</p>
+        {onRetry ? <button className="button button-secondary" type="button" onClick={onRetry}>Try again</button> : null}
       </aside>
     );
   }
   if (!activity) {
     return (
       <aside className="activity-detail activity-detail-state">
+        <DetailBackButton onClose={onClose} />
         <span className="detail-icon" aria-hidden="true">↗</span>
         <h3>Select an activity</h3>
         <p>Choose a run to inspect its performance, effort, and available imported metrics.</p>
@@ -290,6 +337,8 @@ function ActivityDetailPanel({
     ["Elapsed time", formatDuration(activity.elapsedTimeS)],
     ["Average pace", formatPace(activity.avgPaceSecPerKm)],
     ["Elevation gain", formatNumber(activity.elevationGainM, " m")],
+  ];
+  const optionalMetrics = [
     ["Average heart rate", formatNumber(activity.avgHrBpm, " bpm")],
     ["Maximum heart rate", formatNumber(activity.maxHrBpm, " bpm")],
     ["Average cadence", formatNumber(activity.avgCadenceSpm, " spm")],
@@ -300,11 +349,12 @@ function ActivityDetailPanel({
     ["Ground contact time", formatNumber(activity.avgGroundContactTimeMs, " ms")],
     ["Steps", formatNumber(activity.steps)],
     ["Body Battery drain", formatNumber(activity.bodyBatteryDrain)],
-  ];
+  ].filter(([, value]) => value !== "—");
 
   return (
     <aside className="activity-detail" aria-labelledby="activity-detail-heading">
       <div className="detail-header">
+        <DetailBackButton onClose={onClose} />
         <p className="eyebrow">{sportLabel(activity.sport)}</p>
         <h3 id="activity-detail-heading">{activity.title || sportLabel(activity.sport)}</h3>
         <p>{formatActivityDate(activity.localOccurredAt, activity.occurredAt)}</p>
@@ -317,6 +367,19 @@ function ActivityDetailPanel({
           </div>
         ))}
       </dl>
+      <section className="detail-subsection detail-optional-metrics">
+        <h4>Additional telemetry</h4>
+        {optionalMetrics.length > 0 ? (
+          <dl className="detail-metrics">
+            {optionalMetrics.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : <p>No additional telemetry was included in this activity.</p>}
+      </section>
       <section className="detail-subsection">
         <h4>Splits</h4>
         {activity.splits.length > 0 ? (
@@ -333,4 +396,8 @@ function ActivityDetailPanel({
       </section>
     </aside>
   );
+}
+
+function DetailBackButton({ onClose }: { onClose: () => void }) {
+  return <button className="detail-back-button" type="button" onClick={onClose}>← Back to activities</button>;
 }

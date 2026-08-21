@@ -98,11 +98,23 @@ test("cloud Calendar and Today work from approved structured data with no local 
   const calendarBody = await calendar.json();
   const todayBody = await today.json();
   assert.equal(calendarBody.data.sessions[0].id, "run-a");
+  assert.equal(calendarBody.data.activities[0].id, "activity-a");
+  assert.deepEqual(calendarBody.data.historicalSessions, []);
   assert.equal(todayBody.data.state, "upcoming");
   assert.equal(todayBody.data.source, "fallback");
   const serialized = JSON.stringify({ calendarBody, todayBody });
   assert.doesNotMatch(serialized, /vault|relativePath|storageKey|credential|refreshToken/u);
   assert.doesNotMatch(serialized, /reviewed by AI|adapted online/u);
+
+  composition.coaching.listHistory = async () => [plan, retiredPlan];
+  const withHistory = await handleCloudCalendar(
+    security,
+    new Request("http://localhost/api/v1/coaching/calendar?from=2026-08-10&to=2026-08-16"),
+    getComposition,
+  );
+  const withHistoryBody = await withHistory.json();
+  assert.equal(withHistoryBody.data.historicalSessions[0].planVersion, retiredPlan.version);
+  assert.equal(withHistoryBody.data.historicalSessions[0].scheduledDate, "2026-08-10");
 });
 
 test("cloud coaching handlers reject invalid dates and missing foreign resources without disclosure", async () => {
@@ -259,7 +271,22 @@ function fakeComposition(scopes: string[]): CloudReadComposition {
     activities: {
       list: async (scope: { athleteId: string }) => {
         record(scope);
-        return { items: [{ id: "activity-a", athleteId: scope.athleteId }], hasMore: false };
+        return {
+          items: [{
+            id: "activity-a",
+            athleteId: scope.athleteId,
+            title: "Recorded run",
+            occurredAt: "2026-08-10T04:00:00.000Z",
+            localOccurredAt: "2026-08-10T06:00:00.000Z",
+            sport: "run",
+            distanceM: 5000,
+            elapsedTimeS: 1800,
+            avgPaceSecPerKm: 360,
+            elevationGainM: 42,
+            hrAvailable: false,
+            cadenceAvailable: false,
+          }],
+        };
       },
       findById: async () => null,
     },

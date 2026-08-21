@@ -51,7 +51,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
   try {
     await writeFile(sourcePath, [
       "Activity Type,Date,Title,Distance,Elapsed Time,Avg Pace,Total Ascent,Total Descent",
-      "Running,2026-08-01 06:00:00,History Run,8.00,00:48:00,6:00,40,35",
+      "Running,2099-08-01 06:00:00,History Run,8.00,00:48:00,6:00,40,35",
     ].join("\n"), "utf8");
     await importGarminCsv({ sourcePath, vaultPath: path.join(directory, "vault"), databasePath });
 
@@ -62,7 +62,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
         timezone: "Africa/Johannesburg",
         units: "metric",
       },
-      goalDraft: { title: "Strong half marathon", targetDate: "2026-09-06", distanceMeters: 21097.5 },
+      goalDraft: { title: "Strong half marathon", targetDate: "2099-09-06", distanceMeters: 21097.5 },
       weeklyRoutine: {
         timezone: "Africa/Johannesburg",
         availableDays: ["tuesday", "thursday", "saturday"],
@@ -92,11 +92,11 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
         goalRationale: "The half-marathon target reflects the athlete's stated outcome and timing.",
         version: 1,
         revision: 1,
-        startsOn: "2026-08-14",
-        endsOn: "2026-09-06",
+        startsOn: "2099-08-14",
+        endsOn: "2099-09-06",
         timezone: "Africa/Johannesburg",
         weeklyStructure: [{
-          weekStartsOn: "2026-08-10",
+          weekStartsOn: "2099-08-10",
           focus: "Establish a sustainable aerobic and strength rhythm",
           sessionIds: ["route_workout_today", "route_workout_tomorrow"],
         }],
@@ -104,7 +104,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
           {
             id: "route_workout_today",
             kind: "run",
-            scheduledDate: "2026-08-14",
+            scheduledDate: "2099-08-14",
             startTime: "06:00",
             title: "Easy aerobic run",
             purpose: "Build durable aerobic consistency.",
@@ -117,7 +117,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
           {
             id: "route_workout_tomorrow",
             kind: "strength",
-            scheduledDate: "2026-08-15",
+            scheduledDate: "2099-08-15",
             startTime: "17:30",
             title: "Strength foundation",
             purpose: "Support durable running form.",
@@ -128,7 +128,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
           },
         ],
         contextArtifactId: published.artifactId,
-        createdAt: "2026-08-05T04:00:00.000Z",
+        createdAt: "2099-08-05T04:00:00.000Z",
         status: "proposed",
         rationale: "Progress conservatively from current history.",
         summary: "A balanced opening week with easy aerobic work and strength.",
@@ -206,7 +206,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
       version: 2,
       summary: "A replacement draft used to verify durable rejection through the route.",
       weeklyStructure: [{
-        weekStartsOn: "2026-08-10",
+        weekStartsOn: "2099-08-10",
         focus: "Replacement draft",
         sessionIds: ["rejected_route_run", "rejected_route_strength"],
       }],
@@ -251,14 +251,14 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
     assert.deepEqual(invalidContextError.details[0].path, ["profile", "timezone"]);
 
     const calendarResponse = await getCalendar(new Request(
-      "http://localhost/api/v1/coaching/calendar?from=2026-08-10&to=2026-08-16",
+      "http://localhost/api/v1/coaching/calendar?from=2099-08-10&to=2099-08-16",
     ));
     const session = (await body(calendarResponse)).data.sessions[0];
     assert.equal(session.id, "route_workout_today");
 
     const revisionConflict = await editCalendar(
       jsonRequest(`http://localhost/api/v1/coaching/calendar/sessions/${session.id}/edits`, {
-        operation: "reschedule", expectedRevision: 99, reason: "Work travel", date: "2026-08-15",
+        operation: "reschedule", expectedRevision: 99, reason: "Work travel", date: "2099-08-15",
       }),
       { params: Promise.resolve({ sessionId: session.id }) },
     );
@@ -267,15 +267,15 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
 
     const movedResponse = await editCalendar(
       jsonRequest(`http://localhost/api/v1/coaching/calendar/sessions/${session.id}/edits`, {
-        operation: "reschedule", expectedRevision: session.revision, reason: "Work travel", date: "2026-08-15",
+        operation: "reschedule", expectedRevision: session.revision, reason: "Work travel", date: "2099-08-15",
       }),
       { params: Promise.resolve({ sessionId: session.id }) },
     );
     const moved = (await body(movedResponse)).data.session;
-    assert.equal(moved.scheduledDate, "2026-08-15");
-    assert.equal(moved.prescribedDate, "2026-08-14");
-    assert.equal(moved.effectiveDate, "2026-08-15");
-    assert.equal(moved.originalDate, "2026-08-14");
+    assert.equal(moved.scheduledDate, "2099-08-15");
+    assert.equal(moved.prescribedDate, "2099-08-14");
+    assert.equal(moved.effectiveDate, "2099-08-15");
+    assert.equal(moved.originalDate, "2099-08-14");
     assert.equal(moved.status, "upcoming");
     assert.equal(moved.revision, 2);
     assert.equal(moved.warnings.length, 1, "moving onto an active session exposes a same-day warning");
@@ -283,14 +283,14 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
     assert.equal(movedContext.activePlan.revision, 2, "calendar edits refresh the reminder context with the effective schedule revision");
 
     const persistedCalendar = (await body(await getCalendar(new Request(
-      "http://localhost/api/v1/coaching/calendar?from=2026-08-10&to=2026-08-16",
+      "http://localhost/api/v1/coaching/calendar?from=2099-08-10&to=2099-08-16",
     )))).data.sessions;
     const persistedMoved = persistedCalendar.find((candidate: any) => candidate.id === session.id);
-    assert.equal(persistedMoved.prescribedDate, "2026-08-14");
-    assert.equal(persistedMoved.effectiveDate, "2026-08-15");
+    assert.equal(persistedMoved.prescribedDate, "2099-08-14");
+    assert.equal(persistedMoved.effectiveDate, "2099-08-15");
     assert.equal(persistedMoved.warnings.length, 1);
 
-    const todayResponse = await getToday(new Request("http://localhost/api/v1/coaching/today?date=2026-08-15"));
+    const todayResponse = await getToday(new Request("http://localhost/api/v1/coaching/today?date=2099-08-15"));
     const today = (await body(todayResponse)).data;
     assert.equal(today.sessionId, session.id);
     assert.equal(today.session.title, "Easy aerobic run");
@@ -303,8 +303,8 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
     );
     const skipped = (await body(skippedResponse)).data.session;
     assert.equal(skipped.status, "skipped");
-    assert.equal(skipped.prescribedDate, "2026-08-14");
-    assert.equal(skipped.effectiveDate, "2026-08-15");
+    assert.equal(skipped.prescribedDate, "2099-08-14");
+    assert.equal(skipped.effectiveDate, "2099-08-15");
     assert.equal(skipped.revision, 3);
 
     const staleRestore = await editCalendar(
@@ -324,8 +324,8 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
     );
     const restored = (await body(restoredResponse)).data.session;
     assert.equal(restored.status, "upcoming");
-    assert.equal(restored.prescribedDate, "2026-08-14");
-    assert.equal(restored.effectiveDate, "2026-08-15");
+    assert.equal(restored.prescribedDate, "2099-08-14");
+    assert.equal(restored.effectiveDate, "2099-08-15");
     assert.equal(restored.revision, 4);
 
     const amendedResponse = await editCalendar(
@@ -351,7 +351,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
       amendedContext.futureSessionChanges.changesHash,
     );
 
-    const invalidDate = await getToday(new Request("http://localhost/api/v1/coaching/today?date=2026-02-30"));
+    const invalidDate = await getToday(new Request("http://localhost/api/v1/coaching/today?date=2099-02-30"));
     assert.equal(invalidDate.status, 400);
     assert.equal((await body(invalidDate)).error.code, "VALIDATION_ERROR");
 
@@ -408,7 +408,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
       goalRationale: "The final target captures the approved outcome from the planning conversation.",
       version: 3,
       weeklyStructure: [{
-        weekStartsOn: "2026-08-10",
+        weekStartsOn: "2099-08-10",
         focus: "Approved replacement rhythm",
         sessionIds: ["approved_replacement_run", "approved_replacement_strength"],
       }],

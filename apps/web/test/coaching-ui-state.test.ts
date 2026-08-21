@@ -9,6 +9,8 @@ import {
   formatSessionTarget,
   handoffStatusLabel,
   normalizeCalendarSessions,
+  normalizeCalendarActivities,
+  normalizeHistoricalCalendarSessions,
   outOfPlanRangeWarning,
   sameDayConflictWarning,
   weekRange,
@@ -54,6 +56,25 @@ test("normalizes immutable source values and reasoned change history", () => {
   assert.equal(session.prescription, "Run easily for 30 minutes.");
   assert.equal(session.amendments[0].reason, "Limited time after work travel.");
   assert.equal(changeHistoryLabel(session.amendments[0]), "amend · title, durationMinutes · revision 3");
+});
+
+test("keeps recorded runs and historical planned sessions available by calendar date", () => {
+  const payload = {
+    activities: [{
+      id: "activity-1", localDate: "2026-08-13", title: "Morning Run", sport: "run",
+      distanceM: 10000, elapsedTimeS: 3600, avgPaceSecPerKm: 360, elevationGainM: 120,
+    }],
+    historicalSessions: [{
+      id: "plan-run-1", planId: "plan-old", planVersion: 2, kind: "run", scheduledDate: "2026-08-13",
+      title: "Easy 10 km", purpose: "Maintain aerobic volume.", prescription: "Run 10 km easily.",
+      cautions: [], durationMinutes: 60, distanceMeters: 10000, intensityRpe: 3,
+    }],
+  };
+  const [activity] = normalizeCalendarActivities(payload);
+  const [session] = normalizeHistoricalCalendarSessions(payload);
+  assert.equal(activity.localDate, "2026-08-13");
+  assert.equal(session.scheduledDate, "2026-08-13");
+  assert.equal(session.planVersion, 2);
 });
 
 test("allows only sessions after the athlete's current local date", () => {

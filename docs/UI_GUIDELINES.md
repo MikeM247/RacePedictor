@@ -29,6 +29,19 @@ If conflicts occur:
 
 # Core Design Philosophy
 
+## Night Ops Visual Direction (Approved 2026-08-20)
+
+RacePredictor uses the **Night Ops** presentation direction: a dark, matte, telemetry-inspired analytical interface. It is a visual treatment for the existing coaching product, not a new coaching mode or a gaming interface.
+
+- Prioritise the approved workout, effective calendar, active plan, and trustworthy activity data over infrastructure detail.
+- Use deep navy surfaces, high-contrast off-white text, cyan primary interaction, violet secondary categorisation, lime success, amber warning/stale, and red destructive/error states.
+- Use semantic theme tokens instead of page-specific hard-coded colour values.
+- Keep panels solid and structured. A faint selection/focus halo is permitted; glassmorphism, persistent glows, decorative gauges, holograms, and motion-heavy effects are not.
+- Keep status explicit in text and/or icons; accent colour is supplementary.
+- Keep the interface dense enough for desktop coaching workflows and progressively disclose detailed prescriptions, diagnostics, and history.
+
+This direction supersedes the former light-surface palette preference while retaining every function-first, calm-interface, predictable-layout, accessibility, and anti-decoration rule below.
+
 RacePredictor is an **analytical tool**, not a marketing site.
 
 The interface must prioritize:
@@ -366,15 +379,18 @@ Avoid arbitrary spacing values.
 
 If the project defines a palette, **always use it**.
 
-Otherwise define a minimal palette:
+Otherwise define a minimal semantic palette:
 
 ```
 Background
-Surface
-Primary
-Secondary
-Accent
-Text
+Navigation surface
+Raised surface
+Border
+Primary interaction
+Secondary category
+Success / warning / error
+Primary / muted text
+Focus
 ```
 
 Color should communicate:

@@ -80,6 +80,17 @@
 
 Every screen distinguishes loading/empty/error/stale. Today also distinguishes no plan, rest, upcoming, missed/unconfirmed, and skipped. Phase 1 does not infer completion from an unmatched imported activity and does not claim automatic Garmin sync, post-run review, or adaptation.
 
+## Night Ops Interaction Addendum (2026-08-20)
+
+Night Ops changes hierarchy and presentation without changing any coaching, approval, data, or safety rule.
+
+- Today is workout-first: approved workout or intentional rest appears before healthy infrastructure detail. Calendar context, analytics, and freshness load independently so an optional failure cannot hide the daily coaching state.
+- Calendar week cells contain concise summaries only. Selecting a session exposes its effective prescription, approved source, cautions, history, and permitted actions in a contextual detail surface. Agenda is the default whenever a seven-day grid cannot remain readable.
+- Plan shows date progress and groups sessions by explicitly supplied calendar weeks. It does not infer named training phases, workout completion, or effectiveness.
+- Activities maintains the list while selected details load. On compact screens, activity detail has an explicit return action that restores focus to the selected row.
+- System freshness is compact when healthy and expands automatically when a signal is stale, unavailable, or action-required. Independent data sources remain individually named.
+- Night Ops uses a dark, matte, high-contrast visual system with restrained cyan, violet, lime, amber, and red accents. Colour never acts as the sole state signal.
+
 Future-session amendment and schedule-change dialogs use labelled native form controls and announce validation, saving, success, conflict, and error states. Opening a dialog moves focus to its first control; Tab and Shift+Tab stay within it; Escape closes it when no save is in progress; closing returns focus to the launching control; and an invalid submission focuses the first invalid field. These behaviors apply at desktop and supported mobile widths and are covered by browser automation.
 
 ## Cloud Strava and Sync UX Addendum

@@ -20,6 +20,22 @@ export type CalendarSessionView = {
   amendments: CalendarSessionAmendmentView[];
 };
 
+export type HistoricalCalendarSessionView = CalendarSessionView & {
+  planId: string;
+  planVersion: number;
+};
+
+export type CalendarActivityView = {
+  id: string;
+  localDate: string;
+  title: string;
+  sport: string;
+  distanceMeters: number;
+  elapsedTimeSeconds: number;
+  averagePaceSecondsPerKm: number;
+  elevationGainMeters: number;
+};
+
 export type CalendarSessionOriginal = {
   id: string;
   title: string;
@@ -148,6 +164,57 @@ export function normalizeCalendarSessions(payload: unknown): CalendarSessionView
       amendments,
     }];
   });
+}
+
+export function normalizeHistoricalCalendarSessions(payload: unknown): HistoricalCalendarSessionView[] {
+  const nested = calendarPayload(payload);
+  const raw = Array.isArray(nested.historicalSessions) ? nested.historicalSessions : [];
+  return raw.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as Record<string, unknown>;
+    const planId = typeof item.planId === "string" ? item.planId : "";
+    const planVersion = Number(item.planVersion);
+    if (!planId || !Number.isInteger(planVersion) || planVersion < 1) return [];
+    const [session] = normalizeCalendarSessions({ sessions: [{
+      ...item,
+      effectiveDate: item.scheduledDate,
+      prescribedDate: item.scheduledDate,
+      originalDate: item.scheduledDate,
+      status: "upcoming",
+      revision: planVersion,
+      original: item,
+      amendments: [],
+      warnings: [],
+    }] });
+    return session ? [{ ...session, planId, planVersion }] : [];
+  });
+}
+
+export function normalizeCalendarActivities(payload: unknown): CalendarActivityView[] {
+  const nested = calendarPayload(payload);
+  const raw = Array.isArray(nested.activities) ? nested.activities : [];
+  return raw.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as Record<string, unknown>;
+    const id = typeof item.id === "string" ? item.id : "";
+    const localDate = typeof item.localDate === "string" ? item.localDate : "";
+    if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) return [];
+    return [{
+      id,
+      localDate,
+      title: typeof item.title === "string" && item.title.trim() ? item.title : "Recorded run",
+      sport: typeof item.sport === "string" ? item.sport : "run",
+      distanceMeters: Number(item.distanceM ?? 0),
+      elapsedTimeSeconds: Number(item.elapsedTimeS ?? 0),
+      averagePaceSecondsPerKm: Number(item.avgPaceSecPerKm ?? 0),
+      elevationGainMeters: Number(item.elevationGainM ?? 0),
+    }];
+  });
+}
+
+function calendarPayload(payload: unknown): Record<string, unknown> {
+  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  return record.data && typeof record.data === "object" ? record.data as Record<string, unknown> : record;
 }
 
 export function canAmendFutureSession(session: Pick<CalendarSessionView, "effectiveDate">, currentLocalDate: string): boolean {

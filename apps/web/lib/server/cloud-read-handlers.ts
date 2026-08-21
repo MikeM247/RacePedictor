@@ -215,8 +215,57 @@ export async function handleCloudCalendar(
   const parsed = calendarQueryRequestSchema.safeParse({ from: params.get("from"), to: params.get("to") });
   if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Calendar date range is invalid");
   const scope = requireScope(security);
-  const sessions = await safelyReadCoaching(() => getComposition().calendarSessions.listActiveCalendar(scope, parsed.data));
-  return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions }));
+  const composition = getComposition();
+  const [sessions, plans] = await Promise.all([
+    safelyReadCoaching(() => composition.calendarSessions.listActiveCalendar(scope, parsed.data)),
+    safelyReadCoaching(() => composition.coaching.listHistory(scope)),
+  ]);
+  const timezone = plans.find((plan) => plan.status === "active")?.timezone ?? "Africa/Johannesburg";
+  const activities = await listCloudCalendarActivities(composition, scope, parsed.data, timezone);
+  const historicalSessions = plans
+    .filter((plan) => plan.status === "retired")
+    .flatMap((plan) => plan.workouts
+      .filter((workout) => workout.scheduledDate >= parsed.data.from && workout.scheduledDate <= parsed.data.to)
+      .map((workout) => ({ ...workout, planId: plan.id, planVersion: plan.version })));
+  return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions, historicalSessions, activities }));
+}
+
+async function listCloudCalendarActivities(
+  composition: CloudReadComposition,
+  scope: ReturnType<typeof athleteScopeFor>,
+  range: { from: string; to: string },
+  timezone: string,
+) {
+  const from = shiftCalendarDate(range.from, -1);
+  const to = shiftCalendarDate(range.to, 1);
+  const items = [];
+  let cursor: string | null | undefined;
+  do {
+    const page = await composition.activities.list(scope, { from, to, cursor, limit: 100 });
+    items.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return items
+    .filter((activity) => ["run", "trail_run", "treadmill_run"].includes(activity.sport))
+    .map((activity) => ({ ...activity, localDate: localDateForCalendar(activity.occurredAt, timezone) }))
+    .filter((activity) => activity.localDate >= range.from && activity.localDate <= range.to);
+}
+
+function shiftCalendarDate(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function localDateForCalendar(occurredAt: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(occurredAt));
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
 }
 
 export async function handleCloudToday(

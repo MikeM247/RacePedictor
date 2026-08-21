@@ -1238,6 +1238,26 @@ export class LocalCoachingService {
     return this.run(() => asCalendarSessions(this.repository.loadActivePlan()?.workouts ?? []));
   }
 
+  listCalendarActivities(input: { from: string; to: string }) {
+    return this.run(() => {
+      const items: ReturnType<typeof listLocalActivities>["items"] = [];
+      let cursor: string | null = null;
+      do {
+        const page = listLocalActivities({
+          databasePath: this.databasePath,
+          athleteId: this.athleteId,
+          from: input.from,
+          to: input.to,
+          cursor,
+          limit: 100,
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor ?? null;
+      } while (cursor);
+      return items.filter((activity) => ["run", "trail_run", "treadmill_run"].includes(activity.sport));
+    });
+  }
+
   editCalendar(input: z.input<typeof calendarEditRequestSchema>) {
     return this.run(() => {
       const request = calendarEditRequestSchema.parse(input);

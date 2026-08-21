@@ -665,10 +665,30 @@ export const calendarSessionSchema = z.object({
 });
 export const calendarQueryRequestSchema = z.object({ from: dateSchema, to: dateSchema }).strict()
   .refine(({ from, to }) => from <= to, { path: ["to"], message: "to must be on or after from" });
+export const historicalCalendarSessionSchema = z.object({
+  id: idSchema,
+  kind: workoutKindSchema,
+  scheduledDate: dateSchema,
+  startTime: timeSchema.optional(),
+  title: z.string().trim().min(1).max(200),
+  purpose: z.string().trim().min(1).max(1000),
+  prescription: z.string().trim().min(1).max(4000),
+  cautions: z.array(z.string().trim().min(1).max(500)).max(20),
+  durationMinutes: z.number().int().min(0).max(1440),
+  distanceMeters: z.number().positive().max(500_000).optional(),
+  intensityRpe: z.number().int().min(1).max(10).optional(),
+  planId: idSchema,
+  planVersion: revisionSchema,
+}).strict();
+export const calendarActivitySchema = activitySummarySchema.extend({
+  localDate: dateSchema,
+}).strict();
 export const calendarRouteDataSchema = z.object({
   from: dateSchema,
   to: dateSchema,
   sessions: z.array(calendarSessionSchema),
+  historicalSessions: z.array(historicalCalendarSessionSchema).default([]),
+  activities: z.array(calendarActivitySchema).default([]),
 }).strict();
 export const calendarEditHttpRequestSchema = z.discriminatedUnion("operation", [
   z.object({

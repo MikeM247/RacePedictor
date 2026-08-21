@@ -215,7 +215,8 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await expect(page.getByRole("link", { name: "Open active plan" })).toHaveAttribute("href", "/dashboard/plan#active-plan-heading");
 
   await page.goto("/dashboard/calendar");
-  const sessionCard = page.getByRole("article").filter({ hasText: "Synthetic future aerobic run" });
+  await page.getByRole("button", { name: /Synthetic future aerobic run/ }).click();
+  const sessionCard = page.locator("#session-synthetic_future_session");
   await expect(sessionCard).toBeVisible();
   await sessionCard.getByRole("button", { name: "Skip" }).click();
   const skipDialog = page.getByRole("alertdialog", { name: "Confirm skip" });
@@ -226,6 +227,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await skipDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(skipDialog).toBeHidden();
   await page.reload();
+  await page.getByRole("button", { name: /Synthetic future aerobic run/ }).click();
   await expect(sessionCard).toContainText("skipped");
   await expect(sessionCard.getByRole("button", { name: "Restore" })).toBeVisible();
 
@@ -235,6 +237,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await restoreDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(restoreDialog).toBeHidden();
   await page.reload();
+  await page.getByRole("button", { name: /Synthetic future aerobic run/ }).click();
   await expect(sessionCard).toContainText("upcoming");
   await expect(sessionCard.getByRole("button", { name: "Skip" })).toBeVisible();
   await expect(sessionCard.getByLabel("Move to date")).toHaveValue(sameWeekConflictDate);
@@ -653,6 +656,47 @@ test("Calendar deep links reveal a prescribed session outside the current week a
   await expect(card).toContainText("Current target: 8 km · 50 min · RPE 5");
   await expect(page.getByRole("heading", { name: "Schedule context needs review" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("session-session_deep_link");
+});
+
+test("Calendar shows recorded runs and retained historical plans together without inferring completion", async ({ page }) => {
+  const date = "2026-08-13";
+  await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ data: {
+      sessions: [],
+      activities: [{
+        id: "activity-recorded-run", athleteId: "e2e_athlete", localDate: date, title: "Morning Run",
+        sport: "run", occurredAt: "2026-08-13T04:30:00.000Z", localOccurredAt: "2026-08-13T06:30:00.000Z",
+        distanceM: 10000, elapsedTimeS: 3600, avgPaceSecPerKm: 360, elevationGainM: 120,
+        hrAvailable: false, cadenceAvailable: false,
+      }],
+      historicalSessions: [{
+        id: "retired-plan-run", planId: "retired-plan", planVersion: 2, kind: "run", scheduledDate: date,
+        title: "Easy 10 km", purpose: "Maintain aerobic volume.", prescription: "Run 10 km at an easy effort.",
+        cautions: [], durationMinutes: 60, distanceMeters: 10000, intensityRpe: 3,
+      }],
+    } }),
+  }));
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ data: { id: "active-plan", startsOn: "2026-08-12", endsOn: "2026-10-04", timezone: "Africa/Johannesburg" } }),
+  }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ data: { stale: { isStale: false, reason: null } } }),
+  }));
+
+  await page.goto(`/dashboard/calendar?date=${date}`);
+  await page.locator("details.calendar-supporting-records > summary").click();
+  const actual = page.locator("#activity-activity-recorded-run");
+  await expect(actual).toContainText("Morning Run");
+  await expect(actual).toContainText("Actual workout: 10 km · 1:00:00 · 6:00/km · +120 m");
+  await actual.locator("summary").click();
+  await expect(actual).toContainText("Same-day plan records are shown below without inferring that any plan was completed.");
+  await expect(actual).toContainText("Easy 10 km · historical plan v2");
+  const historical = page.locator("#historical-session-retired-plan-retired-plan-run");
+  await expect(historical).toContainText("Historical planned session · read-only.");
+  await expect(historical).toContainText("Run 10 km at an easy effort.");
 });
 
 test("Calendar recovers from errors, marks today, and warns before conflicting or out-of-range moves on mobile", async ({ page }) => {

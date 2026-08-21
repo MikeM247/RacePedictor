@@ -201,7 +201,7 @@ export function OnlineSyncSettings() {
           <span className="toolbar-context">Online</span>
         </header>
         <section className="coaching-content">
-          <section className="coach-panel" aria-labelledby="strava-heading">
+          <section className="coach-panel settings-panel settings-panel--connections" aria-labelledby="strava-heading">
             <div className="coach-panel-heading">
               <div><p className="eyebrow">Workout source</p><h3 id="strava-heading">Automatic workouts from Strava</h3></div>
               <span className="status-chip">{strava ? stravaLabel(strava) : "Unavailable"}</span>
@@ -223,7 +223,7 @@ export function OnlineSyncSettings() {
             {stravaMessage ? <p className="coach-status" role="status">{stravaMessage}</p> : null}
           </section>
 
-          <section className="coach-panel" aria-labelledby="local-sync-heading">
+          <section className="coach-panel settings-panel settings-panel--connections" aria-labelledby="local-sync-heading">
             <div className="coach-panel-heading">
               <div><p className="eyebrow">Local sync</p><h3 id="local-sync-heading">Paired computer</h3></div>
               <span className="status-chip">{devices.some((device) => device.status === "active") ? "Active" : "Not paired"}</span>
@@ -238,7 +238,7 @@ export function OnlineSyncSettings() {
             {message ? <p className={`coach-status coach-status--${state === "error" ? "error" : state === "loading" ? "loading" : "success"}`} role={state === "error" ? "alert" : "status"}>{message}</p> : null}
           </section>
 
-          {oneTimeToken ? <section className="coach-panel sync-credential-panel" aria-labelledby="credential-heading">
+          {oneTimeToken ? <section className="coach-panel settings-panel settings-panel--operations sync-credential-panel" aria-labelledby="credential-heading">
             <div className="coach-panel-heading"><div><p className="eyebrow">Shown once</p><h3 id="credential-heading">Save the device credential</h3></div><span className="status-chip">One-time</span></div>
             <p>Copy this credential, then run the command below on the paired Windows computer. It is protected with your Windows account and is not stored in Obsidian or the browser.</p>
             <textarea aria-label="One-time device credential" readOnly rows={3} value={oneTimeToken} />
@@ -247,7 +247,7 @@ export function OnlineSyncSettings() {
             <p className="field-help">After enrolment, use <code>npm run sync:local -- sync</code>. Re-pairing revokes the previous computer immediately.</p>
           </section> : null}
 
-          <section className="coach-panel" aria-labelledby="device-history-heading">
+          <section className="coach-panel settings-panel" aria-labelledby="device-history-heading">
             <div className="coach-panel-heading"><div><p className="eyebrow">Status</p><h3 id="device-history-heading">Device history</h3></div><button className="button button-secondary" type="button" onClick={() => void load()}>Refresh</button></div>
             {devices.length === 0 && state !== "loading" ? <p className="quiet-copy">No computer has been paired yet.</p> : <div className="sync-device-list">
               {devices.map((device) => <article className="sync-device-card" key={device.id}>
@@ -258,13 +258,13 @@ export function OnlineSyncSettings() {
             </div>}
           </section>
 
-          <section className="coach-panel" aria-labelledby="privacy-boundary-heading">
+          <section className="coach-panel settings-panel settings-panel--privacy" aria-labelledby="privacy-boundary-heading">
             <div className="coach-panel-heading"><div><p className="eyebrow">Privacy boundary</p><h3 id="privacy-boundary-heading">Only selected structured context leaves your computer</h3></div></div>
             <p>The local publisher accepts one explicit structured JSON input. It never scans the vault. Supported sections are availability, training preferences, dated constraints, wellbeing check-ins, and activity reflections.</p>
             <p className="field-help">Notes, attachments, paths, credentials, raw provider files, code, and Codex history are rejected. Published context cannot edit a training plan.</p>
           </section>
 
-          <section className="coach-panel" aria-labelledby="operations-heading">
+          <section className="coach-panel settings-panel settings-panel--operations" aria-labelledby="operations-heading">
             <div className="coach-panel-heading"><div><p className="eyebrow">Free-tier safety</p><h3 id="operations-heading">Operations guardrails</h3></div><span className="status-chip">{operations ? operations.state.replace("_", " ") : "Unavailable"}</span></div>
             {!operations ? <p className="quiet-copy">Usage status is temporarily unavailable. Automatic processing remains fail-closed when its recovery configuration is unavailable.</p> : <>
               <p>{operations.processingAllowed ? "Automatic recovery is within the configured planning ceilings." : "New automatic processing is paused. Already accepted workouts and raw records are preserved."}</p>

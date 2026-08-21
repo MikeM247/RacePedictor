@@ -13,16 +13,21 @@ import {
   formatSessionTarget,
   handoffStatusLabel,
   localDateInTimezone,
+  normalizeCalendarActivities,
+  normalizeHistoricalCalendarSessions,
   normalizeCalendarSessions,
   normalizeReminderExternalStatus,
   outOfPlanRangeWarning,
   sameDayConflictWarning,
   weekRange,
   type CalendarSessionView,
+  type CalendarActivityView,
+  type HistoricalCalendarSessionView,
   type ReminderExternalStatus,
 } from "../../lib/coaching-ui-state";
 import "../dashboard/dashboard.css";
 import "./coaching-ui.css";
+import { ActivePlanOverview } from "./active-plan-overview";
 
 type Page = "plan" | "calendar" | "data-quality" | "settings";
 type JsonRecord = Record<string, unknown>;
@@ -183,7 +188,7 @@ export function DataQualityPage() {
   ] : [];
 
   return <CoachShell page="data-quality" title="Data Quality" subtitle="Import and verify your running history" meta="Manual CSV or GPX">
-    <section className="coach-panel" aria-labelledby="activity-import-heading">
+    <section className="coach-panel data-quality-panel data-quality-panel--import" aria-labelledby="activity-import-heading">
       <div className="coach-panel-heading"><div><p className="eyebrow">History import</p><h3 id="activity-import-heading">Upload activities</h3></div></div>
       <form className="coach-form" onSubmit={upload}>
         <label className="file-field"><span>CSV or GPX file</span><input type="file" accept=".csv,.gpx,text/csv,application/gpx+xml" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
@@ -192,7 +197,7 @@ export function DataQualityPage() {
       </form>
       <StatusLine state={state} message={message} />
     </section>
-    {result ? <section className="coach-panel" aria-labelledby="import-result-heading">
+    {result ? <section className="coach-panel data-quality-panel data-quality-panel--result" aria-labelledby="import-result-heading">
       <div className="coach-panel-heading"><div><p className="eyebrow">Import result</p><h3 id="import-result-heading">Validation summary</h3></div><span className="status-chip">{String(result.status ?? "completed")}</span></div>
       <dl className="result-grid">{counts.map(([label, value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       {Array.isArray(result.parseWarnings) && result.parseWarnings.length > 0 ? <div className="issue-list"><h4>Warnings and next steps</h4><ul>{result.parseWarnings.map((warning, index) => <li key={index}>{String(warning)}</li>)}</ul><p>Correct the source and upload it again if a warning affects your history.</p></div> : <p className="quiet-copy">No corrective action is needed.</p>}
@@ -395,10 +400,11 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
     : `${String(goalTarget.metric ?? "consistency")} ${String(goalTarget.threshold ?? "")} from ${String(goalTarget.startsOn ?? "—")} to ${String(goalTarget.endsOn ?? "—")}`;
   const creationActionLabel = proposal ? "Review saved draft" : activePlan ? "Create a new plan with Codex" : "Create a plan with Codex";
   const activeContentVersion = coachingContentVersion(activePlan);
+  const activePlanToday = activePlan ? localDateInTimezone(String(activePlan.timezone ?? timezoneDefault)) : "";
   return <CoachShell page="plan" title="Plan" subtitle={onlineMode ? "Choose which explicitly approved structured plan is active" : "Set your goal and explicitly approve each plan version"} meta={activePlan ? `Active · ${activeContentVersion ?? `record ${String(activePlan.version ?? 1)}`}` : "No active plan"}>
     <section className="coach-panel coach-panel--plan-focus" aria-labelledby="active-plan-heading">
       <div className="coach-panel-heading plan-focus-heading"><div><p className="eyebrow">Your training focus</p><h3 id="active-plan-heading">Active plan</h3></div>{onlineMode ? <span className="status-chip">Online plan control</span> : <button className="button button-primary" type="button" aria-controls="plan-creation-workflow" aria-expanded={creationOpen} onClick={openPlanCreation}>{creationActionLabel}</button>}</div>
-      {activePlan ? <><dl className="summary-list active-plan-summary"><div><dt>Status</dt><dd>Active approved version</dd></div><div><dt>Coaching version</dt><dd>{activeContentVersion ?? "Not supplied"}</dd></div><div><dt>Approval record</dt><dd>{String(activePlan.version ?? 1)}</dd></div><div><dt>Date range</dt><dd>{String(activePlan.startsOn ?? "—")} to {String(activePlan.endsOn ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{activeWorkouts.length}</dd></div><div><dt>Timezone</dt><dd>{String(activePlan.timezone ?? timezoneDefault)}</dd></div></dl><p>{onlineMode ? "This plan was explicitly approved before publication. Selecting another approved version changes Today and Calendar, but does not alter any workout prescription." : "Follow this approved version in Calendar. Creating a replacement never changes it until you review and approve the new draft."}</p><Link className="text-link" href="/dashboard/calendar">Open active plan in Calendar</Link></> : <div className="plan-focus-empty"><p>{onlineMode ? "No approved plan has been synced yet. Your local coaching workflow remains the authority for creating and approving plans." : "No plan is active yet. Start with Codex, then return here to review and approve the proposal before it affects Today or Calendar."}</p></div>}
+      {activePlan ? <><dl className="summary-list active-plan-summary"><div><dt>Status</dt><dd>Active approved version</dd></div><div><dt>Coaching version</dt><dd>{activeContentVersion ?? "Not supplied"}</dd></div><div><dt>Approval record</dt><dd>{String(activePlan.version ?? 1)}</dd></div><div><dt>Date range</dt><dd>{String(activePlan.startsOn ?? "—")} to {String(activePlan.endsOn ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{activeWorkouts.length}</dd></div><div><dt>Timezone</dt><dd>{String(activePlan.timezone ?? timezoneDefault)}</dd></div></dl><p>{onlineMode ? "This plan was explicitly approved before publication. Selecting another approved version changes Today and Calendar, but does not alter any workout prescription." : "Follow this approved version in Calendar. Creating a replacement never changes it until you review and approve the new draft."}</p><Link className="text-link" href="/dashboard/calendar">Open active plan in Calendar</Link><ActivePlanOverview plan={activePlan} today={activePlanToday} /></> : <div className="plan-focus-empty"><p>{onlineMode ? "No approved plan has been synced yet. Your local coaching workflow remains the authority for creating and approving plans." : "No plan is active yet. Start with Codex, then return here to review and approve the proposal before it affects Today or Calendar."}</p></div>}
       {proposal ? <p className="plan-draft-note" role="status">A newer saved draft is ready for review. Your active plan remains unchanged until you explicitly approve it.</p> : null}
     </section>
     {!onlineMode && creationOpen ? <div className="plan-creation-workflow" id="plan-creation-workflow">
@@ -507,12 +513,30 @@ function sessionAmendmentChanges(draft: SessionAmendDraft): JsonRecord {
   return changes;
 }
 
+function formatDuration(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatPace(secondsPerKm: number) {
+  const minutes = Math.floor(secondsPerKm / 60);
+  const seconds = Math.round(secondsPerKm % 60);
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }: { initialDate?: string; focusSessionId?: string; onlineMode?: boolean }) {
   const [planTimezone, setPlanTimezone] = useState(timezoneDefault);
   const today = localDateInTimezone(planTimezone);
   const [anchorDate, setAnchorDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(initialDate ?? "") ? initialDate! : today);
   const [view, setView] = useState<"week" | "agenda">("week");
   const [sessions, setSessions] = useState<CalendarSessionView[]>([]);
+  const [historicalSessions, setHistoricalSessions] = useState<HistoricalCalendarSessionView[]>([]);
+  const [activities, setActivities] = useState<CalendarActivityView[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(focusSessionId ?? null);
   const [state, setState] = useState<RequestState>("loading");
   const [message, setMessage] = useState<string>();
   const [staleMessage, setStaleMessage] = useState<string>();
@@ -556,13 +580,32 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       setPlanRange(/^\d{4}-\d{2}-\d{2}$/.test(startsOn) && /^\d{4}-\d{2}-\d{2}$/.test(endsOn) ? { startsOn, endsOn } : null);
       const stale = asRecord(asRecord(todayContext).stale);
       setStaleMessage(stale.isStale === true ? String(stale.reason ?? "The approved schedule was built from older activity history.") : undefined);
-      setSessions(normalizeCalendarSessions(response)); setState("success"); setMessage(successMessage);
+      const normalizedSessions = normalizeCalendarSessions(response);
+      setSessions(normalizedSessions);
+      setHistoricalSessions(normalizeHistoricalCalendarSessions(response));
+      setActivities(normalizeCalendarActivities(response));
+      setSelectedSessionId((current) => normalizedSessions.some((session) => session.id === current)
+        ? current
+        : normalizedSessions.find((session) => session.id === focusSessionId)?.id ?? normalizedSessions[0]?.id ?? null);
+      setState("success"); setMessage(successMessage);
     } catch (error) { setState("error"); setMessage(error instanceof Error ? error.message : "Calendar could not be loaded."); }
   }
   useEffect(() => { void loadCalendar(); }, [range.from, range.to]);
 
   useEffect(() => {
+    const narrowCalendar = window.matchMedia("(max-width: 1199px)");
+    if (narrowCalendar.matches) setView("agenda");
+    const useAgenda = (event: MediaQueryListEvent) => { if (event.matches) setView("agenda"); };
+    narrowCalendar.addEventListener("change", useAgenda);
+    return () => narrowCalendar.removeEventListener("change", useAgenda);
+  }, []);
+
+  useEffect(() => {
     if (state !== "success" || !focusSessionId) return;
+    if (sessions.some((session) => session.id === focusSessionId) && selectedSessionId !== focusSessionId) {
+      setSelectedSessionId(focusSessionId);
+      return;
+    }
     const focusKey = `${range.from}:${focusSessionId}`;
     if (focusHandled.current === focusKey) return;
     const target = document.getElementById(`session-${focusSessionId}`);
@@ -575,7 +618,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     focusHandled.current = focusKey;
     target.focus({ preventScroll: true });
     target.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [focusSessionId, range.from, sessions, state]);
+  }, [focusSessionId, range.from, selectedSessionId, sessions, state, view]);
 
   function moveWeek(days: number) {
     const date = new Date(`${anchorDate}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); setAnchorDate(date.toISOString().slice(0, 10));
@@ -643,6 +686,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     date.setUTCDate(date.getUTCDate() + 1);
     return date.toISOString().slice(0, 10);
   })();
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? sessions[0] ?? null;
 
   function reviewMove(session: CalendarSessionView, launcher: HTMLElement) {
     const input = document.getElementById(`move-${session.id}`) as HTMLInputElement | null;
@@ -691,7 +735,62 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     </article>;
   }
 
-  return <CoachShell page="calendar" title="Calendar" subtitle={onlineMode ? "Owner-managed future sessions with preserved approved sources" : "Approved sessions and reasoned, auditable future changes"} meta={`${range.from} – ${range.to} · ${planTimezone}`}>
+  function renderSessionSummary(session: CalendarSessionView) {
+    const isToday = session.effectiveDate === today;
+    const selected = session.id === selectedSession?.id;
+    return <button className={`calendar-session-summary${selected ? " calendar-session-summary--selected" : ""}`} type="button" aria-pressed={selected} aria-controls="calendar-selected-session" onClick={() => setSelectedSessionId(session.id)} key={session.id}>
+      <span className="calendar-summary-top"><span>{session.kind.replace("_", " ")}</span><span>{session.status}</span></span>
+      <strong>{session.title}</strong>
+      <span>{formatSessionTarget(session)}</span>
+      <small>{session.amendments.length > 0 ? `${session.amendments.length} reasoned change${session.amendments.length === 1 ? "" : "s"}` : session.prescribedDate !== session.effectiveDate ? "Date adjusted" : "Approved schedule"}{isToday ? " · Today" : ""}</small>
+    </button>;
+  }
+
+  function renderHistoricalSummary(session: HistoricalCalendarSessionView) {
+    return <article className="calendar-record-summary calendar-record-summary--historical" key={`historical-summary-${session.planId}-${session.id}`}>
+      <p className="eyebrow">{session.kind.replace("_", " ")} · historical v{session.planVersion}</p><strong>{session.title}</strong><span>{formatSessionTarget(session)}</span><small>Read-only plan record</small>
+    </article>;
+  }
+
+  function renderActivitySummary(activity: CalendarActivityView) {
+    const metrics = [
+      activity.distanceMeters > 0 ? `${Number((activity.distanceMeters / 1000).toFixed(2))} km` : null,
+      activity.elapsedTimeSeconds > 0 ? formatDuration(activity.elapsedTimeSeconds) : null,
+    ].filter(Boolean).join(" · ");
+    return <article className="calendar-record-summary calendar-record-summary--actual" key={`activity-summary-${activity.id}`}>
+      <p className="eyebrow">{activity.sport.replace("_", " ")} · recorded</p><strong>{activity.title}</strong><span>{metrics || "Recorded run"}</span><small>Activity record · no completion inferred</small>
+    </article>;
+  }
+
+  function renderHistoricalSessionCard(session: HistoricalCalendarSessionView) {
+    return <article className="session-card session-card--historical" id={`historical-session-${session.planId}-${session.id}`} tabIndex={-1} key={`historical-${session.planId}-${session.id}`}>
+      <div className="session-card-top"><p className="eyebrow">{session.kind.replace("_", " ")} · historical plan · v{session.planVersion}</p><time dateTime={session.scheduledDate}>{formatCoachingDate(session.scheduledDate)}</time></div>
+      <h3>{session.title}</h3>
+      <p><strong>Planned purpose:</strong> {session.purpose}</p>
+      <p className="session-prescription"><strong>Planned prescription:</strong> {session.prescription}</p>
+      <p><strong>Planned target:</strong> {formatSessionTarget(session)}</p>
+      <p className="adjustment-cue">Historical planned session · read-only.</p>
+    </article>;
+  }
+
+  function renderActivityCard(activity: CalendarActivityView, sameDayPlans: Array<CalendarSessionView | HistoricalCalendarSessionView>) {
+    const metrics = [
+      activity.distanceMeters > 0 ? `${Number((activity.distanceMeters / 1000).toFixed(2))} km` : null,
+      activity.elapsedTimeSeconds > 0 ? formatDuration(activity.elapsedTimeSeconds) : null,
+      activity.averagePaceSecondsPerKm > 0 ? `${formatPace(activity.averagePaceSecondsPerKm)}/km` : null,
+      activity.elevationGainMeters > 0 ? `+${Math.round(activity.elevationGainMeters)} m` : null,
+    ].filter(Boolean).join(" · ");
+    return <article className="session-card session-card--actual" id={`activity-${activity.id}`} tabIndex={-1} key={`activity-${activity.id}`}>
+      <div className="session-card-top"><p className="eyebrow">{activity.sport.replace("_", " ")} · recorded</p><time dateTime={activity.localDate}>{formatCoachingDate(activity.localDate)}</time></div>
+      <h3>{activity.title}</h3>
+      <p><strong>Actual workout:</strong> {metrics || "Recorded run"}</p>
+      {sameDayPlans.length === 0
+        ? <p className="adjustment-cue">No planned session for this activity.</p>
+        : <details className="session-source"><summary>Plan comparison ({sameDayPlans.length})</summary><div><p>Same-day plan records are shown below without inferring that any plan was completed.</p>{sameDayPlans.map((session) => <section className="calendar-comparison" key={`${"planId" in session ? session.planId : "active"}-${session.id}`}><strong>{session.title}{"planVersion" in session ? ` · historical plan v${session.planVersion}` : " · active plan"}</strong><p>{formatSessionTarget(session)}</p><p>{session.prescription}</p></section>)}</div></details>}
+    </article>;
+  }
+
+  return <CoachShell page="calendar" title="Calendar" subtitle={onlineMode ? "Owner-managed future sessions with preserved approved sources" : "Approved sessions and reasoned, auditable future changes"} meta={`${formatCoachingDate(range.from, planTimezone)} – ${formatCoachingDate(range.to, planTimezone)} · ${planTimezone}`}>
     <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="coach-actions"><button className="button button-secondary" type="button" onClick={() => moveWeek(-7)}>Previous week</button><button className="button button-secondary" type="button" onClick={() => setAnchorDate(today)}>Today</button><button className="button button-secondary" type="button" onClick={() => moveWeek(7)}>Next week</button></div><div className="segmented" aria-label="Calendar view"><button type="button" aria-pressed={view === "week"} onClick={() => setView("week")}>Week</button><button type="button" aria-pressed={view === "agenda"} onClick={() => setView("agenda")}>Agenda</button></div></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
     {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h3>Calendar could not be loaded</h3><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
@@ -699,14 +798,14 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     <StatusLine state={actionState} message={actionMessage} />
     {state === "success" && staleMessage ? <section className="coach-panel calendar-state-panel calendar-state-panel--stale" role="status"><h3>Schedule context needs review</h3><p>{staleMessage} The approved plan has not been changed.</p><Link className="text-link" href="/dashboard/plan">Review Plan</Link></section> : null}
     {state === "success" && focusMessage ? <p className="coach-status coach-status--error" role="alert">{focusMessage}</p> : null}
-    {state === "success" && sessions.length === 0
-      ? <section className="coach-panel coach-empty"><h3>No sessions this week</h3><p>Activate a reviewed plan first, or use the week controls to inspect another date range.</p><Link className="text-link" href="/dashboard/plan">Open Plan</Link></section>
-      : state === "success" && view === "week" ? <section className="calendar-week" aria-label="Seven-day training week">
-        {weekDates.map((date) => { const daySessions = sessions.filter((session) => session.effectiveDate === date); const isToday = date === today; return <section className={`calendar-day${isToday ? " calendar-day--today" : ""}`} aria-label={`${formatCoachingDate(date)}${isToday ? ", today" : ""}`} key={date}>
-          <header><p className="eyebrow">{new Intl.DateTimeFormat("en-ZA", { weekday: "long", timeZone: timezoneDefault }).format(new Date(`${date}T12:00:00.000Z`))}</p><time dateTime={date}>{formatCoachingDate(date)}</time>{isToday ? <span className="today-marker">Today</span> : null}</header>
-          <div className="calendar-day-sessions">{daySessions.length > 0 ? daySessions.map(renderSessionCard) : <p className="calendar-day-empty">No session</p>}</div>
+    {state === "success" && sessions.length + historicalSessions.length + activities.length === 0
+      ? <section className="coach-panel coach-empty"><h3>No runs or planned sessions this week</h3><p>Use the week controls to inspect another date range, or import and sync your activity history.</p><Link className="text-link" href="/dashboard/activities">Open Activities</Link></section>
+      : state === "success" && view === "week" ? <div className="calendar-week-layout"><section className="calendar-week" aria-label="Seven-day training week">
+        {weekDates.map((date) => { const daySessions = sessions.filter((session) => session.effectiveDate === date); const dayHistoricalSessions = historicalSessions.filter((session) => session.scheduledDate === date); const dayActivities = activities.filter((activity) => activity.localDate === date); const isToday = date === today; return <section className={`calendar-day${isToday ? " calendar-day--today" : ""}`} aria-label={`${formatCoachingDate(date)}${isToday ? ", today" : ""}`} key={date}>
+          <header><p className="eyebrow">{new Intl.DateTimeFormat("en-ZA", { weekday: "long", timeZone: planTimezone }).format(new Date(`${date}T12:00:00.000Z`))}</p><time dateTime={date}>{formatCoachingDate(date, planTimezone)}</time>{isToday ? <span className="today-marker">Today</span> : null}</header>
+          <div className="calendar-day-sessions">{daySessions.length + dayHistoricalSessions.length + dayActivities.length > 0 ? <>{dayActivities.map(renderActivitySummary)}{daySessions.map(renderSessionSummary)}{dayHistoricalSessions.map(renderHistoricalSummary)}</> : <p className="calendar-day-empty">No run or planned session</p>}</div>
         </section>; })}
-      </section> : state === "success" ? <section className="session-grid session-grid--agenda" aria-label="Agenda training schedule">{sessions.map(renderSessionCard)}</section> : null}
+      </section>{selectedSession ? <aside className="calendar-selected-detail" id="calendar-selected-session" aria-label={`Selected session: ${selectedSession.title}`}><div className="calendar-detail-heading"><div><p className="eyebrow">Selected session</p><h3>Session detail</h3></div><span className="status-chip">{selectedSession.status}</span></div>{renderSessionCard(selectedSession)}</aside> : null}{activities.length + historicalSessions.length > 0 ? <details className="coach-panel calendar-supporting-records"><summary>Recorded and historical context ({activities.length + historicalSessions.length})</summary><div className="session-grid session-grid--agenda">{[...activities].sort((left, right) => left.localDate.localeCompare(right.localDate)).map((activity) => renderActivityCard(activity, [...sessions.filter((session) => session.effectiveDate === activity.localDate), ...historicalSessions.filter((session) => session.scheduledDate === activity.localDate)]))}{historicalSessions.map(renderHistoricalSessionCard)}</div></details> : null}</div> : state === "success" ? <section className="session-grid session-grid--agenda" aria-label="Agenda training schedule">{[...activities].sort((left, right) => left.localDate.localeCompare(right.localDate)).map((activity) => renderActivityCard(activity, [...sessions.filter((session) => session.effectiveDate === activity.localDate), ...historicalSessions.filter((session) => session.scheduledDate === activity.localDate)]))}{sessions.map(renderSessionCard)}{historicalSessions.map(renderHistoricalSessionCard)}</section> : null}
     {pending ? <div className="coach-dialog-backdrop"><form ref={pendingModal.dialogRef} onKeyDown={pendingModal.onKeyDown} onSubmit={(event) => { event.preventDefault(); void confirmEdit(); }} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">
       <h3 id="calendar-edit-title">Confirm {pending.operation}</h3>
       <p><strong>{pending.session.title}</strong>{pending.date ? ` will move from ${pending.session.effectiveDate} to ${pending.date}.` : ` will be marked ${pending.operation === "skip" ? "skipped" : "upcoming"}.`} Its prescribed date remains {pending.session.prescribedDate}.</p>
@@ -811,8 +910,9 @@ export function SettingsPage() {
   }
 
   return <CoachShell page="settings" title="Settings" subtitle="Local coaching preferences and Codex reminder handoff" meta={`${localTime} · ${timezone}`}>
-    <section className="coach-panel" aria-labelledby="reminder-settings-heading"><div className="coach-panel-heading"><div><p className="eyebrow">App preference</p><h3 id="reminder-settings-heading">Daily coaching reminder</h3></div><span className="status-chip">{enabled ? "Enabled" : "Disabled"}</span></div><form className="coach-form coach-form-grid" onSubmit={save}><label className="checkbox-field field-wide"><input disabled={state === "loading"} type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /><span>Enable the daily reminder preference</span></label><label><span>Local time</span><input disabled={state === "loading"} type="time" value={localTime} onChange={(event) => setLocalTime(event.target.value)} /></label><label><span>IANA timezone</span><input disabled={state === "loading"} value={timezone} onChange={(event) => setTimezone(event.target.value)} /></label><button className="button button-primary field-wide" disabled={state === "loading"} type="submit">Save preferences</button></form><StatusLine state={state} message={message} /></section>
-    <section className="coach-panel" aria-labelledby="handoff-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Codex handoff</p><h3 id="handoff-heading">Recurring motivation setup</h3></div><span className="status-chip">{handoffStatus}</span></div><p>Generate a versioned handoff for Codex. The app stores your preference; Codex owns the recurring task. A prepared handoff is not a scheduled reminder.</p><div className="coach-actions"><button className="button button-primary" type="button" onClick={() => void generateHandoff()}>Generate handoff</button><button className="button button-secondary" disabled={!handoff} type="button" onClick={() => void copyHandoff()}>Copy handoff</button></div>{handoff ? <textarea className="handoff-output" aria-label="Generated Codex reminder handoff" readOnly rows={7} value={handoff} /> : null}
+    <section className="coach-panel settings-panel settings-panel--preference" aria-labelledby="reminder-settings-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Reminder preference</p><h3 id="reminder-settings-heading">Daily coaching reminder</h3></div><span className="status-chip">{enabled ? "Enabled" : "Disabled"}</span></div><form className="coach-form coach-form-grid" onSubmit={save}><label className="checkbox-field field-wide"><input disabled={state === "loading"} type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /><span>Enable the daily reminder preference</span></label><label><span>Local time</span><input disabled={state === "loading"} type="time" value={localTime} onChange={(event) => setLocalTime(event.target.value)} /></label><label><span>IANA timezone</span><input disabled={state === "loading"} value={timezone} onChange={(event) => setTimezone(event.target.value)} /></label><button className="button button-primary field-wide" disabled={state === "loading"} type="submit">Save preferences</button></form><StatusLine state={state} message={message} /></section>
+    <section className="coach-panel settings-panel settings-panel--privacy" aria-labelledby="settings-privacy-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Privacy boundary</p><h3 id="settings-privacy-heading">Structured coaching context only</h3></div><span className="status-chip">Local control</span></div><p>The app shares only the selected structured coaching context used for the handoff. Reminder preferences never scan notes or change an approved plan.</p></section>
+    <section className="coach-panel settings-panel settings-panel--operations" aria-labelledby="handoff-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Operations</p><h3 id="handoff-heading">Recurring motivation setup</h3></div><span className="status-chip">{handoffStatus}</span></div><p>Generate a versioned handoff for Codex. The app stores your preference; Codex owns the recurring task. A prepared handoff is not a scheduled reminder.</p><div className="coach-actions"><button className="button button-primary" type="button" onClick={() => void generateHandoff()}>Generate handoff</button><button className="button button-secondary" disabled={!handoff} type="button" onClick={() => void copyHandoff()}>Copy handoff</button></div>{handoff ? <textarea className="handoff-output" aria-label="Generated Codex reminder handoff" readOnly rows={7} value={handoff} /> : null}
       <div className="external-confirmation"><h4>Confirm external setup</h4><p className="field-help">After you create the recurring Codex task, enter its task ID or link and explicitly confirm it here. This records your confirmation; the app does not infer delivery.</p><label><span>External task reference</span><input value={externalReference} onChange={(event) => setExternalReference(event.target.value)} placeholder="Codex task ID or link" /></label><div className="coach-actions"><button className="button button-primary" disabled={automationState === "loading" || externalStatus !== "prepared" || !externalReference.trim()} type="button" onClick={() => void confirmExternalAutomation("scheduled")}>Confirm scheduled externally</button><button className="button button-secondary" disabled={automationState === "loading" || externalStatus === "not_configured" || externalStatus === "disabled"} type="button" onClick={() => void confirmExternalAutomation("attention")}>Mark setup needs attention</button></div><StatusLine state={automationState} message={automationMessage} /></div>
       <dl className="status-list"><div><dt>App preference</dt><dd>{state === "success" ? "Saved" : "Not yet saved"}</dd></div><div><dt>Handoff</dt><dd>{handoffStatus}</dd></div><div><dt>External automation</dt><dd>{externalAutomationStatusLabel(externalStatus)}</dd></div><div><dt>Coaching context</dt><dd className="context-reference">{contextReference}</dd></div></dl></section>
   </CoachShell>;

@@ -3,212 +3,692 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum SourceType {
   gpx
   tcx
   csv
-  fit
+  manual
   strava
-  garmin
-  polar
-  coros
-  suunto
-  other
 }
 
-enum SportType {
+enum AthleteAccessRole {
+  owner
+  viewer
+}
+
+enum Provider {
+  strava
+}
+
+enum ProviderConnectionStatus {
+  disconnected
+  connecting
+  connected
+  attention
+  revoked
+}
+
+enum WebhookEventStatus {
+  received
+  queued
+  processed
+  ignored
+  failed
+}
+
+enum IngestionJobStatus {
+  queued
+  processing
+  completed
+  failed
+  dead_letter
+}
+
+enum IngestionJobKind {
+  webhook
+  backfill
+  reconciliation
+}
+
+enum RawObjectKind {
+  activity_detail
+  activity_laps
+  activity_streams
+  webhook_event
+}
+
+enum SyncOperation {
+  upsert
+  delete
+}
+
+enum PairedDeviceStatus {
+  active
+  revoked
+}
+
+enum Sport {
   run
   trail_run
   treadmill_run
-  walk
-  hike
   other
 }
 
 enum ImportStatus {
   uploaded
-  parsed
   normalizing
   completed
   failed
 }
 
-enum StagingNormalizeStatus {
-  pending
+enum StagingRowStatus {
+  staged
+  duplicate
+  rejected
   normalized
-  skipped
   error
 }
 
-model Import {
-  id               String     @id @default(cuid())
-  sourceType       SourceType
-  status           ImportStatus @default(uploaded)
-  idempotencyKey   String?    @unique
-  stagedCount      Int        @default(0)
-  normalizedCount  Int        @default(0)
-  duplicateCount   Int        @default(0)
-  rejectedCount    Int        @default(0)
-  errorCount       Int        @default(0)
-  normalizeCursor  String?
-  normalizeHasMore Boolean    @default(false)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  rawFiles         RawFile[]
-  stagingActivities StagingActivity[]
+model Activity {
+  id                      String                    @id @default(cuid())
+  athleteId               String
+  sourceType              SourceType
+  sourceFileId            String?
+  sourceActivityId        String?
+  title                   String?
+  occurredAt              DateTime                  @db.Timestamptz(3)
+  localOccurredAt         String?
+  endedAt                 DateTime                  @db.Timestamptz(3)
+  elapsedTimeS            Int
+  movingTimeS             Int?
+  sport                   Sport
+  distanceM               Decimal                   @db.Decimal(12, 3)
+  avgPaceSecPerKm         Decimal                   @db.Decimal(10, 3)
+  best1kSec               Int?
+  best5kSec               Int?
+  elevationGainM          Decimal                   @db.Decimal(10, 3)
+  elevationLossM          Decimal                   @db.Decimal(10, 3)
+  minElevationM           Decimal?                  @db.Decimal(10, 3)
+  maxElevationM           Decimal?                  @db.Decimal(10, 3)
+  avgHrBpm                Int?
+  maxHrBpm                Int?
+  minHrBpm                Int?
+  hrAvailable             Boolean                   @default(false)
+  avgCadenceSpm           Decimal?                  @db.Decimal(10, 3)
+  maxCadenceSpm           Decimal?                  @db.Decimal(10, 3)
+  cadenceAvailable        Boolean                   @default(false)
+  calories                Decimal?                  @db.Decimal(10, 3)
+  avgPowerW               Decimal?                  @db.Decimal(10, 3)
+  maxPowerW               Decimal?                  @db.Decimal(10, 3)
+  lapCount                Int?
+  paceVariability         Decimal?                  @db.Decimal(10, 4)
+  hrDriftPct              Decimal?                  @db.Decimal(10, 4)
+  hillDifficulty          Decimal?                  @db.Decimal(10, 4)
+  dedupeHash              String
+  deletedAt               DateTime?                 @db.Timestamptz(3)
+  createdAt               DateTime                  @default(now()) @db.Timestamptz(3)
+  athlete                 Athlete                   @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  splits                  ActivitySplitKm[]
+  routeSignature          RouteSignature?
+  sourceFile              RawFile?                  @relation(fields: [sourceFileId, athleteId], references: [id, athleteId], onDelete: Restrict)
+  sourceReferences        ActivitySourceReference[]
+  revisions               ActivityRevision[]
+  analyticsRecompute      AnalyticsRecomputeMarker?
+  weeklyFeaturesAsLongest WeeklyFeature[]           @relation("WeeklyFeatureLongestRun")
 
+  @@unique([id, athleteId])
+  @@unique([athleteId, dedupeHash])
+  @@index([athleteId, occurredAt(sort: Desc)])
+  @@index([athleteId, sport, occurredAt(sort: Desc)])
+  @@index([athleteId, sourceActivityId])
+}
+
+model Import {
+  id              String            @id @default(cuid())
+  athleteId       String
+  idempotencyKey  String?
+  status          ImportStatus      @default(uploaded)
+  stagedCount     Int               @default(0)
+  duplicateCount  Int               @default(0)
+  rejectedCount   Int               @default(0)
+  normalizedCount Int               @default(0)
+  skippedCount    Int               @default(0)
+  errorCount      Int               @default(0)
+  nextCursor      String?
+  hasMore         Boolean           @default(false)
+  parseWarnings   Json?
+  startedAt       DateTime?         @db.Timestamptz(3)
+  completedAt     DateTime?         @db.Timestamptz(3)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(3)
+  athlete         Athlete           @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  rawFiles        RawFile[]
+  stagingRows     StagingActivity[]
+
+  @@unique([id, athleteId])
+  @@unique([athleteId, idempotencyKey])
   @@index([status, createdAt(sort: Desc)])
+  @@index([athleteId, createdAt(sort: Desc)])
+  @@map("imports")
 }
 
 model RawFile {
-  id              String   @id @default(cuid())
-  importId        String
-  fileName        String
-  fileChecksum    String
-  fileSizeBytes   Int?
-  mimeType        String?
-  parserSummary   String?
-  metadataSummary String?
-  createdAt       DateTime @default(now())
-  import          Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+  id            String            @id @default(cuid())
+  importId      String
+  athleteId     String
+  sourceType    SourceType
+  filename      String
+  mimeType      String?
+  byteSize      Int?
+  checksum      String
+  storagePath   String?
+  parserVersion String?
+  parseWarnings Json?
+  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
+  athlete       Athlete           @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  import        Import            @relation(fields: [importId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  stagingRows   StagingActivity[]
+  activities    Activity[]
 
-  @@unique([importId, fileChecksum])
-  @@index([fileChecksum])
+  @@unique([id, athleteId])
+  @@unique([athleteId, checksum])
+  @@index([importId, createdAt(sort: Desc)])
+  @@map("raw_files")
 }
 
 model StagingActivity {
-  id                   String   @id @default(cuid())
-  importId             String
-  athleteId            String
-  sourceType           SourceType
-  stagingIndex         Int
-  normalizeStatus      StagingNormalizeStatus @default(pending)
-  sourceActivityId     String?
-  dedupeHash           String?
-  occurredAt           DateTime?
-  parsePayload         String?
-  parseError           String?
-  normalizedActivityId String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  import               Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
+  id               String           @id @default(cuid())
+  importId         String
+  rawFileId        String?
+  athleteId        String
+  sourceType       SourceType
+  sourceActivityId String?
+  dedupeHash       String?
+  occurredAt       DateTime?        @db.Timestamptz(3)
+  endedAt          DateTime?        @db.Timestamptz(3)
+  elapsedTimeS     Int?
+  distanceM        Decimal?         @db.Decimal(12, 3)
+  sport            Sport?
+  status           StagingRowStatus @default(staged)
+  errorCode        String?
+  errorMessage     String?
+  payloadJson      Json
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
+  athlete          Athlete          @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  import           Import           @relation(fields: [importId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  rawFile          RawFile?         @relation(fields: [rawFileId, athleteId], references: [id, athleteId], onDelete: Restrict)
 
-  @@unique([importId, stagingIndex])
-  @@index([importId, normalizeStatus, stagingIndex])
-  @@index([athleteId, sourceType, occurredAt(sort: Desc)])
-}
-
-model Activity {
-  id                  String     @id @default(cuid())
-  athleteId           String
-  sourceType          SourceType
-  sourceFileId        String?
-  sourceActivityId    String?
-  occurredAt          DateTime
-  endedAt             DateTime
-  elapsedTimeS        Int
-  movingTimeS         Int?
-  sport               SportType
-  distanceM           Float
-  avgPaceSecPerKm     Float
-  best1kSec           Float?
-  best5kSec           Float?
-  elevationGainM      Float
-  elevationLossM      Float
-  minElevationM       Float?
-  maxElevationM       Float?
-  avgHrBpm            Int?
-  maxHrBpm            Int?
-  minHrBpm            Int?
-  hrAvailable         Boolean
-  avgCadenceSpm       Float?
-  maxCadenceSpm       Float?
-  cadenceAvailable    Boolean
-  paceVariability     Float?
-  hrDriftPct          Float?
-  hillDifficulty      Float?
-  dedupeHash          String
-  createdAt           DateTime   @default(now())
-  splits              ActivitySplitKm[]
-  routeSignature      RouteSignature?
-
-  @@index([athleteId, occurredAt(sort: Desc)])
-  @@index([athleteId, sport, occurredAt(sort: Desc)])
-  @@index([athleteId, sourceType, occurredAt(sort: Desc)])
-  @@unique([athleteId, sourceType, sourceActivityId])
-  @@unique([athleteId, dedupeHash])
-}
-
-model RouteSignature {
-  id          String   @id @default(cuid())
-  activityId  String   @unique
-  athleteId   String
-  startLat    Float
-  startLon    Float
-  endLat      Float
-  endLon      Float
-  bboxMinLat  Float
-  bboxMinLon  Float
-  bboxMaxLat  Float
-  bboxMaxLon  Float
-  polyline    String?
-  elevProfile String?
-  routeHash   String
-  createdAt   DateTime @default(now())
-  activity    Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
-
-  @@index([athleteId, routeHash])
+  @@index([importId, status, createdAt])
+  @@index([importId, status, id])
+  @@index([importId, sourceActivityId])
+  @@index([importId, dedupeHash])
+  @@map("staging_activities")
 }
 
 model ActivitySplitKm {
-  id              String    @id @default(cuid())
-  activityId      String
-  athleteId       String
-  splitIndex      Int
-  startOffsetS    Int
-  endOffsetS      Int
-  durationS       Int
-  distanceM       Float
-  paceSecPerKm    Float
-  elevGainM       Float
-  elevLossM       Float
-  avgHrBpm        Int?
-  maxHrBpm        Int?
-  avgCadenceSpm   Float?
-  createdAt       DateTime  @default(now())
-  activity        Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  activityId    String
+  athleteId     String
+  splitIndex    Int
+  startOffsetS  Int
+  endOffsetS    Int
+  durationS     Int
+  distanceM     Decimal  @db.Decimal(10, 3)
+  paceSecPerKm  Decimal  @db.Decimal(10, 3)
+  elevGainM     Decimal  @db.Decimal(10, 3)
+  elevLossM     Decimal  @db.Decimal(10, 3)
+  avgHrBpm      Int?
+  maxHrBpm      Int?
+  avgCadenceSpm Decimal? @db.Decimal(10, 3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  athlete       Athlete  @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  activity      Activity @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
 
-  @@unique([activityId, splitIndex])
+  @@index([activityId, splitIndex])
   @@index([athleteId, createdAt])
 }
 
 model WeeklyFeature {
-  id                 String    @id @default(cuid())
-  athleteId          String
-  weekStartDate      DateTime
-  weekEndDate        DateTime
-  runCount           Int
-  totalDistanceM     Float
-  totalElapsedTimeS  Int
-  totalElevationGainM Float
-  longRunDistanceM   Float
-  longestRunId       String?
-  easyDistanceM      Float
-  moderateDistanceM  Float
-  hardDistanceM      Float
-  avgPaceSecPerKm    Float?
-  avgHrBpm           Int?
-  strainScore        Float?
-  monotonyScore      Float?
-  consistencyScore   Float?
-  dataCompleteness   Float
-  createdAt          DateTime  @default(now())
+  id                  String    @id @default(cuid())
+  athleteId           String
+  weekStartDate       DateTime  @db.Timestamptz(3)
+  weekEndDate         DateTime  @db.Timestamptz(3)
+  runCount            Int
+  totalDistanceM      Decimal   @db.Decimal(12, 3)
+  totalElapsedTimeS   Int
+  totalElevationGainM Decimal   @db.Decimal(12, 3)
+  longRunDistanceM    Decimal   @db.Decimal(12, 3)
+  longestRunId        String?
+  easyDistanceM       Decimal   @db.Decimal(12, 3)
+  moderateDistanceM   Decimal   @db.Decimal(12, 3)
+  hardDistanceM       Decimal   @db.Decimal(12, 3)
+  avgPaceSecPerKm     Decimal?  @db.Decimal(10, 3)
+  avgHrBpm            Int?
+  strainScore         Decimal?  @db.Decimal(10, 4)
+  monotonyScore       Decimal?  @db.Decimal(10, 4)
+  consistencyScore    Decimal?  @db.Decimal(10, 4)
+  dataCompleteness    Decimal   @db.Decimal(6, 4)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
+  athlete             Athlete   @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  longestRun          Activity? @relation("WeeklyFeatureLongestRun", fields: [longestRunId, athleteId], references: [id, athleteId], onDelete: Restrict)
 
   @@unique([athleteId, weekStartDate])
   @@index([athleteId, weekStartDate(sort: Desc)])
-  @@index([weekStartDate(sort: Desc)])
+}
+
+model RouteSignature {
+  id          String   @id @default(cuid())
+  activityId  String
+  athleteId   String
+  startLat    Decimal  @db.Decimal(10, 7)
+  startLon    Decimal  @db.Decimal(10, 7)
+  endLat      Decimal  @db.Decimal(10, 7)
+  endLon      Decimal  @db.Decimal(10, 7)
+  bboxMinLat  Decimal  @db.Decimal(10, 7)
+  bboxMinLon  Decimal  @db.Decimal(10, 7)
+  bboxMaxLat  Decimal  @db.Decimal(10, 7)
+  bboxMaxLon  Decimal  @db.Decimal(10, 7)
+  polyline    String?
+  elevProfile Json?
+  routeHash   String
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  athlete     Athlete  @relation(fields: [athleteId], references: [id], onDelete: Restrict)
+  activity    Activity @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([activityId, athleteId])
+  @@index([athleteId, routeHash])
+}
+
+model User {
+  id                    String                 @id @default(cuid())
+  email                 String                 @unique
+  authSubject           String?                @unique
+  createdAt             DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime               @updatedAt @db.Timestamptz(3)
+  athleteAccess         AthleteAccess[]
+  pairedDevices         PairedDevice[]
+  providerOAuthAttempts ProviderOAuthAttempt[]
+
+  @@map("app_users")
+}
+
+model Athlete {
+  id                      String                     @id @default(cuid())
+  displayName             String?
+  createdAt               DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                   @updatedAt @db.Timestamptz(3)
+  accesses                AthleteAccess[]
+  activities              Activity[]
+  imports                 Import[]
+  rawFiles                RawFile[]
+  stagingActivities       StagingActivity[]
+  activitySplits          ActivitySplitKm[]
+  weeklyFeatures          WeeklyFeature[]
+  routeSignatures         RouteSignature[]
+  providerConnections     ProviderConnection[]
+  providerOAuthAttempts   ProviderOAuthAttempt[]
+  webhookEvents           ProviderWebhookEvent[]
+  ingestionJobs           IngestionJob[]
+  rawObjects              RawObject[]
+  activitySources         ActivitySourceReference[]
+  activityRevisions       ActivityRevision[]
+  analyticsRecomputes     AnalyticsRecomputeMarker[]
+  syncChanges             SyncChange[]
+  pairedDevices           PairedDevice[]
+  secondBrainSnapshots    SecondBrainSnapshot[]
+  trainingPlanProjections TrainingPlanProjection[]
+  calendarSessions        CalendarSessionProjection[]
+
+  @@map("athletes")
+}
+
+model AthleteAccess {
+  id        String            @id @default(cuid())
+  userId    String
+  athleteId String
+  role      AthleteAccessRole @default(viewer)
+  createdAt DateTime          @default(now()) @db.Timestamptz(3)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  athlete   Athlete           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, athleteId])
+  @@index([athleteId, role])
+  @@map("athlete_access")
+}
+
+model ProviderConnection {
+  id                    String                    @id @default(cuid())
+  athleteId             String
+  provider              Provider
+  providerAthleteId     String?
+  status                ProviderConnectionStatus  @default(connected)
+  grantedScopes         String?
+  credentialCiphertext  String?
+  credentialIv          String?
+  credentialAuthTag     String?
+  credentialKeyVersion  String?
+  credentialExpiresAt   DateTime?                 @db.Timestamptz(3)
+  connectedAt           DateTime?                 @db.Timestamptz(3)
+  lastProviderContactAt DateTime?                 @db.Timestamptz(3)
+  lastSyncedAt          DateTime?                 @db.Timestamptz(3)
+  lastEventReceivedAt   DateTime?                 @db.Timestamptz(3)
+  lastErrorCode         String?
+  createdAt             DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                  @updatedAt @db.Timestamptz(3)
+  athlete               Athlete                   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  webhookEvents         ProviderWebhookEvent[]
+  ingestionJobs         IngestionJob[]
+  rawObjects            RawObject[]
+  activitySources       ActivitySourceReference[]
+
+  @@unique([id, athleteId])
+  @@unique([athleteId, provider])
+  @@unique([provider, providerAthleteId])
+  @@index([athleteId, status])
+  @@map("provider_connections")
+}
+
+model ProviderOAuthAttempt {
+  id          String    @id @default(cuid())
+  athleteId   String
+  userId      String
+  provider    Provider
+  stateHash   String
+  redirectUri String
+  returnTo    String
+  expiresAt   DateTime  @db.Timestamptz(3)
+  consumedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  athlete     Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, stateHash])
+  @@index([athleteId, userId, provider, expiresAt])
+  @@map("provider_oauth_attempts")
+}
+
+model ProviderWebhookEvent {
+  id                   String             @id @default(cuid())
+  athleteId            String
+  providerConnectionId String
+  provider             Provider
+  providerEventKey     String
+  objectType           String
+  providerObjectId     String
+  aspectType           String
+  eventOccurredAt      DateTime           @db.Timestamptz(3)
+  status               WebhookEventStatus @default(received)
+  processedAt          DateTime?          @db.Timestamptz(3)
+  errorCode            String?
+  receivedAt           DateTime           @default(now()) @db.Timestamptz(3)
+  athlete              Athlete            @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  providerConnection   ProviderConnection @relation(fields: [providerConnectionId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  ingestionJobs        IngestionJob[]
+
+  @@unique([id, athleteId])
+  @@unique([athleteId, provider, providerEventKey])
+  @@index([athleteId, status, receivedAt])
+  @@map("provider_webhook_events")
+}
+
+model IngestionJob {
+  id                   String                @id @default(cuid())
+  athleteId            String
+  providerConnectionId String
+  webhookEventId       String?
+  idempotencyKey       String
+  kind                 IngestionJobKind      @default(webhook)
+  payload              Json?
+  status               IngestionJobStatus    @default(queued)
+  attemptCount         Int                   @default(0)
+  availableAt          DateTime              @default(now()) @db.Timestamptz(3)
+  lockedAt             DateTime?             @db.Timestamptz(3)
+  lockedBy             String?
+  leaseToken           String?
+  completedAt          DateTime?             @db.Timestamptz(3)
+  errorCode            String?
+  errorMessage         String?
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
+  athlete              Athlete               @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  providerConnection   ProviderConnection    @relation(fields: [providerConnectionId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  webhookEvent         ProviderWebhookEvent? @relation(fields: [webhookEventId, athleteId], references: [id, athleteId], onDelete: Restrict)
+
+  @@unique([athleteId, idempotencyKey])
+  @@index([athleteId, status, availableAt])
+  @@index([status, availableAt])
+  @@index([status, lockedAt])
+  @@index([webhookEventId])
+  @@map("ingestion_jobs")
+}
+
+model RawObject {
+  id                   String                    @id @default(cuid())
+  athleteId            String
+  providerConnectionId String?
+  provider             Provider
+  kind                 RawObjectKind
+  providerObjectId     String
+  objectVersion        Int                       @default(1)
+  storageProvider      String                    @default("r2")
+  storageKey           String
+  checksumSha256       String
+  contentType          String?
+  byteSize             Int?
+  createdAt            DateTime                  @default(now()) @db.Timestamptz(3)
+  athlete              Athlete                   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  providerConnection   ProviderConnection?       @relation(fields: [providerConnectionId, athleteId], references: [id, athleteId], onDelete: Restrict)
+  activitySources      ActivitySourceReference[]
+  activityRevisions    ActivityRevision[]
+
+  @@unique([id, athleteId])
+  @@unique([storageProvider, storageKey])
+  @@unique([athleteId, provider, kind, providerObjectId, objectVersion])
+  @@index([athleteId, createdAt])
+  @@map("raw_objects")
+}
+
+model ActivitySourceReference {
+  id                   String              @id @default(cuid())
+  athleteId            String
+  activityId           String
+  providerConnectionId String?
+  rawObjectId          String?
+  sourceType           SourceType
+  sourceObjectId       String
+  deletedAt            DateTime?           @db.Timestamptz(3)
+  createdAt            DateTime            @default(now()) @db.Timestamptz(3)
+  athlete              Athlete             @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity             Activity            @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  providerConnection   ProviderConnection? @relation(fields: [providerConnectionId, athleteId], references: [id, athleteId], onDelete: Restrict)
+  rawObject            RawObject?          @relation(fields: [rawObjectId, athleteId], references: [id, athleteId], onDelete: Restrict)
+
+  @@unique([athleteId, sourceType, sourceObjectId])
+  @@index([athleteId, activityId])
+  @@map("activity_source_references")
+}
+
+model ActivityRevision {
+  id                String     @id @default(cuid())
+  athleteId         String
+  activityId        String
+  rawObjectId       String?
+  revisionNumber    Int
+  contentHash       String
+  normalizerVersion String
+  changeSummary     Json?
+  recordedAt        DateTime   @default(now()) @db.Timestamptz(3)
+  athlete           Athlete    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity          Activity   @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  rawObject         RawObject? @relation(fields: [rawObjectId, athleteId], references: [id, athleteId], onDelete: Restrict)
+
+  @@unique([athleteId, activityId, revisionNumber])
+  @@index([athleteId, recordedAt])
+  @@map("activity_revisions")
+}
+
+model AnalyticsRecomputeMarker {
+  id                 String   @id @default(cuid())
+  athleteId          String
+  activityId         String
+  reason             String
+  activityOccurredAt DateTime @db.Timestamptz(3)
+  requestedAt        DateTime @default(now()) @db.Timestamptz(3)
+  athlete            Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity           Activity @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, activityId])
+  @@unique([activityId, athleteId])
+  @@index([athleteId, requestedAt])
+  @@map("analytics_recompute_markers")
+}
+
+model SyncChange {
+  id             String        @id @default(cuid())
+  cursor         BigInt
+  athleteId      String
+  entityType     String
+  entityId       String
+  operation      SyncOperation
+  entityVersion  Int
+  selectedFields Json?
+  occurredAt     DateTime      @default(now()) @db.Timestamptz(3)
+  athlete        Athlete       @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, entityType, entityId, entityVersion])
+  @@unique([athleteId, cursor])
+  @@index([athleteId, cursor])
+  @@map("sync_changes")
+}
+
+model PairedDevice {
+  id                   String                @id @default(cuid())
+  athleteId            String
+  pairedByUserId       String
+  name                 String
+  deviceKeyHash        String
+  enrollmentKeyHash    String
+  publicKey            String?
+  status               PairedDeviceStatus    @default(active)
+  lastPullCursor       BigInt?
+  lastPushRevision     Int?
+  lastSeenAt           DateTime?             @db.Timestamptz(3)
+  lastErrorCode        String?
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  revokedAt            DateTime?             @db.Timestamptz(3)
+  athlete              Athlete               @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  pairedByUser         User                  @relation(fields: [pairedByUserId], references: [id], onDelete: Restrict)
+  secondBrainSnapshots SecondBrainSnapshot[]
+
+  @@unique([id, athleteId])
+  @@unique([athleteId, deviceKeyHash])
+  @@unique([athleteId, enrollmentKeyHash])
+  @@index([athleteId, status])
+  @@map("paired_devices")
+}
+
+model SecondBrainSnapshot {
+  id             String       @id @default(cuid())
+  athleteId      String
+  pairedDeviceId String
+  schemaVersion  String
+  sourceRevision Int
+  contentHash    String
+  selectedFields Json
+  context        Json
+  publishedAt    DateTime     @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  athlete        Athlete      @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  pairedDevice   PairedDevice @relation(fields: [pairedDeviceId, athleteId], references: [id, athleteId], onDelete: Restrict)
+
+  @@unique([athleteId, sourceRevision])
+  @@unique([athleteId, contentHash])
+  @@index([athleteId, createdAt])
+  @@map("second_brain_snapshots")
+}
+
+model TrainingPlanProjection {
+  id          String   @id @default(cuid())
+  athleteId   String
+  planId      String
+  planVersion Int
+  planStatus  String
+  active      Boolean  @default(false)
+  contentHash String
+  plan        Json
+  publishedAt DateTime @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  athlete     Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  sessions    CalendarSessionProjection[]
+
+  @@unique([athleteId, planId])
+  @@unique([athleteId, contentHash])
+  @@index([athleteId, active, planVersion(sort: Desc)])
+  @@map("training_plan_projections")
+}
+
+model CalendarSessionProjection {
+  id                String                     @id @default(cuid())
+  athleteId         String
+  planId            String
+  sessionId         String
+  prescribedSession Json
+  effectiveSession  Json
+  status            String                     @default("upcoming")
+  revision          Int
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                   @updatedAt @db.Timestamptz(3)
+  athlete           Athlete                    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  planProjection    TrainingPlanProjection     @relation(fields: [athleteId, planId], references: [athleteId, planId], onDelete: Cascade)
+  amendments        CalendarSessionAmendment[]
+
+  @@unique([athleteId, planId, sessionId])
+  @@index([athleteId, planId, status])
+  @@map("calendar_session_projections")
+}
+
+model CalendarSessionAmendment {
+  id             String                    @id @default(cuid())
+  athleteId      String
+  planId         String
+  sessionId      String
+  revision       Int
+  operation      String
+  reason         String
+  changedFields  Json
+  beforeValues   Json
+  afterValues    Json
+  actorUserId    String
+  actorKind      String
+  requestedAt    DateTime                  @db.Timestamptz(3)
+  idempotencyKey String
+  requestHash    String
+  createdAt      DateTime                  @default(now()) @db.Timestamptz(3)
+  session        CalendarSessionProjection @relation(fields: [athleteId, planId, sessionId], references: [athleteId, planId, sessionId], onDelete: Cascade)
+
+  @@unique([athleteId, planId, sessionId, revision])
+  @@unique([athleteId, idempotencyKey])
+  @@index([athleteId, planId, sessionId, createdAt])
+  @@map("calendar_session_amendments")
+}
+
+model OperationalUsageBucket {
+  id          String   @id @default(cuid())
+  metric      String
+  windowStart DateTime @db.Timestamptz(3)
+  windowEnd   DateTime @db.Timestamptz(3)
+  amount      BigInt   @default(0)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([metric, windowStart])
+  @@index([metric, windowEnd])
+  @@map("operational_usage_buckets")
 }

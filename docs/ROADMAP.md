@@ -8,6 +8,41 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 - [~] In progress
 - [x] Done
 
+## Product Phase 1 — Local Digital Coach
+
+- [x] P1.0 Decision/docs gate: backlog, ADR, contracts, screens, and progress source of truth
+- [x] P1.1 Manual CSV/one-activity GPX history and versioned coaching context
+- [x] P1.2 Proposal import, explicit atomic activation/replacement, and read-only version history
+- [x] P1.3 Owner-selected active approved plan with optimistic conflict protection and cloud-to-local lifecycle sync
+- [x] P1.3 Seven-day/agenda calendar with immutable prescriptions and auditable edits
+- [x] P1.4 Today plus configurable 06:30 `Africa/Johannesburg` preference and Codex handoff/status separation
+- [x] P1.5 Unit/contract/integration/import/timezone/browser gates and Product Owner acceptance
+
+Detailed criteria: `docs/product/PHASE_1_DIGITAL_COACH_BACKLOG.md`. Acceptance evidence: `docs/product/PHASE_1_ACCEPTANCE_REVIEW.md`. The older numbered phases below are retained archival analytics-foundation delivery lanes, not current release status.
+
+## Product Phase 2 — Cloud Strava and Selected Second Brain Sync
+
+- [x] M1 Decisions, versioned boundaries, architecture, backlog, test strategy, and visual progress plan
+- [x] M2 Cloud-compatible contracts, tenant-safe persistence, fail-closed auth, storage, and durable-work seams
+- [x] M3 Strava OAuth, bounded backfill, webhook lifecycle, private raw retention, normalization, and reconciliation
+- [x] M4 Authenticated cloud dashboard plus separate ingestion, activity, local-device, and Second Brain freshness
+- [x] M5 Replay-safe cloud-to-local projection and strict selected-field Second Brain publication
+- [x] M6 Cumulative automated QA, product testing, security, free-tier guardrails, recovery, and rollback hardening
+- [x] M7 Requirement-by-requirement Product Owner acceptance
+- [~] M8 Owner-authenticated Vercel/Neon/R2/Strava provisioning and bounded production smoke
+
+Garmin, multi-athlete product controls, automatic post-run review/adaptation, autonomous plan changes, and paid services remain deferred. Detailed status: `docs/plans/CLOUD_STRAVA_SYNC_MILESTONES.md`.
+
+## Product Enhancement — Reasoned Future-session Amendments
+
+- [x] Product story, acceptance criteria, UX flow, and ADR 0005
+- [~] Additive core, local, cloud, API, sync/context, and Calendar/Today implementation
+- [ ] Unit, integration, security, migration, browser, accessibility, and regression QA
+- [ ] Product Owner end-to-end acceptance
+- [ ] Verified preview promotion and production smoke
+
+Detailed criteria: `docs/product/FUTURE_PLAN_SESSION_EDITING.md`.
+
 ## Phase 1 — Docs first (execution gate)
 
 ### R1.1 Finalize planning docs
@@ -95,6 +130,7 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 - [ ] Free-tier guardrails enforced (batch sizes, file limits)
 - [ ] Deployment documentation (Vercel + Neon)
 - [ ] PWA baseline
+- [ ] DB-6 gate command (`npm run db:test:gate`) passing with critical checks
 
 ## Deferred epics (post-MVP)
 

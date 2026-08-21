@@ -1,18 +1,42 @@
 {
   "name": "@racepredictor/db",
-  "version": "0.0.0",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "prisma:validate": "prisma validate",
-    "prisma:migrate": "prisma migrate deploy",
-    "typecheck": "tsc --noEmit"
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:provision-owner": "node scripts/provision-owner.js",
+    "db:reset": "prisma migrate reset --schema prisma/schema.prisma --force",
+    "db:analyze:local": "node --no-warnings src/local-analytics-cli.js",
+    "db:import:garmin": "node --no-warnings src/local-garmin-cli.js",
+    "db:normalize": "node src/normalize-cli.js",
+    "db:publish:obsidian": "node --no-warnings src/obsidian-publish-cli.js",
+    "db:refresh:local": "node --no-warnings src/local-refresh-cli.js",
+    "db:sync:local": "node --no-warnings --experimental-strip-types src/local-sync-cli.js",
+    "db:install-sync-task": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-sync-task.ps1",
+    "db:test:local-analytics": "node --no-warnings --test test/local-analytics.test.js",
+    "db:test:local-activities": "node --no-warnings --test test/local-activities.test.js",
+    "db:test:local-import": "node --no-warnings --test test/local-activity-file-importer.test.js",
+    "db:test:local-coaching": "node --no-warnings --test test/local-coaching-repository.test.js",
+    "db:test:local-pipeline": "node --no-warnings --test test/local-garmin-pipeline.test.js",
+    "db:test:local-sync": "node --no-warnings --experimental-strip-types --test test/local-sync-agent.test.js",
+    "db:test:cloud": "node --no-warnings --experimental-strip-types --test test/calendar-session-amendments.test.js test/cloud-adapters.test.js test/cloud-migration.integration.test.js test/cloud-schema.test.js test/cloud-read-adapters.test.js test/device-snapshot-adapters.test.js test/operational-usage.test.js test/owner-identity-adapter.test.js test/plan-projection-publisher.test.js test/provider-connection-adapters.test.js test/release-candidate-journey.test.js test/strava-canonical-persistence.test.js test/strava-webhook-infra.test.js test/strava-ingestion-worker.test.js",
+    "db:test:obsidian": "node --no-warnings --test test/obsidian-publisher.test.js",
+    "db:test:normalize": "node scripts/normalize-integration-check.js",
+    "db:seed": "node src/seed-cli.js",
+    "db:test:seed": "node scripts/seed-integration-check.js",
+    "db:test:contracts": "node --experimental-strip-types scripts/contracts-readiness-check.ts",
+    "db:test:gate": "node --experimental-strip-types scripts/gate-check.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0"
+    "@aws-sdk/client-s3": "^3.1106.0",
+    "@aws-sdk/s3-request-presigner": "^3.1106.0",
+    "@prisma/client": "^6.9.0"
   },
   "devDependencies": {
-    "prisma": "^5.22.0",
-    "typescript": "^5.6.3"
+    "@electric-sql/pglite": "0.5.4",
+    "prisma": "^6.9.0"
   }
 }

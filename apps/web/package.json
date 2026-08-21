@@ -2,23 +2,36 @@
   "name": "@racepredictor/web",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "scripts": {
+    "prebuild": "node ../../packages/db/scripts/migrate-runtime-database.js",
     "dev": "next dev --webpack",
-    "build": "next build --webpack",
+    "build": "prisma generate --schema ../../packages/db/prisma/schema.prisma && next build --webpack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "tsc --project tsconfig.typecheck.json --noEmit",
+    "typecheck": "tsc --project tsconfig.typecheck.json --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test:e2e": "playwright test --config playwright.config.ts",
+    "test:e2e:online": "playwright test --config playwright.online.config.ts",
+    "test:e2e:auth": "playwright test --config playwright.auth.config.ts",
+    "coaching:today": "node --experimental-strip-types scripts/read-today-coaching.ts"
   },
   "dependencies": {
-    "next": "^16.1.6",
+    "@aws-sdk/client-s3": "^3.1106.0",
+    "@aws-sdk/s3-request-presigner": "^3.1106.0",
+    "@prisma/client": "^6.19.3",
+    "next": "16.3.0",
+    "next-auth": "^5.0.0-beta.32",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "zod": "3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/node": "20.16.5",
     "@types/react": "18.3.5",
     "@types/react-dom": "18.3.0",
+    "prisma": "^6.19.3",
     "typescript": "5.5.4"
   }
 }
-

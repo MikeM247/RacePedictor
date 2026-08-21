@@ -1,0 +1,38 @@
+{
+  "time": {
+    "original_size": 4,
+    "resolution": "high",
+    "series_type": "time",
+    "data": [0, 240, 480, 720]
+  },
+  "distance": {
+    "original_size": 4,
+    "resolution": "high",
+    "series_type": "distance",
+    "data": [0, 670, 1330, 2000]
+  },
+  "latlng": {
+    "original_size": 4,
+    "resolution": "high",
+    "series_type": "distance",
+    "data": [[-26.2041, 28.0473], [-26.203, 28.049], [-26.202, 28.051], [-26.201, 28.053]]
+  },
+  "altitude": {
+    "original_size": 4,
+    "resolution": "high",
+    "series_type": "distance",
+    "data": [1598, 1607, 1612, 1608]
+  },
+  "heartrate": {
+    "original_size": 4,
+    "resolution": "high",
+    "series_type": "time",
+    "data": [132, 145, 153, 166]
+  },
+  "cadence": {
+    "original_size": 4,
+    "resolution": "high",
+    "series_type": "time",
+    "data": [82, 85, 87, 90]
+  }
+}

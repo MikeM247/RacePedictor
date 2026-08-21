@@ -68,3 +68,33 @@ If any planning doc (`ROADMAP.md`, `PRODUCT_EPICS_EXECUTION_PLAN.md`, `PRODUCT.m
 - Schema changes reflected in `DB_SCHEMA.md`.
 - UX changes reflected in `UI_UX_SPEC.md`.
 - Story lifecycle reflected in `ROADMAP.md` and workflow adherence in `CODEX_WORKFLOW.md`.
+
+## Approved Phase 1 Digital Coach Scope (2026-08-05)
+
+The analytics dashboard and ingestion pipeline above are the data foundation for a **local-first digital coach for one athlete**. Where older v1 language is narrower, this section and `docs/product/PHASE_1_DIGITAL_COACH_BACKLOG.md` define the current target.
+
+- AI goal/plan conversation occurs in Codex using the athlete's Second Brain; the app does not embed chat in Phase 1.
+- The app owns canonical history plus the explicitly settled goal, active versioned plan, effective calendar, and reminder preferences.
+- Codex consumes `coaching-context.v1` and returns a validated `coaching-plan-proposal.v1` draft/proposal; import never activates it.
+- History enters through manual bounded CSV or single-activity GPX upload with validation and dedupe.
+- Calendar edits require a reason and preserve the approved prescription plus revision/audit history so later AI review can understand why a future session changed.
+- Today works in-app. Daily reminder preference defaults to 06:30 `Africa/Johannesburg`, is configurable, and is handed off separately to a recurring Codex automation.
+
+Phase 2 defers automatic Garmin sync, automatic post-run review/adaptation, autonomous plan/calendar changes, and app-owned push/email/SMS delivery. See `docs/adr/0002-digital-coach-control-boundaries.md`.
+
+## Approved Cloud Strava and Second Brain Sync Scope (2026-08-10)
+
+The earlier local-only/authentication deferrals continue to describe Phase 1, but no longer describe the active Phase 2 programme. The current approved outcome is an authenticated, always-available RacePredictor for one owner/athlete:
+
+- Vercel hosts the online Next.js application; Neon is authoritative for structured activities, approved plans, calendars, revisions, and sync state.
+- Strava is the only automatic activity provider in this programme. Garmin-specific integration and fields remain out of scope.
+- Raw provider payloads are retained privately in Cloudflare R2; Neon stores provenance and checksum metadata, not payload bodies.
+- Local Obsidian remains authoritative for qualitative source material. RacePredictor receives only the five optional, strictly structured `second-brain-context.v1` sections selected locally: availability, training preferences, dated constraints, wellbeing check-ins, and activity reflections.
+- Version 1 has no arbitrary text, note identity, vault path, goal, or plan prescription. Unknown or unselected fields are rejected locally and in the cloud.
+- The product exposes one athlete, while actor, repository, provider, object, device, job, change-feed, and snapshot boundaries are athlete-scoped for later expansion.
+- Cloud workouts and plans can be pulled into a local SQLite projection through a replay-safe cursor. The online product does not depend on the local computer being on.
+- Neon stores the owner-authored effective overlay and append-only reasoned history for future-session amend/reschedule/skip/restore actions. Calendar and Today show the effective projection while retaining the original prescription; competing edits require reload and review rather than an automatic retry.
+- Automatic review/adaptation and autonomous plan changes remain out of scope; ingestion or context publication cannot mutate an approved plan.
+- Free-tier operation optimizes for durable recovery and truthful freshness, not a real-time or uptime guarantee.
+
+The approved decision, delivery stories, architecture, tests, and visual status are in ADR 0003 and the `CLOUD_STRAVA_*` documents under `docs/plans` and `docs/product`. External platform and provider authentication is intentionally deferred until Milestone 8.

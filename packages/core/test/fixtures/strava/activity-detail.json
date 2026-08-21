@@ -1,0 +1,43 @@
+{
+  "id": "900000000001",
+  "athlete": { "id": "700000001" },
+  "name": "Synthetic morning run",
+  "distance": 2000,
+  "moving_time": 720,
+  "elapsed_time": 750,
+  "total_elevation_gain": 18,
+  "sport_type": "Run",
+  "start_date": "2026-08-10T04:00:00.000Z",
+  "start_date_local": "2026-08-10T06:00:00.000+02:00",
+  "timezone": "Africa/Johannesburg",
+  "trainer": false,
+  "manual": false,
+  "private": false,
+  "elev_high": 1612,
+  "elev_low": 1598,
+  "average_heartrate": 148,
+  "max_heartrate": 166,
+  "average_cadence": 86,
+  "calories": 150,
+  "average_watts": 238,
+  "max_watts": 352,
+  "map": { "summary_polyline": "synthetic_polyline" },
+  "splits_metric": [
+    {
+      "split": 1,
+      "distance": 1000,
+      "elapsed_time": 370,
+      "moving_time": 360,
+      "elevation_difference": 8,
+      "average_speed": 2.777778
+    },
+    {
+      "split": 2,
+      "distance": 1000,
+      "elapsed_time": 380,
+      "moving_time": 360,
+      "elevation_difference": -4,
+      "average_speed": 2.777778
+    }
+  ]
+}

@@ -125,7 +125,7 @@ test("device changes, acknowledgement, and selected context publication stay in 
   }), getComposition);
   const published = await handlePublishSecondBrainSnapshot(security, new Request("http://localhost", {
     method: "POST", body: JSON.stringify(snapshot),
-  }), getComposition);
+  }), getComposition, () => true);
   assert.equal(changes.status, 200);
   assert.equal((await acknowledged.json()).data.device.lastAcknowledgedCursor, "9");
   assert.equal(published.status, 201);
@@ -142,8 +142,27 @@ test("selected context endpoint rejects unapproved free text before persistence"
       { actor: deviceActor, device },
       new Request("http://localhost", { method: "POST", body: JSON.stringify({ ...device, notes: "private" }) }),
       () => composition,
+      () => true,
     ),
     (error: unknown) => error instanceof Error && "status" in error && error.status === 400,
+  );
+  assert.equal(response, undefined);
+  assert.equal(writes, 0);
+});
+
+test("selected context publication fails closed while the feature is disabled", async () => {
+  let writes = 0;
+  const composition = {
+    snapshots: { storeImmutable: async () => { writes += 1; throw new Error("unexpected"); } },
+  } as unknown as DeviceSyncComposition;
+  const response = await assert.rejects(
+    () => handlePublishSecondBrainSnapshot(
+      { actor: deviceActor, device },
+      new Request("http://localhost", { method: "POST", body: JSON.stringify({}) }),
+      () => composition,
+      () => false,
+    ),
+    (error: unknown) => error instanceof Error && "status" in error && error.status === 503,
   );
   assert.equal(response, undefined);
   assert.equal(writes, 0);

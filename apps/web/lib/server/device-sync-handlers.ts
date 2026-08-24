@@ -14,6 +14,7 @@ import {
   TrainingPlanProjectionConflictError,
 } from "../../../../packages/db/src/cloud/index.js";
 import { ApiHttpError, success } from "./api-response.ts";
+import { readCloudEnvironment } from "./cloud-environment.ts";
 import { getDeviceSyncComposition } from "./device-sync-composition.ts";
 import type { SensitiveRouteContext } from "./route-security.ts";
 
@@ -120,7 +121,11 @@ export async function handlePublishSecondBrainSnapshot(
   security: AuthenticatedDevice,
   request: Request,
   getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
+  isSecondBrainSyncEnabled: () => boolean = () => readCloudEnvironment().features.secondBrainSync,
 ) {
+  if (!isSecondBrainSyncEnabled()) {
+    throw new ApiHttpError(503, "UNAVAILABLE", "Selected Second Brain sync is not enabled");
+  }
   const parsed = secondBrainContextSnapshotSchema.safeParse(await readJson(request));
   if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Selected Second Brain context is invalid");
   try {

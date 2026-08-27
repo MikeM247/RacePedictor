@@ -216,18 +216,54 @@ export async function handleCloudCalendar(
   if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Calendar date range is invalid");
   const scope = requireScope(security);
   const composition = getComposition();
-  const [sessions, plans] = await Promise.all([
-    safelyReadCoaching(() => composition.calendarSessions.listActiveCalendar(scope, parsed.data)),
-    safelyReadCoaching(() => composition.coaching.listHistory(scope)),
-  ]);
-  const timezone = plans.find((plan) => plan.status === "active")?.timezone ?? "Africa/Johannesburg";
-  const activities = await listCloudCalendarActivities(composition, scope, parsed.data, timezone);
-  const historicalSessions = plans
-    .filter((plan) => plan.status === "retired")
-    .flatMap((plan) => plan.workouts
-      .filter((workout) => workout.scheduledDate >= parsed.data.from && workout.scheduledDate <= parsed.data.to)
-      .map((workout) => ({ ...workout, planId: plan.id, planVersion: plan.version })));
+  const sessions = await safelyReadCoaching(() => composition.calendarSessions.listActiveCalendar(scope, parsed.data));
+  const { timezone, historicalSessions } = await listCloudCalendarPlanContext(composition, scope, parsed.data);
+  const activities = await listCloudCalendarActivitiesSafely(composition, scope, parsed.data, timezone);
   return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions, historicalSessions, activities }));
+}
+
+async function listCloudCalendarPlanContext(
+  composition: CloudReadComposition,
+  scope: ReturnType<typeof athleteScopeFor>,
+  range: { from: string; to: string },
+) {
+  try {
+    const plans = await safelyReadCoaching(() => composition.coaching.listHistory(scope));
+    return {
+      timezone: plans.find((plan) => plan.status === "active")?.timezone ?? "Africa/Johannesburg",
+      historicalSessions: plans
+        .filter((plan) => plan.status === "retired")
+        .flatMap((plan) => plan.workouts
+          .filter((workout) => workout.scheduledDate >= range.from && workout.scheduledDate <= range.to)
+          .map((workout) => ({ ...workout, planId: plan.id, planVersion: plan.version }))),
+    };
+  } catch (error) {
+    reportCalendarSupplementFailure("plan history", error);
+    return { timezone: "Africa/Johannesburg", historicalSessions: [] };
+  }
+}
+
+async function listCloudCalendarActivitiesSafely(
+  composition: CloudReadComposition,
+  scope: ReturnType<typeof athleteScopeFor>,
+  range: { from: string; to: string },
+  timezone: string,
+) {
+  try {
+    return await listCloudCalendarActivities(composition, scope, range, timezone);
+  } catch (error) {
+    reportCalendarSupplementFailure("recorded activities", error);
+    return [];
+  }
+}
+
+function reportCalendarSupplementFailure(supplement: string, error: unknown) {
+  const details = error instanceof ApiHttpError
+    ? { status: error.status, code: error.code }
+    : error instanceof Error
+      ? { name: error.name, message: error.message }
+      : { name: "Unknown error" };
+  console.warn("Calendar supplemental data could not be loaded", { supplement, ...details });
 }
 
 async function listCloudCalendarActivities(

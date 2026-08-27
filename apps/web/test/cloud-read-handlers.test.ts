@@ -117,6 +117,23 @@ test("cloud Calendar and Today work from approved structured data with no local 
   assert.equal(withHistoryBody.data.historicalSessions[0].scheduledDate, "2026-08-10");
 });
 
+test("cloud Calendar preserves the approved schedule when supplemental history or activities fail", async () => {
+  const composition = fakeComposition([]);
+  composition.coaching.listHistory = async () => { throw new Error("synthetic plan-history outage"); };
+  composition.activities.list = async () => { throw new Error("synthetic activity outage"); };
+  const calendar = await handleCloudCalendar(
+    security,
+    new Request("http://localhost/api/v1/coaching/calendar?from=2026-08-10&to=2026-08-16"),
+    () => composition,
+  );
+  const body = await calendar.json();
+
+  assert.equal(calendar.status, 200);
+  assert.equal(body.data.sessions[0].id, "run-a");
+  assert.deepEqual(body.data.historicalSessions, []);
+  assert.deepEqual(body.data.activities, []);
+});
+
 test("cloud coaching handlers reject invalid dates and missing foreign resources without disclosure", async () => {
   const composition = fakeComposition([]);
   const getComposition = () => composition;

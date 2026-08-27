@@ -27,6 +27,15 @@ const weekStartsOn = (date: string) => {
   return value.toISOString().slice(0, 10);
 };
 
+const currentScreenRoutes = [
+  { href: "/dashboard", label: "Today" },
+  { href: "/dashboard/calendar", label: "Calendar" },
+  { href: "/dashboard/plan", label: "Plan" },
+  { href: "/dashboard/activities", label: "Activities" },
+  { href: "/dashboard/data-quality", label: "Data Quality" },
+  { href: "/dashboard/settings", label: "Settings" },
+] as const;
+
 const syntheticGpx = (date: string) => `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="racepredictor-e2e" xmlns="http://www.topografix.com/GPX/1/1">
   <trk><name>Synthetic coaching baseline</name><trkseg>
@@ -864,4 +873,225 @@ test("Today keeps a missed-session warning and actions usable at the mobile base
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("all current screens keep one active route and no horizontal overflow at desktop and tablet baselines", async ({ page }) => {
+  test.setTimeout(120_000);
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+
+    for (const route of currentScreenRoutes) {
+      await page.goto(route.href);
+      await expect(page).toHaveURL(new RegExp(`${route.href.replaceAll("/", "\\/")}$`));
+      await expect(page.getByRole("heading", { level: 1, name: route.label, exact: true })).toHaveCount(1);
+      const currentLinks = page.getByRole("navigation", { name: "Dashboard pages" }).locator('a[aria-current="page"]');
+      await expect(currentLinks).toHaveCount(1);
+      await expect(currentLinks).toHaveAccessibleName(route.label);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      if (viewport.width === 1024 && route.label === "Calendar") {
+        await expect(page.getByRole("button", { name: "Agenda", exact: true })).toHaveAttribute("aria-pressed", "true");
+        await expect(page.getByRole("button", { name: "Week", exact: true })).toHaveAttribute("aria-pressed", "false");
+      }
+    }
+
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { level: 1, name: "Your training dashboard, online" })).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+  }
+
+  expect(pageErrors, "uncaught page errors").toEqual([]);
+  expect(
+    consoleErrors.filter((message) => !message.startsWith("Failed to load resource:")),
+    "unexpected browser console errors",
+  ).toEqual([]);
+});
+
+test("local Activities filters imported history and restores selected-row focus after mobile detail", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const today = localDate();
+  const activityTitle = "Synthetic coaching baseline";
+  const activity = {
+    id: "activity-local-focus",
+    athleteId: "e2e_athlete",
+    title: activityTitle,
+    occurredAt: `${today}T04:00:00.000Z`,
+    localOccurredAt: `${today}T06:00:00.000+02:00`,
+    sport: "run",
+    distanceM: 6_000,
+    elapsedTimeS: 2_700,
+    avgPaceSecPerKm: 450,
+    elevationGainM: 20,
+    hrAvailable: false,
+    cadenceAvailable: false,
+  };
+
+  await page.route("**/api/v1/activities**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path === "/api/v1/activities/activity-local-focus"
+      ? { activity: {
+        ...activity,
+        sourceType: "gpx",
+        endedAt: `${today}T04:45:00.000Z`,
+        elevationLossM: 15,
+        dedupeHash: "f".repeat(64),
+        createdAt: `${today}T05:00:00.000Z`,
+        splits: [],
+        routeSignature: null,
+      } }
+      : { items: [activity] };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto("/dashboard/activities");
+  const initialState = page.getByRole("heading", { name: /No activities yet|Unable to load activities/ });
+  await expect(initialState).toBeVisible();
+  if (await page.getByRole("button", { name: "Try again" }).isVisible()) {
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("heading", { name: "Recent activities" })).toBeVisible();
+  }
+  await page.getByLabel("Search activities").fill(activityTitle);
+  await page.getByLabel("Activity type").selectOption("run");
+  await page.getByLabel("From").fill(today);
+  await page.getByLabel("To", { exact: true }).fill(today);
+  const filteredList = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/v1/activities" && url.searchParams.get("search") === activityTitle;
+  });
+  await page.getByRole("button", { name: "Apply filters" }).click();
+  const filterResponse = await filteredList;
+  expect(filterResponse.ok()).toBe(true);
+  const filterUrl = new URL(filterResponse.url());
+  expect(filterUrl.searchParams.get("sport")).toBe("run");
+  expect(filterUrl.searchParams.get("from")).toBe(today);
+  expect(filterUrl.searchParams.get("to")).toBe(today);
+
+  const activityRow = page.getByRole("button", { name: new RegExp(activityTitle) });
+  await expect(activityRow).toBeVisible();
+  await activityRow.click();
+  await expect(page.getByRole("heading", { name: activityTitle })).toBeVisible();
+  await expect(page.getByText("No additional telemetry was included in this activity.")).toBeVisible();
+  await page.getByRole("button", { name: "Back to activities" }).click();
+  await expect(activityRow).toBeVisible();
+  await expect(activityRow).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("Activities presents a scannable Night Ops record for a run with telemetry, splits, and route data", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  const activityId = "activity-night-ops-record";
+  const activity = {
+    id: activityId,
+    athleteId: "e2e_athlete",
+    title: "Morning Run",
+    occurredAt: "2026-08-27T02:48:00.000Z",
+    localOccurredAt: "2026-08-27T04:48:00.000+02:00",
+    sport: "run",
+    distanceM: 6_010,
+    elapsedTimeS: 3_080,
+    avgPaceSecPerKm: 513,
+    elevationGainM: 119,
+    hrAvailable: true,
+    cadenceAvailable: true,
+  };
+  const split = (splitIndex: number, paceSecPerKm: number) => ({
+    id: `${activityId}-split-${splitIndex}`,
+    activityId,
+    athleteId: "e2e_athlete",
+    splitIndex,
+    startOffsetS: splitIndex * 510,
+    endOffsetS: (splitIndex + 1) * 510,
+    durationS: 510,
+    distanceM: 1_000,
+    paceSecPerKm,
+    elevGainM: 0,
+    elevLossM: 0,
+    createdAt: "2026-08-27T05:00:00.000Z",
+  });
+
+  await page.route("**/api/v1/activities**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const body = path === `/api/v1/activities/${activityId}`
+      ? { activity: {
+        ...activity,
+        endedAt: "2026-08-27T03:39:20.000Z",
+        sourceType: "gpx",
+        elevationLossM: 88,
+        avgHrBpm: 116,
+        maxHrBpm: 137,
+        avgCadenceSpm: 173,
+        calories: 426,
+        avgPowerW: 227,
+        dedupeHash: "n".repeat(64),
+        createdAt: "2026-08-27T05:00:00.000Z",
+        splits: [split(0, 536), split(1, 550), split(2, 489)],
+        routeSignature: {
+          id: `${activityId}-route`, activityId, athleteId: "e2e_athlete",
+          startLat: -29.8, startLon: 31, endLat: -29.74, endLon: 31,
+          bboxMinLat: -29.8, bboxMinLon: 31, bboxMaxLat: -29.74, bboxMaxLon: 31,
+          routeHash: "route-hash", createdAt: "2026-08-27T05:00:00.000Z",
+        },
+      } }
+      : { items: [activity] };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  await page.goto("/dashboard/activities");
+  const initialState = page.getByRole("heading", { name: /No activities yet|Unable to load activities/ });
+  await expect(initialState).toBeVisible();
+  if (await page.getByRole("button", { name: "Try again" }).isVisible()) {
+    await page.getByRole("button", { name: "Try again" }).click();
+  } else {
+    await page.getByRole("button", { name: "Apply filters" }).click();
+  }
+  await expect(page.getByRole("button", { name: /Morning Run/ })).toBeVisible();
+  await page.getByRole("button", { name: /Morning Run/ }).click();
+
+  await expect(page.getByRole("heading", { name: "Run at a glance" })).toBeVisible();
+  await expect(page.getByText("Activity record", { exact: true })).toBeVisible();
+  await expect(page.getByText("5 signals", { exact: true })).toBeVisible();
+  const splits = page.getByRole("list", { name: "Per kilometre splits" });
+  await expect(splits).toContainText("KM 01");
+  await expect(splits).toContainText("8:56/km");
+  await expect(splits).toContainText("KM 03");
+  await expect(splits).toContainText("8:09/km");
+  await expect(page.getByText("Available", { exact: true })).toBeVisible();
+  await expect(page.getByText("Route data is available for this activity.")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+});
+
+test("core screens render without overflow with reduced motion and forced colors", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
+  expect(await page.evaluate(() => ({
+    reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    forcedColors: window.matchMedia("(forced-colors: active)").matches,
+  }))).toEqual({ reducedMotion: true, forcedColors: true });
+
+  for (const route of currentScreenRoutes) {
+    await page.goto(route.href);
+    await expect(page.getByRole("heading", { level: 1, name: route.label, exact: true })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Dashboard pages" })
+      .getByRole("link", { name: route.label, exact: true })).toHaveAttribute("aria-current", "page");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+  }
+});
+
+test("core shell has no horizontal overflow at a 200 percent zoom viewport proxy", async ({ page }) => {
+  test.setTimeout(90_000);
+  const zoomProxy = { width: 720, height: 450 };
+  await page.setViewportSize(zoomProxy);
+
+  for (const route of currentScreenRoutes) {
+    await page.goto(route.href);
+    await expect(page.getByRole("heading", { level: 1, name: route.label, exact: true })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Dashboard pages" }))
+      .toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(zoomProxy.width);
+  }
 });

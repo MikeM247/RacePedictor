@@ -84,17 +84,18 @@ function CoachShell({ page, title, subtitle, meta, children }: {
   meta?: string;
   children: ReactNode;
 }) {
+  const titleId = `${page}-page-title`;
   return (
-    <main className="dashboard-layout coaching-layout">
+    <div className={`dashboard-layout coaching-layout coaching-layout--${page}`}>
       <DashboardNavigation activePage={page} />
-      <div className="dashboard-main">
+      <main className="dashboard-main" aria-labelledby={titleId}>
         <header className="dashboard-toolbar coaching-toolbar">
-          <div><h2>{title}</h2><p>{subtitle}</p></div>
+          <div><p className="eyebrow">Training workspace</p><h1 id={titleId}>{title}</h1><p>{subtitle}</p></div>
           {meta ? <span className="toolbar-context">{meta}</span> : null}
         </header>
-        <section className="coaching-content">{children}</section>
-      </div>
-    </main>
+        <section className={`coaching-content coaching-content--${page}`}>{children}</section>
+      </main>
+    </div>
   );
 }
 

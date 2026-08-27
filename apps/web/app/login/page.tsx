@@ -7,7 +7,10 @@ export default function SignInPage() {
   return (
     <main className={styles.page}>
       <section className={styles.card} aria-labelledby="sign-in-heading">
-        <p className={styles.eyebrow}>Race Predictor</p>
+        <div className={styles.brand}>
+          <span className={styles.mark} aria-hidden="true">RP</span>
+          <p className={styles.eyebrow}><strong>Race Predictor</strong><span>Night Ops · Owner access</span></p>
+        </div>
         <h1 id="sign-in-heading">Your training dashboard, online</h1>
         <p className={styles.intro}>
           Sign in with the owner GitHub account to view synced workouts and Second Brain status.

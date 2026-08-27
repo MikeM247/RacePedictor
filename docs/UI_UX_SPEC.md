@@ -59,6 +59,7 @@
 - Detail expectations:
   - Show splits and route signature when present
   - If absent, render graceful "not available" sub-state (not full-page error)
+  - Present the selected activity as a compact Night Ops record: prioritise distance, elapsed time, pace, and elevation before optional telemetry; retain clear section labels and explicit route availability text.
 - Primary user question: "What happened in specific workouts?"
 
 ### 3) Performance Page

@@ -139,13 +139,14 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
   const hasActiveFilters = Object.values(activeFilters).some(Boolean);
 
   return (
-    <main className="dashboard-layout activities-layout">
+    <div className="dashboard-layout activities-layout">
       <DashboardNavigation activePage="activities" />
 
-      <div className="dashboard-main">
+      <main className="dashboard-main" aria-labelledby="activities-page-title">
         <header className="dashboard-toolbar activities-toolbar">
           <div>
-            <h2>Activities</h2>
+            <p className="eyebrow">Training workspace</p>
+            <h1 id="activities-page-title">Activities</h1>
             <p>{onlineMode ? "Your cloud-synced running history" : "Your manually imported running history"}</p>
           </div>
           <div className="activity-count">
@@ -290,8 +291,8 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
             </div>
           )}
         </section>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -355,43 +356,75 @@ function ActivityDetailPanel({
     <aside className="activity-detail" aria-labelledby="activity-detail-heading">
       <div className="detail-header">
         <DetailBackButton onClose={onClose} />
-        <p className="eyebrow">{sportLabel(activity.sport)}</p>
+        <div className="detail-header-meta">
+          <p className="eyebrow">{sportLabel(activity.sport)}</p>
+          <span className="detail-record-label">Activity record</span>
+        </div>
         <h3 id="activity-detail-heading">{activity.title || sportLabel(activity.sport)}</h3>
         <p>{formatActivityDate(activity.localOccurredAt, activity.occurredAt)}</p>
       </div>
-      <dl className="detail-metrics">
-        {metrics.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
+      <section className="detail-core-readout" aria-labelledby="detail-core-readout-heading">
+        <div className="detail-section-heading">
+          <div>
+            <p className="eyebrow">Mission readout</p>
+            <h4 id="detail-core-readout-heading">Run at a glance</h4>
           </div>
-        ))}
-      </dl>
+        </div>
+        <dl className="detail-metrics detail-primary-metrics">
+          {metrics.map(([label, value], index) => (
+            <div key={label} className="detail-metric">
+              <dt><span className="detail-metric-index" aria-hidden="true">0{index + 1}</span>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
       <section className="detail-subsection detail-optional-metrics">
-        <h4>Additional telemetry</h4>
+        <div className="detail-section-heading">
+          <div>
+            <p className="eyebrow">Sensor array</p>
+            <h4>Additional telemetry</h4>
+          </div>
+          {optionalMetrics.length > 0 ? <span className="detail-section-count">{optionalMetrics.length} signals</span> : null}
+        </div>
         {optionalMetrics.length > 0 ? (
-          <dl className="detail-metrics">
-            {optionalMetrics.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
+          <dl className="detail-metrics detail-telemetry-metrics">
+            {optionalMetrics.map(([label, value], index) => (
+              <div key={label} className="detail-metric">
+                <dt><span className="detail-metric-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>{label}</dt>
                 <dd>{value}</dd>
               </div>
             ))}
           </dl>
         ) : <p>No additional telemetry was included in this activity.</p>}
       </section>
-      <section className="detail-subsection">
-        <h4>Splits</h4>
+      <section className="detail-subsection detail-splits">
+        <div className="detail-section-heading">
+          <div>
+            <p className="eyebrow">Segment log</p>
+            <h4>Splits</h4>
+          </div>
+          {activity.splits.length > 0 ? <span className="detail-section-count">{activity.splits.length} km</span> : null}
+        </div>
         {activity.splits.length > 0 ? (
-          <ol>
+          <ol className="split-grid" aria-label="Per kilometre splits">
             {activity.splits.map((split) => (
-              <li key={split.id}>Kilometre {split.splitIndex + 1}: {formatPace(split.paceSecPerKm)}</li>
+              <li key={split.id}>
+                <span>KM {String(split.splitIndex + 1).padStart(2, "0")}</span>
+                <strong>{formatPace(split.paceSecPerKm)}</strong>
+              </li>
             ))}
           </ol>
         ) : <p>No split data was included in this imported activity.</p>}
       </section>
-      <section className="detail-subsection">
-        <h4>Route</h4>
+      <section className={activity.routeSignature ? "detail-subsection detail-route detail-route-available" : "detail-subsection detail-route"}>
+        <div className="detail-section-heading">
+          <div>
+            <p className="eyebrow">Route signal</p>
+            <h4>Route</h4>
+          </div>
+          <span className="route-status"><span aria-hidden="true" />{activity.routeSignature ? "Available" : "Unavailable"}</span>
+        </div>
         <p>{activity.routeSignature ? "Route data is available for this activity." : "No route data was included in this imported activity."}</p>
       </section>
     </aside>

@@ -4,11 +4,11 @@
   min-height: 100vh;
   place-items: center;
   overflow: hidden;
-  padding: 1.5rem;
+  padding: 1.25rem;
   background:
-    linear-gradient(color-mix(in srgb, var(--rp-border) 30%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--rp-border) 30%, transparent) 1px, transparent 1px),
-    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--rp-cyan) 12%, transparent), transparent 32rem),
+    linear-gradient(color-mix(in srgb, var(--rp-border) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--rp-border) 24%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 22% 0%, color-mix(in srgb, var(--rp-cyan) 9%, transparent), transparent 30rem),
     var(--rp-bg);
   background-size: 32px 32px, 32px 32px, auto, auto;
   color: var(--rp-text);
@@ -16,10 +16,12 @@
 
 .card {
   position: relative;
-  width: min(100%, 31rem);
-  padding: clamp(1.75rem, 5vw, 3rem);
+  width: min(100%, 28rem);
+  overflow: hidden;
+  padding: clamp(1.5rem, 4vw, 2.25rem);
   border: 1px solid var(--rp-border-strong);
-  border-radius: 12px;
+  border-left: 3px solid var(--rp-cyan);
+  border-radius: var(--rp-radius-md);
   background: var(--rp-surface);
   box-shadow: 0 1.5rem 4rem color-mix(in srgb, var(--rp-bg) 72%, transparent);
 }
@@ -27,54 +29,65 @@
 .card::before {
   position: absolute;
   top: 0;
-  left: 2rem;
-  width: 4rem;
+  left: 0;
+  width: 3.5rem;
   height: 2px;
   background: var(--rp-cyan);
   content: "";
 }
 
-.eyebrow {
+.brand {
   display: flex;
+  gap: .75rem;
   align-items: center;
-  gap: .55rem;
-  margin: 0 0 .65rem;
-  color: var(--rp-cyan);
-  font-size: .78rem;
-  font-weight: 750;
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  margin-bottom: 1.5rem;
 }
 
-.eyebrow::before {
-  width: .55rem;
-  height: .55rem;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rp-cyan) 13%, transparent);
-  content: "";
+.mark {
+  display: grid;
+  flex: 0 0 2.25rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid var(--rp-cyan);
+  border-radius: var(--rp-radius-sm);
+  color: var(--rp-cyan-strong);
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .1em;
 }
+
+.eyebrow {
+  display: grid;
+  gap: .18rem;
+  margin: 0;
+  line-height: 1.15;
+}
+
+.eyebrow strong { color: var(--rp-text); font-size: .92rem; letter-spacing: -.01em; }
+.eyebrow span { color: var(--rp-cyan); font-size: .66rem; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
 
 .card h1 {
-  max-width: 15ch;
+  max-width: 18ch;
   margin: 0;
   color: var(--rp-text);
-  font-size: clamp(1.9rem, 7vw, 2.75rem);
-  line-height: 1.04;
+  font-size: clamp(1.7rem, 6vw, 2.15rem);
+  line-height: 1.08;
+  letter-spacing: -.035em;
 }
 
 .intro {
-  margin: 1.15rem 0 1.5rem;
+  margin: 1rem 0 1.35rem;
   color: var(--rp-text-muted);
   line-height: 1.6;
 }
 
 .button {
   width: 100%;
-  min-height: 3rem;
-  padding: .8rem 1rem;
+  min-height: 2.65rem;
+  padding: .7rem 1rem;
   border: 1px solid var(--rp-cyan);
-  border-radius: .7rem;
+  border-radius: var(--rp-radius-sm);
   background: var(--rp-cyan);
   color: var(--rp-bg);
   cursor: pointer;
@@ -86,7 +99,7 @@
 .button:focus-visible { outline: 3px solid color-mix(in srgb, var(--rp-focus) 40%, transparent); outline-offset: 3px; }
 
 .note {
-  margin: 1rem 0 0;
+  margin: .85rem 0 0;
   color: var(--rp-text-muted);
   font-size: .85rem;
   text-align: center;
@@ -94,7 +107,12 @@
 
 @media (max-width: 480px) {
   .page { padding: 1rem; background-size: 24px 24px, 24px 24px, auto, auto; }
-  .card { padding: 1.5rem; }
+  .card { padding: 1.35rem; }
+}
+
+@media (forced-colors: active) {
+  .card,
+  .mark { border: 2px solid Highlight; }
 }
 
 @media (prefers-reduced-motion: reduce) {

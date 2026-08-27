@@ -193,14 +193,14 @@ export function OnlineSyncSettings() {
   }
 
   return (
-    <main className="dashboard-layout coaching-layout">
+    <div className="dashboard-layout coaching-layout coaching-layout--settings">
       <DashboardNavigation activePage="settings" />
-      <div className="dashboard-main">
+      <main className="dashboard-main" aria-labelledby="settings-page-title">
         <header className="dashboard-toolbar coaching-toolbar">
-          <div><h2>Settings</h2><p>Secure local sync and selected Second Brain context</p></div>
+          <div><p className="eyebrow">Training workspace</p><h1 id="settings-page-title">Settings</h1><p>Secure local sync and selected Second Brain context</p></div>
           <span className="toolbar-context">Online</span>
         </header>
-        <section className="coaching-content">
+        <section className="coaching-content coaching-content--settings">
           <section className="coach-panel settings-panel settings-panel--connections" aria-labelledby="strava-heading">
             <div className="coach-panel-heading">
               <div><p className="eyebrow">Workout source</p><h3 id="strava-heading">Automatic workouts from Strava</h3></div>
@@ -247,7 +247,7 @@ export function OnlineSyncSettings() {
             <p className="field-help">After enrolment, use <code>npm run sync:local -- sync</code>. Re-pairing revokes the previous computer immediately.</p>
           </section> : null}
 
-          <section className="coach-panel settings-panel" aria-labelledby="device-history-heading">
+          <section className="coach-panel settings-panel settings-panel--devices" aria-labelledby="device-history-heading">
             <div className="coach-panel-heading"><div><p className="eyebrow">Status</p><h3 id="device-history-heading">Device history</h3></div><button className="button button-secondary" type="button" onClick={() => void load()}>Refresh</button></div>
             {devices.length === 0 && state !== "loading" ? <p className="quiet-copy">No computer has been paired yet.</p> : <div className="sync-device-list">
               {devices.map((device) => <article className="sync-device-card" key={device.id}>
@@ -273,8 +273,8 @@ export function OnlineSyncSettings() {
             </>}
           </section>
         </section>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
 

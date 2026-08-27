@@ -1,7 +1,7 @@
 .dashboard-layout {
   position: relative;
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: var(--rp-rail-width) minmax(0, 1fr);
   min-height: 100vh;
   background: var(--rp-bg);
   color: var(--rp-text);
@@ -27,7 +27,7 @@
 .dashboard-skip-target {
   position: absolute;
   top: 0;
-  left: 248px;
+  left: var(--rp-rail-width);
   width: 1px;
   height: 1px;
   overflow: hidden;
@@ -43,7 +43,7 @@
   align-self: start;
   min-width: 0;
   height: 100vh;
-  padding: 24px 18px;
+  padding: 20px 14px 18px;
   border-right: 1px solid var(--rp-border);
   background: var(--rp-nav);
   color: var(--rp-text-muted);
@@ -73,9 +73,9 @@
 
 .dashboard-brand-mark {
   display: grid;
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
   place-items: center;
   border: 1px solid var(--rp-cyan);
   border-radius: var(--rp-radius-sm);
@@ -111,7 +111,7 @@
 .dashboard-nav nav {
   display: grid;
   gap: 5px;
-  margin-top: 32px;
+  margin-top: 26px;
 }
 
 .dashboard-nav nav a {
@@ -120,8 +120,8 @@
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
-  min-height: 42px;
-  padding: 9px 10px;
+  min-height: 40px;
+  padding: 8px 9px;
   border: 1px solid transparent;
   border-radius: var(--rp-radius-sm);
   color: var(--rp-text-muted);
@@ -172,8 +172,8 @@
   justify-content: space-between;
   gap: 24px;
   align-items: center;
-  min-height: 76px;
-  padding: 18px 32px;
+  min-height: var(--rp-toolbar-min-height);
+  padding: 12px var(--rp-content-gutter);
   border-bottom: 1px solid var(--rp-border);
   background: color-mix(in srgb, var(--rp-bg) 86%, var(--rp-surface));
 }
@@ -185,19 +185,20 @@
 .dashboard-toolbar h2 {
   margin: 0;
   color: var(--rp-text);
-  font-size: clamp(1.45rem, 2vw, 1.75rem);
+  font-size: clamp(1.35rem, 2vw, 1.6rem);
   line-height: 1.15;
   letter-spacing: -0.025em;
 }
 
 .dashboard-toolbar p {
-  margin: 5px 0 0;
+  margin: 3px 0 0;
   color: var(--rp-text-muted);
+  font-size: 0.83rem;
 }
 
 .eyebrow,
 .dashboard-layout .eyebrow {
-  margin: 0 0 5px;
+  margin: 0 0 3px;
   color: var(--rp-cyan);
   font-size: 0.72rem;
   font-weight: 780;
@@ -243,13 +244,13 @@
 
 .dashboard-content {
   display: grid;
-  gap: 24px;
-  width: min(1320px, 100%);
+  gap: 20px;
+  width: min(var(--rp-content-max), 100%);
   margin: 0 auto;
-  padding: 24px 32px 44px;
+  padding: 20px var(--rp-content-gutter) 36px;
 }
 
-.content-group { display: grid; gap: 12px; }
+.content-group { display: grid; gap: 10px; }
 
 .group-heading-row {
   display: flex;
@@ -312,18 +313,18 @@
 
 .dashboard-content > .state-panel .button:hover { border-color: var(--rp-cyan); }
 
-.card-grid { display: grid; gap: 14px; }
+.card-grid { display: grid; gap: 10px; }
 .card-grid.kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .card-grid.visualizations-grid { grid-template-columns: 2fr 1fr; }
 
 .card {
   min-width: 0;
-  padding: 18px;
+  padding: var(--rp-panel-padding);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .card h4 {
-  margin: 0 0 12px;
+  margin: 0 0 9px;
   color: var(--rp-text-muted);
   font-size: 0.82rem;
   font-weight: 670;
@@ -353,6 +354,46 @@
 .card dt { font-weight: 600; }
 .card dd { margin: 0; color: var(--rp-text); font-variant-numeric: tabular-nums; }
 .card dl { display: grid; gap: 10px; margin: 0; }
+
+.kpis .card {
+  position: relative;
+  min-height: 92px;
+  overflow: hidden;
+  border-top-color: var(--rp-border-strong);
+}
+
+.kpis .card::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 42px;
+  height: 2px;
+  background: var(--rp-cyan);
+  content: "";
+}
+
+.kpis .card:nth-child(2)::before { background: var(--rp-violet); }
+.kpis .card:nth-child(3)::before { background: var(--rp-lime); }
+
+.import-progress-card dl {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+}
+
+.import-progress-card dl div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 2px 14px;
+  border-left: 1px solid var(--rp-border);
+}
+
+.import-progress-card dl div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.import-progress-card dd { overflow-wrap: anywhere; }
 
 .distance-selector {
   display: grid;
@@ -476,9 +517,9 @@
 /* Workout-first Today surface. Specificity intentionally wins over the legacy coaching sheet. */
 .dashboard-content .today-coach-card {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   min-width: 0;
-  padding: 22px;
+  padding: 18px;
   border: 1px solid var(--rp-border);
   border-left: 4px solid var(--rp-violet);
   border-radius: var(--rp-radius-md);
@@ -497,19 +538,19 @@
 
 .today-coach-overview {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
-  gap: 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  gap: 20px;
   align-items: start;
 }
 
-.dashboard-content .today-coach-main { display: grid; min-width: 0; gap: 10px; }
+.dashboard-content .today-coach-main { display: grid; min-width: 0; gap: 8px; }
 .dashboard-content .today-coach-card h2,
 .dashboard-content .today-coach-card h3 { margin: 0; color: var(--rp-text); letter-spacing: -0.02em; }
 .dashboard-content .today-coach-card h2 { font-size: clamp(1.35rem, 2.6vw, 1.85rem); }
 .dashboard-content .today-coach-card p { margin: 0; color: var(--rp-text-muted); line-height: 1.55; overflow-wrap: anywhere; }
 
 .dashboard-content .today-coach-card .today-prescription {
-  padding: 15px 16px;
+  padding: 12px 14px;
   border: 1px solid var(--rp-border-strong);
   border-left: 3px solid var(--rp-cyan);
   border-radius: var(--rp-radius-sm);
@@ -557,7 +598,7 @@
   display: grid;
   gap: 8px;
   margin-top: 2px;
-  padding: 13px 14px;
+  padding: 10px 12px;
   border: 1px solid var(--rp-border);
   border-radius: var(--rp-radius-sm);
   background: var(--rp-surface-soft);
@@ -587,9 +628,9 @@
 
 .today-week {
   display: grid;
-  gap: 13px;
+  gap: 10px;
   min-width: 0;
-  padding-top: 18px;
+  padding-top: 14px;
   border-top: 1px solid var(--rp-border);
 }
 
@@ -609,7 +650,7 @@
 .today-week-list {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -618,10 +659,10 @@
 .today-week-session {
   display: grid;
   grid-template-rows: auto 1fr auto auto;
-  gap: 9px;
+  gap: 7px;
   min-width: 0;
-  min-height: 180px;
-  padding: 11px;
+  min-height: 154px;
+  padding: 9px;
   border: 1px solid var(--rp-border);
   border-top: 3px solid var(--rp-violet);
   border-radius: var(--rp-radius-sm);
@@ -641,9 +682,9 @@
 .today-week-link { font-size: 0.76rem; }
 
 @media (max-width: 1199px) {
-  .dashboard-layout { grid-template-columns: 104px minmax(0, 1fr); }
-  .dashboard-skip-target { left: 104px; }
-  .dashboard-nav { padding: 20px 10px; }
+  .dashboard-layout { grid-template-columns: var(--rp-rail-compact-width) minmax(0, 1fr); }
+  .dashboard-skip-target { left: var(--rp-rail-compact-width); }
+  .dashboard-nav { padding: 18px 8px; }
   .dashboard-brand { justify-content: center; }
   .dashboard-brand-copy,
   .dashboard-nav-boundary,
@@ -667,7 +708,7 @@
   .dashboard-brand-copy { display: grid; }
   .dashboard-nav nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 12px; }
   .dashboard-nav nav a { min-height: 38px; padding: 7px 4px; font-size: 0.72rem; }
-  .dashboard-toolbar { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px; }
+  .dashboard-toolbar { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px; }
   .toolbar-meta { display: grid; max-width: none; justify-content: stretch; }
   .distance-selector { width: 100%; grid-template-columns: 7rem minmax(0, 1fr); }
   .online-status-panel { width: 100%; }
@@ -677,7 +718,7 @@
   .card-grid.kpis,
   .card-grid.visualizations-grid,
   .today-week-list { grid-template-columns: minmax(0, 1fr); }
-  .dashboard-content { width: 100%; padding: 16px; }
+  .dashboard-content { width: 100%; padding: 14px 12px 28px; }
   .group-heading-row,
   .today-coach-overview,
   .today-week-heading,
@@ -691,6 +732,12 @@
   .dashboard-content .today-goal-summary { grid-template-columns: minmax(0, 1fr); }
   .dashboard-content .today-goal-summary .eyebrow { grid-column: auto; }
   .today-plan-context dl { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .import-progress-card dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .import-progress-card dl div,
+  .import-progress-card dl div:first-child { padding: 8px 0 0; border-top: 1px solid var(--rp-border); border-left: 0; }
 }
 
 @media (max-width: 390px) {

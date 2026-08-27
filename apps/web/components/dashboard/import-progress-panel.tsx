@@ -7,7 +7,7 @@ type ImportProgressPanelProps = {
 
 export function ImportProgressPanel({ progress }: ImportProgressPanelProps) {
   return (
-    <PanelCard title="Import progress">
+    <PanelCard title="Import progress" className="import-progress-card">
       <dl>
         <div>
           <dt>Status</dt>

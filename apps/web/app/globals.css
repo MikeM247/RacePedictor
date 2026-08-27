@@ -20,6 +20,12 @@
   --rp-radius-sm: 8px;
   --rp-radius-md: 10px;
   --rp-transition: 150ms ease;
+  --rp-rail-width: 220px;
+  --rp-rail-compact-width: 88px;
+  --rp-toolbar-min-height: 64px;
+  --rp-content-max: 1280px;
+  --rp-content-gutter: 24px;
+  --rp-panel-padding: 16px;
 }
 
 * {

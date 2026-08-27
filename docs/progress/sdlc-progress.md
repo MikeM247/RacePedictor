@@ -1,22 +1,22 @@
 # SDLC Progress
 
-Last updated: 2026-08-20
+Last updated: 2026-08-24
 
 ## 2026-08-20 Night Ops UI Refresh
 
 **Outcome:** RacePredictor's canonical dashboard routes now use the Night Ops dark analytical visual system, with workout-first Today, readable Calendar summary/detail behavior, explicit-week Plan progress, and stable Activities detail.
 
-**Current gate:** Cross-slice QA and exact-preview Product Owner acceptance.
+**Current gate:** Exact-preview Product Owner acceptance.
 
-**Status:** Implementation and focused validation are complete. Full regression and preview review remain. The refresh does not alter coaching authority, plan immutability, amendment history, data contracts, authentication, or provider boundaries.
+**Status:** Implementation, full regression, responsive/accessibility browser validation, and the local preview presentation are complete. The exact validated preview remains open for Product Owner review. The refresh does not alter coaching authority, plan immutability, amendment history, data contracts, authentication, or provider boundaries.
 
 | Role | Status | Evidence / next action |
 |---|---|---|
 | Product Owner | Direction accepted | Option 2 — Night Ops selected; review exact preview after QA |
 | UX/UI | Complete | `docs/UI_GUIDELINES.md`, `docs/UI_UX_SPEC.md`, and `docs/design/screens.md` aligned with delivery |
 | Engineering | Complete | Shared shell/Today, Calendar/Plan/secondary screens, and Activities/Login slices implemented |
-| QA | In Progress | Run full regression, browser, accessibility, and visual checks; classify existing Calendar route status mismatch |
-| Product Owner Review | Not Started | Review accepted preview against workout-first, readable Calendar, truthful status, and safety criteria |
+| QA | Passed | Typecheck, 87/87 web unit tests, production build, 17/17 local E2E, 7/7 online E2E, 3/3 auth E2E, responsive route-chain, focus, overflow, reduced-motion, forced-colour, and zoom-proxy gates passed |
+| Product Owner Review | Presented | Exact local preview is open at `http://127.0.0.1:3310/dashboard` for review against workout-first, readable Calendar, truthful status, and safety criteria |
 | Launch | Not Started | Promote only the exact accepted preview |
 
 ## 2026-08-13 Reasoned Future-session Amendments

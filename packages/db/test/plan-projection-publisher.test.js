@@ -18,6 +18,8 @@ test("approved plan publication is device-fenced, replay-safe, athlete-scoped, a
   const value = plan("athlete-a");
   const first = await publisher.publishApproved(scopeA, value, "device-a");
   assert.equal(first.reused, false);
+  assert.equal(prisma.calls.calendarSessionBulk, 1);
+  assert.equal(prisma.calls.syncChangeBulk, 1);
   assert.deepEqual(prisma.changes.map((change) => [change.cursor, change.entityType, change.entityId]), [
     [1n, "plan", "plan-a"],
     [2n, "calendar_session", "run-a"],
@@ -39,6 +41,18 @@ test("draft proposals cannot cross the approved online projection boundary", asy
   const { activatedAt: _activatedAt, activatedBy: _activatedBy, ...draft } = plan("athlete-a");
   await assert.rejects(publisher.publishApproved(scopeA, { ...draft, status: "draft" }, "device-a"), /approved/u);
   assert.equal(prisma.changes.length, 0);
+});
+
+test("large approved plans are published in bounded bulk writes", async () => {
+  const prisma = fakePrisma();
+  const publisher = new PrismaTrainingPlanProjectionPublisher({ prisma, now: () => NOW });
+  const value = largePlan("athlete-a");
+
+  await publisher.publishApproved(scopeA, value, "device-a");
+
+  assert.equal(prisma.sessions.length, 123);
+  assert.deepEqual(prisma.calls.calendarSessionBulkItems, [123]);
+  assert.deepEqual(prisma.calls.syncChangeBulkItems, [124]);
 });
 
 test("publishing a replacement retires the prior projection without corrupting approved history", async () => {
@@ -122,11 +136,47 @@ function plan(athleteId, id = "plan-a") {
   };
 }
 
+function largePlan(athleteId) {
+  const startsOn = "2026-08-10";
+  const workouts = Array.from({ length: 123 }, (_, index) => {
+    const date = new Date(`${startsOn}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + index);
+    const scheduledDate = date.toISOString().slice(0, 10);
+    return {
+      id: `run-large-${index + 1}`,
+      kind: "run",
+      scheduledDate,
+      title: "Easy run",
+      purpose: "Aerobic base",
+      prescription: "Run easily for 30 minutes.",
+      cautions: [],
+      durationMinutes: 30,
+    };
+  });
+  const weeks = new Map();
+  for (const workout of workouts) {
+    const date = new Date(`${workout.scheduledDate}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+    const weekStartsOn = date.toISOString().slice(0, 10);
+    const week = weeks.get(weekStartsOn) ?? { weekStartsOn, focus: "Approved aerobic week", sessionIds: [] };
+    week.sessionIds.push(workout.id);
+    weeks.set(weekStartsOn, week);
+  }
+  return {
+    ...plan(athleteId, "plan-large"),
+    startsOn,
+    endsOn: workouts.at(-1).scheduledDate,
+    weeklyStructure: [...weeks.values()],
+    workouts,
+  };
+}
+
 function fakePrisma() {
   const devices = new Map([["device-a", { id: "device-a", athleteId: "athlete-a", status: "active" }]]);
   const projections = [];
   const changes = [];
   const sessions = [];
+  const calls = { calendarSessionBulk: 0, syncChangeBulk: 0, calendarSessionBulkItems: [], syncChangeBulkItems: [] };
   const transaction = {
     pairedDevice: { findUnique: async ({ where }) => {
       const row = devices.get(where.id_athleteId.id);
@@ -151,6 +201,15 @@ function fakePrisma() {
       },
     },
     calendarSessionProjection: {
+      createMany: async ({ data }) => {
+        calls.calendarSessionBulk += 1;
+        calls.calendarSessionBulkItems.push(data.length);
+        for (const create of data) {
+          const exists = sessions.some((item) => item.athleteId === create.athleteId && item.planId === create.planId && item.sessionId === create.sessionId);
+          if (!exists) sessions.push({ id: `session-${sessions.length + 1}`, ...create });
+        }
+        return { count: data.length };
+      },
       upsert: async ({ where, create }) => {
         const key = where.athleteId_planId_sessionId;
         let row = sessions.find((item) => item.athleteId === key.athleteId && item.planId === key.planId && item.sessionId === key.sessionId);
@@ -160,11 +219,17 @@ function fakePrisma() {
     },
     syncChange: {
       aggregate: async ({ where }) => ({ _max: { cursor: changes.filter((item) => item.athleteId === where.athleteId).at(-1)?.cursor ?? null } }),
+      createMany: async ({ data }) => {
+        calls.syncChangeBulk += 1;
+        calls.syncChangeBulkItems.push(data.length);
+        changes.push(...data);
+        return { count: data.length };
+      },
       create: async ({ data }) => { changes.push({ ...data }); return data; },
     },
   };
   return {
-    devices, projections, changes, sessions,
+    devices, projections, changes, sessions, calls,
     trainingPlanProjection: transaction.trainingPlanProjection,
     $transaction: async (operation) => operation(transaction),
   };

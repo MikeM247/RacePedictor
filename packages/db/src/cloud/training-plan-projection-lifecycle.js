@@ -39,8 +39,9 @@ export function activateApprovedPlan(plan, occurredAt) {
 
 export async function appendPlanSyncChanges(transaction, athleteId, plans, occurredAt, includeWorkoutsForPlanId) {
   let cursor = await nextCursor(transaction, athleteId);
+  const changes = [];
   for (const plan of plans) {
-    await transaction.syncChange.create({ data: {
+    changes.push({
       athleteId,
       cursor,
       entityType: "plan",
@@ -49,11 +50,11 @@ export async function appendPlanSyncChanges(transaction, athleteId, plans, occur
       entityVersion: plan.revision,
       selectedFields: plan,
       occurredAt,
-    } });
+    });
     if (plan.id === includeWorkoutsForPlanId) {
       for (const workout of plan.workouts) {
         cursor += 1n;
-        await transaction.syncChange.create({ data: {
+        changes.push({
           athleteId,
           cursor,
           entityType: "calendar_session",
@@ -62,14 +63,32 @@ export async function appendPlanSyncChanges(transaction, athleteId, plans, occur
           entityVersion: plan.revision,
           selectedFields: workout,
           occurredAt,
-        } });
+        });
       }
     }
     cursor += 1n;
   }
+  if (typeof transaction.syncChange.createMany === "function") {
+    await transaction.syncChange.createMany({ data: changes });
+    return;
+  }
+  for (const change of changes) await transaction.syncChange.create({ data: change });
 }
 
 export async function seedPlanSessionProjections(transaction, athleteId, plan) {
+  const sessions = plan.workouts.map((workout) => ({
+    athleteId,
+    planId: plan.id,
+    sessionId: workout.id,
+    prescribedSession: workout,
+    effectiveSession: workout,
+    status: "upcoming",
+    revision: plan.revision,
+  }));
+  if (typeof transaction.calendarSessionProjection.createMany === "function") {
+    await transaction.calendarSessionProjection.createMany({ data: sessions, skipDuplicates: true });
+    return;
+  }
   for (const workout of plan.workouts) {
     await transaction.calendarSessionProjection.upsert({
       where: {

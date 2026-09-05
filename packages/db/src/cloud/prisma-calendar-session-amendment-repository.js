@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { plannedWorkoutSchema } from "../../../core/src/contracts/coaching.ts";
+import { plannedWorkoutSchema, sessionAmendmentSchema } from "../../../core/src/contracts/coaching.ts";
 import { buildCoachingReviewContext } from "../../../core/src/services/coaching-review-context.ts";
 import { assertAthleteScope } from "./athlete-scope.js";
 import { appendCalendarSessionSyncChange, parsePlanProjection } from "./training-plan-projection-lifecycle.js";
@@ -328,7 +328,10 @@ function projectSession(row) {
   const history = (row.amendments ?? []).flatMap((item) => {
     if (!item.beforeValues) return [item];
     try {
-      return [projectAmendment(item)];
+      const amendment = sessionAmendmentSchema.safeParse(projectAmendment(item));
+      if (amendment.success) return [amendment.data];
+      reportProjectionReadFailure("calendar-session-history", amendment.error);
+      return [];
     } catch (error) {
       reportProjectionReadFailure("calendar-session-history", error);
       return [];
@@ -376,7 +379,6 @@ function projectAmendment(row) {
     id: row.id,
     planId: row.planId,
     sessionId: row.sessionId,
-    revision: row.revision,
     operation: row.operation,
     reason: row.reason,
     changedFields: row.changedFields,

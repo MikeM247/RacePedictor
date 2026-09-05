@@ -16,11 +16,11 @@ Directly updating an approved plan would erase the distinction between the presc
 RacePredictor represents a manual change to a future session as an append-only amendment overlay:
 
 - the approved plan, approved workout, approval metadata, and content hash remain immutable;
-- a session is eligible only when its effective local date is after the athlete's current local date in the saved plan timezone;
+- a session is eligible for an amendment, reschedule, or restore only when its effective local date is after the athlete's current local date in the saved plan timezone; a session before the athlete's current local date may only be recorded as skipped;
 - title, purpose, prescription, duration, distance, RPE, start time, cautions, effective date, and skipped/upcoming state may be overridden within existing workout invariants;
 - session identity, kind, prescribed date, plan range, weekly structure, and goal remain immutable and require the normal proposal-and-approval workflow to change;
 - every amend, reschedule, skip, and restore command requires a trimmed reason of 1 to 500 characters;
-- each command records the actor, timestamp, reason, changed-field allow-list, exact before/after state, expected revision, and resulting revision;
+- each command records the actor, timestamp, reason, changed-field allow-list, exact before/after state, expected revision, and resulting revision; a past-session skip may change only status and is not a completion/review signal;
 - Calendar and Today derive a current working session from the approved prescription plus ordered amendments and expose both states clearly;
 - the authenticated cloud store is authoritative for online changes, and equivalent local behavior remains available in local mode;
 - paired-device credentials cannot author amendments;
@@ -48,7 +48,7 @@ The UI states that the history is available for later AI review. It never claims
 
 ## Consequences
 
-The athlete can make practical future-session changes without losing approval provenance. Calendar, Today, local sync, cloud reads, and later AI review gain a shared effective-session model and optimistic concurrency boundary.
+The athlete can make practical future-session changes and correct a missed past-session record without losing approval provenance. Calendar, Today, local sync, cloud reads, and later AI review gain a shared effective-session model and optimistic concurrency boundary.
 
 This introduces a two-state model—approved and effective—that must remain explicit in contracts and UI. Amendment reasons may contain sensitive personal or health context, so they are owner-scoped, length-bounded, HTML-escaped, excluded from routine logs/metrics, and never exposed through public status surfaces.
 

@@ -230,6 +230,58 @@ test("online Calendar saves a reasoned amendment to a future owner session", asy
   await expect(card).toContainText("No AI review is claimed");
 });
 
+test("online Calendar records a past session as skipped without changing its approved source", async ({ page }) => {
+  const today = localDate();
+  const pastDate = addDays(today, -1);
+  const original = {
+    id: "run-past", kind: "run", scheduledDate: pastDate, title: "Thursday hilly run",
+    purpose: "Build controlled climbing strength.", prescription: "Run the approved hilly route.",
+    cautions: [], durationMinutes: 60, distanceMeters: 8500, intensityRpe: 6,
+  };
+  let session = {
+    ...original, prescribedDate: pastDate, effectiveDate: pastDate, originalDate: pastDate,
+    status: "upcoming", revision: 2, warnings: [], original, amendments: [],
+  } as Record<string, unknown>;
+
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ data: { ...plan, startsOn: pastDate, endsOn: addDays(today, 14), timezone: "Africa/Johannesburg" } }),
+  }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ data: { stale: { isStale: false } } }),
+  }));
+  await page.route("**/api/v1/coaching/calendar**", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toMatchObject({
+        operation: "skip", expectedRevision: 2, reason: "Skipped by athlete.",
+      });
+      const amendment = {
+        id: "past-skip", operation: "skip", reason: "Skipped by athlete.",
+        changedAt: new Date().toISOString(), changedFields: ["status"], resultingRevision: 3,
+      };
+      session = { ...session, status: "skipped", revision: 3, amendments: [amendment] };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { session, operation: "skip" } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { sessions: [session] } }) });
+  });
+
+  await page.goto(`/dashboard/calendar?date=${pastDate}`);
+  const card = page.getByRole("article").filter({ hasText: "Thursday hilly run" });
+  await expect(card.getByText("Past sessions can only be recorded as skipped.")).toBeVisible();
+  await expect(card.getByRole("button", { name: "Amend session" })).toHaveCount(0);
+  await card.getByRole("button", { name: "Record skipped" }).click();
+  const dialog = page.getByRole("alertdialog", { name: "Confirm skip" });
+  await dialog.getByLabel("Reason for this change").fill("Skipped by athlete.");
+  await dialog.getByRole("button", { name: "Confirm change" }).click();
+
+  await expect(card).toContainText("run · skipped");
+  await expect(card.getByText("Approved source prescription")).toBeVisible();
+  await card.getByText("Change history (1)").click();
+  await expect(card).toContainText("Skipped by athlete.");
+  await expect(card.getByRole("button", { name: "Record skipped" })).toHaveCount(0);
+});
+
 test("online Settings connects and disconnects Strava, pairs once, reports status, and revokes only local sync", async ({ page }) => {
   const existing = {
     id: "device_existing", athleteId: "athlete-a", displayName: "Old computer", status: "active" as "active" | "revoked",

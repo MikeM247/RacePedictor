@@ -188,8 +188,13 @@ export class PrismaCalendarSessionAmendmentRepository {
         }
         const localToday = localDateInTimezone(this.#now(), plan.timezone);
         const current = plannedWorkoutSchema.parse(row.effectiveSession);
-        if (current.scheduledDate <= localToday) {
-          throw new CalendarSessionAmendmentError("FUTURE_ONLY", "Only a future active-plan session can be amended");
+        const isPastSession = current.scheduledDate < localToday;
+        const isFutureSession = current.scheduledDate > localToday;
+        if (!isFutureSession && !(isPastSession && request.operation === "skip")) {
+          throw new CalendarSessionAmendmentError(
+            "FUTURE_ONLY",
+            "Only a past session can be marked skipped; all other changes require a future active-plan session",
+          );
         }
         const changed = applyOperation({ plan, current, status: row.status, request, localToday });
         const revision = row.revision + 1;

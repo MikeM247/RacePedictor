@@ -5,6 +5,7 @@ import { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, useEffect, u
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import {
   canAmendFutureSession,
+  canRecordPastSessionSkip,
   changeHistoryLabel,
   externalAutomationStatusLabel,
   formatAdjustmentCue,
@@ -704,6 +705,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   function renderSessionCard(session: CalendarSessionView) {
     const isToday = session.effectiveDate === today;
     const isFuture = canAmendFutureSession(session, today);
+    const canRecordPastSkip = canRecordPastSessionSkip(session, today);
     const original = session.original;
     const originalTarget = [
       original.distanceMeters ? `${Number((original.distanceMeters / 1000).toFixed(2))} km` : null,
@@ -732,6 +734,9 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
         {session.status === "skipped"
           ? <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "restore", reason: "", warnings: [] }); }}>Restore</button>
           : <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "skip", reason: "", warnings: [] }); }}>Skip</button>}
+      </div> : canRecordPastSkip ? <div className="session-actions">
+        <p className="adjustment-cue">Past sessions can only be recorded as skipped. The approved source remains unchanged.</p>
+        <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "skip", reason: "", warnings: [] }); }}>Record skipped</button>
       </div> : <p className="adjustment-cue">Past and current-day sessions are read-only. Future changes belong in Calendar.</p>}
     </article>;
   }

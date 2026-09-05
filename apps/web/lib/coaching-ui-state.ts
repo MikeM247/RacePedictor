@@ -221,6 +221,13 @@ export function canAmendFutureSession(session: Pick<CalendarSessionView, "effect
   return session.effectiveDate > currentLocalDate;
 }
 
+export function canRecordPastSessionSkip(
+  session: Pick<CalendarSessionView, "effectiveDate" | "status">,
+  currentLocalDate: string,
+): boolean {
+  return session.effectiveDate < currentLocalDate && session.status !== "skipped";
+}
+
 export function changeHistoryLabel(amendment: CalendarSessionAmendmentView): string {
   const fields = amendment.changedFields.length > 0
     ? amendment.changedFields.join(", ")

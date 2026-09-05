@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canAmendFutureSession,
+  canRecordPastSessionSkip,
   changeHistoryLabel,
   externalAutomationStatusLabel,
   formatAdjustmentCue,
@@ -81,6 +82,12 @@ test("allows only sessions after the athlete's current local date", () => {
   assert.equal(canAmendFutureSession({ effectiveDate: "2026-08-14" }, "2026-08-13"), true);
   assert.equal(canAmendFutureSession({ effectiveDate: "2026-08-13" }, "2026-08-13"), false);
   assert.equal(canAmendFutureSession({ effectiveDate: "2026-08-12" }, "2026-08-13"), false);
+});
+
+test("allows a past session to be recorded as skipped without opening any other past edits", () => {
+  assert.equal(canRecordPastSessionSkip({ effectiveDate: "2026-08-12", status: "upcoming" }, "2026-08-13"), true);
+  assert.equal(canRecordPastSessionSkip({ effectiveDate: "2026-08-13", status: "upcoming" }, "2026-08-13"), false);
+  assert.equal(canRecordPastSessionSkip({ effectiveDate: "2026-08-12", status: "skipped" }, "2026-08-13"), false);
 });
 
 test("preserves the approved prescription and formats a concrete session target", () => {

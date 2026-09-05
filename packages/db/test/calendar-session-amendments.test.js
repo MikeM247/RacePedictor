@@ -56,7 +56,7 @@ test("future cloud session amendments are atomic, append-only, replay-safe, and 
   );
 });
 
-test("cloud session amendments require owner credentials, reasons, and a future effective date", async () => {
+test("cloud session amendments require owner credentials, reasons, and an eligible session date", async () => {
   const prisma = fakePrisma();
   const repository = new PrismaCalendarSessionAmendmentRepository({ prisma, now: () => new Date("2026-08-12T12:00:00.000Z") });
   await assert.rejects(
@@ -74,6 +74,30 @@ test("cloud session amendments require owner credentials, reasons, and a future 
   await assert.rejects(
     repository.amend(ownerScope("athlete-a"), "run-a", {
       operation: "skip", expectedRevision: 2, reason: "Recovery", idempotencyKey: "today", changes: {},
+    }),
+    (error) => error instanceof CalendarSessionAmendmentError && error.code === "FUTURE_ONLY",
+  );
+});
+
+test("a past cloud session can only be recorded as skipped with append-only history", async () => {
+  const prisma = fakePrisma();
+  const repository = new PrismaCalendarSessionAmendmentRepository({ prisma, now: () => new Date("2026-08-13T12:00:00.000Z") });
+  const result = await repository.amend(ownerScope("athlete-a"), "run-a", {
+    operation: "skip", expectedRevision: 2, reason: "Skipped by athlete.", idempotencyKey: "past-skip", changes: {},
+  });
+
+  assert.equal(result.reused, false);
+  assert.equal(result.session.status, "skipped");
+  assert.equal(result.session.revision, 3);
+  assert.equal(result.amendment.reason, "Skipped by athlete.");
+  assert.deepEqual(result.amendment.changedFields, ["status"]);
+  assert.equal(prisma.projection.plan.workouts[0].title, "Easy run", "approved plan JSON stays immutable");
+  assert.deepEqual(prisma.amendments[0].beforeValues, { session: approvedPlan().workouts[0], status: "upcoming" });
+  assert.deepEqual(prisma.amendments[0].afterValues, { session: approvedPlan().workouts[0], status: "skipped" });
+
+  await assert.rejects(
+    repository.amend(ownerScope("athlete-a"), "run-a", {
+      operation: "restore", expectedRevision: 3, reason: "Reconsidered.", idempotencyKey: "past-restore", changes: {},
     }),
     (error) => error instanceof CalendarSessionAmendmentError && error.code === "FUTURE_ONLY",
   );

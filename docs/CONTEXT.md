@@ -77,7 +77,7 @@ The analytics dashboard and ingestion pipeline above are the data foundation for
 - The app owns canonical history plus the explicitly settled goal, active versioned plan, effective calendar, and reminder preferences.
 - Codex consumes `coaching-context.v1` and returns a validated `coaching-plan-proposal.v1` draft/proposal; import never activates it.
 - History enters through manual bounded CSV or single-activity GPX upload with validation and dedupe.
-- Calendar edits require a reason and preserve the approved prescription plus revision/audit history so later AI review can understand why a future session changed.
+- Calendar changes require a reason and preserve the approved prescription plus revision/audit history. Future sessions may be amended, rescheduled, skipped, or restored; a past session may only be recorded as skipped. This does not imply a reviewed or completed workout.
 - Today works in-app. Daily reminder preference defaults to 06:30 `Africa/Johannesburg`, is configurable, and is handed off separately to a recurring Codex automation.
 
 Phase 2 defers automatic Garmin sync, automatic post-run review/adaptation, autonomous plan/calendar changes, and app-owned push/email/SMS delivery. See `docs/adr/0002-digital-coach-control-boundaries.md`.
@@ -93,7 +93,7 @@ The earlier local-only/authentication deferrals continue to describe Phase 1, bu
 - Version 1 has no arbitrary text, note identity, vault path, goal, or plan prescription. Unknown or unselected fields are rejected locally and in the cloud.
 - The product exposes one athlete, while actor, repository, provider, object, device, job, change-feed, and snapshot boundaries are athlete-scoped for later expansion.
 - Cloud workouts and plans can be pulled into a local SQLite projection through a replay-safe cursor. The online product does not depend on the local computer being on.
-- Neon stores the owner-authored effective overlay and append-only reasoned history for future-session amend/reschedule/skip/restore actions. Calendar and Today show the effective projection while retaining the original prescription; competing edits require reload and review rather than an automatic retry.
+- Neon stores the owner-authored effective overlay and append-only reasoned history for future-session amend/reschedule/skip/restore actions and past-session skip records. A past skip cannot amend, move, restore, or alter the approved prescription. Calendar and Today show the effective projection while retaining the original prescription; competing edits require reload and review rather than an automatic retry.
 - Automatic review/adaptation and autonomous plan changes remain out of scope; ingestion or context publication cannot mutate an approved plan.
 - Free-tier operation optimizes for durable recovery and truthful freshness, not a real-time or uptime guarantee.
 

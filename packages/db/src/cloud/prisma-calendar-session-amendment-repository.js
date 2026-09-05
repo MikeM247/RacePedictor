@@ -325,7 +325,15 @@ function applyOperation({ plan, current, status, request, localToday }) {
 function projectSession(row) {
   const prescribed = plannedWorkoutSchema.parse(row.prescribedSession);
   const effective = plannedWorkoutSchema.parse(row.effectiveSession);
-  const history = (row.amendments ?? []).map((item) => item.beforeValues ? projectAmendment(item) : item);
+  const history = (row.amendments ?? []).flatMap((item) => {
+    if (!item.beforeValues) return [item];
+    try {
+      return [projectAmendment(item)];
+    } catch (error) {
+      reportProjectionReadFailure("calendar-session-history", error);
+      return [];
+    }
+  });
   return sessionFromSnapshots(row.planId, row.sessionId, effective, row.status, row.revision, prescribed, history);
 }
 

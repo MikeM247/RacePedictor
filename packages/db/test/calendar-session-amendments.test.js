@@ -94,6 +94,9 @@ test("a past cloud session can only be recorded as skipped with append-only hist
   assert.equal(prisma.projection.plan.workouts[0].title, "Easy run", "approved plan JSON stays immutable");
   assert.deepEqual(prisma.amendments[0].beforeValues, { session: approvedPlan().workouts[0], status: "upcoming" });
   assert.deepEqual(prisma.amendments[0].afterValues, { session: approvedPlan().workouts[0], status: "skipped" });
+  const [calendarSession] = await repository.listActiveCalendar(ownerScope("athlete-a"), { from: "2026-08-10", to: "2026-08-16" });
+  assert.equal(calendarSession.status, "skipped");
+  assert.equal(calendarSession.amendments[0].reason, "Skipped by athlete.");
 
   await assert.rejects(
     repository.amend(ownerScope("athlete-a"), "run-a", {

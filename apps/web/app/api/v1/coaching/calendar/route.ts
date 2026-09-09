@@ -16,11 +16,6 @@ async function getCalendar(request: Request) {
     const activePlan = service.getActivePlan();
     const sessions = service.listActiveCalendar()
       .filter((session) => session.effectiveDate >= from && session.effectiveDate <= to);
-    const historicalSessions = service.listPlanHistory()
-      .filter((plan) => plan.status === "retired")
-      .flatMap((plan) => plan.workouts
-        .filter((workout) => workout.scheduledDate >= from && workout.scheduledDate <= to)
-        .map((workout) => ({ ...workout, planId: plan.id, planVersion: plan.version })));
     const timezone = activePlan?.timezone ?? service.loadProfile()?.timezone ?? "Africa/Johannesburg";
     const activities = service.listCalendarActivities({ from, to })
       .map((activity) => ({
@@ -28,7 +23,7 @@ async function getCalendar(request: Request) {
         localDate: localDateForCalendar(activity.occurredAt, timezone),
       }))
       .filter((activity) => activity.localDate >= from && activity.localDate <= to);
-    return calendarRouteDataSchema.parse({ from, to, sessions, historicalSessions, activities });
+    return calendarRouteDataSchema.parse({ from, to, sessions, historicalSessions: [], activities, activitiesReadStatus: "available" });
   });
 }
 

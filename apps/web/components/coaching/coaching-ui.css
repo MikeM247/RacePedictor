@@ -190,3 +190,40 @@
 @media(max-width:430px){.summary-list,.result-grid{grid-template-columns:1fr}.coach-actions>.button{width:100%}}
 @media(prefers-reduced-motion:reduce){.coaching-layout *{scroll-behavior:auto!important;transition-duration:.01ms!important}}
 @media(forced-colors:active){.calendar-session-summary--selected,.calendar-day--today,.coach-panel--plan-focus,.data-quality-panel--import,.settings-panel{border:2px solid Highlight}.plan-progress-track span{background:Highlight}.today-marker{background:Highlight;color:HighlightText}}
+
+/* Four-week calendar */
+.calendar-weeks{display:grid;gap:10px}
+.calendar-scroll-region{max-height:calc(100vh - 15rem);overflow:auto;outline:none}
+.calendar-scroll-region:focus-visible{outline:3px solid color-mix(in srgb,var(--rp-focus,#67ddff) 38%,transparent);outline-offset:5px}
+.calendar-range-announcement{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.calendar-weekday-headings,.calendar-week-row{display:grid;grid-template-columns:104px repeat(7,minmax(0,1fr));gap:8px}
+.calendar-weekday-headings{align-items:end;padding:0 2px;color:var(--rp-text-muted,#a9b6c6);font-size:.72rem;letter-spacing:.06em;text-align:center;text-transform:uppercase}
+.calendar-weekday-headings strong{padding:0 4px;font-weight:700}
+.calendar-week-row{align-items:stretch}
+.calendar-week-label{display:grid;align-content:start;gap:4px;padding:12px 6px;color:var(--rp-text-muted,#a9b6c6);font-size:.75rem}
+.calendar-week-label span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase}
+.calendar-week-label time{color:var(--rp-text,#f5f8fc);font-weight:700;line-height:1.25}
+.calendar-week-row .calendar-day{position:relative;min-height:184px;grid-template-rows:auto minmax(0,1fr);gap:8px;padding:9px}
+.calendar-day-heading{display:flex!important;min-height:0!important;align-items:start;gap:6px;padding:0!important}
+.calendar-day-heading time{min-width:0;padding-top:4px;font-size:.76rem;line-height:1.2}
+.calendar-day-heading .today-marker{margin:0;padding:3px 6px;font-size:.64rem}
+.calendar-info-button{display:grid;flex:0 0 auto;place-items:center;width:30px;height:30px;margin-left:auto;padding:0;border:1px solid var(--rp-border-strong,#3c5268);border-radius:999px;background:var(--rp-surface-raised,#132438);color:var(--rp-cyan,#20c7f5);cursor:pointer;font:inherit;font-size:1rem;line-height:1}
+.calendar-info-button:hover{border-color:var(--rp-cyan,#20c7f5);background:color-mix(in srgb,var(--rp-cyan,#20c7f5) 10%,var(--rp-surface-raised,#132438))}
+.calendar-info-button:focus-visible{outline:3px solid color-mix(in srgb,var(--rp-focus,#67ddff) 38%,transparent);outline-offset:2px}
+.calendar-day-card{display:grid;align-content:start;gap:7px;min-width:0;padding:10px;border:1px solid var(--rp-border,#293b4e);border-left:3px solid var(--rp-violet,#9b78ff);border-radius:7px;background:var(--rp-surface,#0e1b2b);overflow:hidden}
+.calendar-day-card--actual{border-left-color:var(--rp-lime,#9ddd3b)}
+.calendar-day-card p{margin:0;color:var(--rp-violet,#9b78ff);font-size:.66rem;font-weight:700;letter-spacing:.07em;line-height:1.2;text-transform:uppercase}
+.calendar-day-card--actual p{color:var(--rp-lime,#9ddd3b)}
+.calendar-day-card strong{display:-webkit-box;overflow:hidden;font-size:.83rem;line-height:1.3;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.calendar-day-card span,.calendar-day-card small{overflow:hidden;color:var(--rp-text-muted,#a9b6c6);font-size:.72rem;line-height:1.35;text-overflow:ellipsis}
+.calendar-day-card span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.calendar-day-card small{margin-top:auto;color:var(--rp-amber,#f4b942)}
+.coach-dialog--calendar-detail{display:grid;gap:14px;width:min(760px,100%)}
+.coach-dialog--calendar-detail>.session-card{min-width:0}
+.calendar-detail-records{display:grid;gap:12px}
+.calendar-plan-context{display:grid;gap:8px;padding-top:12px;border-top:1px solid var(--rp-border,#293b4e)}
+.calendar-plan-context>.eyebrow{margin:0;color:var(--rp-violet,#9b78ff);font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+.calendar-plan-context .adjustment-cue{margin:0}
+
+@media(max-width:1199px){.calendar-weekday-headings,.calendar-week-row{grid-template-columns:88px repeat(7,minmax(120px,1fr))}.calendar-weeks{overflow-x:auto;padding-bottom:4px}.calendar-scroll-region{max-height:none}}
+@media(max-width:760px){.coach-dialog--calendar-detail{width:100%}.calendar-detail-heading>.button{width:auto}.calendar-weekday-headings,.calendar-week-row{grid-template-columns:74px repeat(7,minmax(116px,1fr))}.calendar-week-label{padding-left:2px;padding-right:2px}}

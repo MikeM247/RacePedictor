@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, TouchEvent as ReactTouchEvent, WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
+import type { ActivityDetail } from "../../../../packages/core/src/contracts/activity";
+import { readActivityDetailResponse } from "../../lib/activities-api-client";
+import { ActivityRecordContent } from "../activities/activities-shell";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import {
   canAmendFutureSession,
   canRecordPastSessionSkip,
+  calendarWindowRange,
+  calendarActivitiesReadStatus,
   changeHistoryLabel,
   externalAutomationStatusLabel,
   formatAdjustmentCue,
@@ -15,7 +20,6 @@ import {
   handoffStatusLabel,
   localDateInTimezone,
   normalizeCalendarActivities,
-  normalizeHistoricalCalendarSessions,
   normalizeCalendarSessions,
   normalizeReminderExternalStatus,
   outOfPlanRangeWarning,
@@ -23,16 +27,20 @@ import {
   weekRange,
   type CalendarSessionView,
   type CalendarActivityView,
-  type HistoricalCalendarSessionView,
   type ReminderExternalStatus,
 } from "../../lib/coaching-ui-state";
 import "../dashboard/dashboard.css";
+import "../activities/activities.css";
 import "./coaching-ui.css";
 import { ActivePlanOverview } from "./active-plan-overview";
 
 type Page = "plan" | "calendar" | "data-quality" | "settings";
 type JsonRecord = Record<string, unknown>;
 type RequestState = "idle" | "loading" | "success" | "error";
+type CalendarDetail =
+  | { kind: "session"; id: string; date: string }
+  | { kind: "day"; date: string };
+type ActivityDetailState = { status: "loading" | "success" | "error"; activity?: ActivityDetail; error?: string };
 const timezoneDefault = "Africa/Johannesburg";
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -536,9 +544,11 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const [anchorDate, setAnchorDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(initialDate ?? "") ? initialDate! : today);
   const [view, setView] = useState<"week" | "agenda">("week");
   const [sessions, setSessions] = useState<CalendarSessionView[]>([]);
-  const [historicalSessions, setHistoricalSessions] = useState<HistoricalCalendarSessionView[]>([]);
   const [activities, setActivities] = useState<CalendarActivityView[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(focusSessionId ?? null);
+  const [activitiesReadStatus, setActivitiesReadStatus] = useState<"available" | "unavailable">("available");
+  const [rangeAnnouncement, setRangeAnnouncement] = useState("");
+  const [activityDetails, setActivityDetails] = useState<Record<string, ActivityDetailState>>({});
+  const [selectedDetail, setSelectedDetail] = useState<CalendarDetail | null>(focusSessionId ? { kind: "session", id: focusSessionId, date: anchorDate } : null);
   const [state, setState] = useState<RequestState>("loading");
   const [message, setMessage] = useState<string>();
   const [staleMessage, setStaleMessage] = useState<string>();
@@ -558,41 +568,76 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   } | null>(null);
   const pendingLauncherRef = useRef<HTMLElement | null>(null);
   const amendmentLauncherRef = useRef<HTMLElement | null>(null);
+  const detailLauncherRef = useRef<HTMLElement | null>(null);
+  const calendarRegionRef = useRef<HTMLElement | null>(null);
+  const calendarRequestRef = useRef<AbortController | null>(null);
+  const wheelDeltaRef = useRef(0);
+  const touchStartYRef = useRef<number | null>(null);
+  const loadedOnce = useRef(false);
   const pendingModal = useModalKeyboard<HTMLFormElement>(Boolean(pending), () => {
     if (actionState !== "loading") setPending(null);
   }, pendingLauncherRef);
   const amendmentModal = useModalKeyboard<HTMLElement>(Boolean(amendDraft), () => {
     if (actionState !== "loading") setAmendDraft(null);
   }, amendmentLauncherRef);
-  const range = weekRange(anchorDate);
+  const detailModal = useModalKeyboard<HTMLElement>(Boolean(selectedDetail), () => setSelectedDetail(null), detailLauncherRef);
+  const range = calendarWindowRange(anchorDate);
 
   async function loadCalendar(successMessage?: string) {
-    setState("loading"); setMessage("Loading the approved schedule…");
+    calendarRequestRef.current?.abort();
+    const request = new AbortController();
+    calendarRequestRef.current = request;
+    if (!loadedOnce.current) setState("loading");
+    setMessage("Loading the approved schedule…");
     try {
       const [response, active, todayContext] = await Promise.all([
-        apiRequest(`/api/v1/coaching/calendar?from=${range.from}&to=${range.to}`),
-        apiRequest("/api/v1/coaching/plans/active").catch(() => null),
-        apiRequest("/api/v1/coaching/today").catch(() => null),
+        apiRequest(`/api/v1/coaching/calendar?from=${range.from}&to=${range.to}`, { signal: request.signal }),
+        apiRequest("/api/v1/coaching/plans/active", { signal: request.signal }).catch(() => null),
+        apiRequest("/api/v1/coaching/today", { signal: request.signal }).catch(() => null),
       ]);
+      if (calendarRequestRef.current !== request) return;
       const activeRecord = asRecord(active);
       const startsOn = String(activeRecord.startsOn ?? "");
       const endsOn = String(activeRecord.endsOn ?? "");
       const timezone = String(activeRecord.timezone ?? timezoneDefault);
       setPlanTimezone(timezone);
+      if (!loadedOnce.current && !initialDate) {
+        const resolvedToday = localDateInTimezone(timezone);
+        if (resolvedToday !== anchorDate) { setAnchorDate(resolvedToday); return; }
+      }
       setPlanRange(/^\d{4}-\d{2}-\d{2}$/.test(startsOn) && /^\d{4}-\d{2}-\d{2}$/.test(endsOn) ? { startsOn, endsOn } : null);
       const stale = asRecord(asRecord(todayContext).stale);
       setStaleMessage(stale.isStale === true ? String(stale.reason ?? "The approved schedule was built from older activity history.") : undefined);
       const normalizedSessions = normalizeCalendarSessions(response);
+      const normalizedActivities = normalizeCalendarActivities(response);
       setSessions(normalizedSessions);
-      setHistoricalSessions(normalizeHistoricalCalendarSessions(response));
-      setActivities(normalizeCalendarActivities(response));
-      setSelectedSessionId((current) => normalizedSessions.some((session) => session.id === current)
-        ? current
-        : normalizedSessions.find((session) => session.id === focusSessionId)?.id ?? normalizedSessions[0]?.id ?? null);
+      setActivities(normalizedActivities);
+      setActivitiesReadStatus(calendarActivitiesReadStatus(response));
+      setSelectedDetail((current) => {
+        if (current?.kind === "session" && normalizedSessions.some((session) => session.id === current.id)) return current;
+        if (current?.kind === "day") return current;
+        return null;
+      });
+      loadedOnce.current = true;
       setState("success"); setMessage(successMessage);
-    } catch (error) { setState("error"); setMessage(error instanceof Error ? error.message : "Calendar could not be loaded."); }
+      setRangeAnnouncement(`${formatCoachingDate(range.from, timezone)} to ${formatCoachingDate(range.to, timezone)}`);
+    } catch (error) {
+      if (request.signal.aborted || calendarRequestRef.current !== request) return;
+      setState(loadedOnce.current ? "success" : "error");
+      setMessage(error instanceof Error ? error.message : "Calendar could not be loaded.");
+    }
   }
-  useEffect(() => { void loadCalendar(); }, [range.from, range.to]);
+  useEffect(() => {
+    void loadCalendar();
+    return () => calendarRequestRef.current?.abort();
+  }, [range.from, range.to]);
+
+  useEffect(() => {
+    if (!selectedDetail) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [selectedDetail]);
 
   useEffect(() => {
     const narrowCalendar = window.matchMedia("(max-width: 1199px)");
@@ -604,26 +649,83 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
 
   useEffect(() => {
     if (state !== "success" || !focusSessionId) return;
-    if (sessions.some((session) => session.id === focusSessionId) && selectedSessionId !== focusSessionId) {
-      setSelectedSessionId(focusSessionId);
+    if (focusHandled.current === focusSessionId) return;
+    const session = sessions.find((candidate) => candidate.id === focusSessionId);
+    if (session) {
+      setSelectedDetail((current) => current?.kind === "session" && current.id === focusSessionId
+        ? current
+        : { kind: "session", id: focusSessionId, date: session.effectiveDate });
+      focusHandled.current = focusSessionId;
+      setFocusMessage(undefined);
       return;
     }
     const focusKey = `${range.from}:${focusSessionId}`;
     if (focusHandled.current === focusKey) return;
-    const target = document.getElementById(`session-${focusSessionId}`);
-    if (!target) {
-      setFocusMessage("The linked session was not found in this week. Check that the link date matches the approved session.");
-      focusHandled.current = focusKey;
-      return;
-    }
-    setFocusMessage(undefined);
+    setFocusMessage("The linked session was not found in this calendar view. Check that the link date matches the approved session.");
     focusHandled.current = focusKey;
-    target.focus({ preventScroll: true });
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [focusSessionId, range.from, selectedSessionId, sessions, state, view]);
+  }, [focusSessionId, range.from, sessions, state]);
+
+  useEffect(() => {
+    if (!selectedDetail || selectedDetail.date > today) return;
+    const records = activities.filter((activity) => activity.localDate === selectedDetail.date);
+    const missing = records.filter((activity) => !activityDetails[activity.id]);
+    if (missing.length === 0) return;
+    const request = new AbortController();
+    setActivityDetails((current) => ({ ...current, ...Object.fromEntries(missing.map((activity) => [activity.id, { status: "loading" as const }])) }));
+    void Promise.all(missing.map(async (summary) => {
+      try {
+        const response = await fetch(`/api/v1/activities/${encodeURIComponent(summary.id)}`, { signal: request.signal });
+        const data = await readActivityDetailResponse(response);
+        if (!request.signal.aborted) setActivityDetails((current) => ({ ...current, [summary.id]: { status: "success", activity: data.activity } }));
+      } catch (error) {
+        if (!request.signal.aborted) setActivityDetails((current) => ({ ...current, [summary.id]: { status: "error", error: error instanceof Error ? error.message : "The activity could not be loaded." } }));
+      }
+    }));
+    return () => request.abort();
+  }, [activities, selectedDetail, today]);
 
   function moveWeek(days: number) {
-    const date = new Date(`${anchorDate}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); setAnchorDate(date.toISOString().slice(0, 10));
+    if (selectedDetail || state === "loading") return;
+    const date = new Date(`${anchorDate}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    setAnchorDate(date.toISOString().slice(0, 10));
+    setFocusMessage(undefined);
+  }
+
+  function handleCalendarKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.currentTarget !== event.target || selectedDetail) return;
+    if (event.key === "PageUp") { event.preventDefault(); moveWeek(-7); }
+    if (event.key === "PageDown") { event.preventDefault(); moveWeek(7); }
+  }
+
+  function handleCalendarWheel(event: ReactWheelEvent<HTMLElement>) {
+    if (selectedDetail || state === "loading" || event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    const region = event.currentTarget;
+    const atTop = region.scrollTop <= 0;
+    const atBottom = region.scrollTop + region.clientHeight >= region.scrollHeight - 1;
+    if ((event.deltaY < 0 && !atTop) || (event.deltaY > 0 && !atBottom)) return;
+    wheelDeltaRef.current += event.deltaY;
+    if (Math.abs(wheelDeltaRef.current) < 90) return;
+    event.preventDefault();
+    moveWeek(wheelDeltaRef.current < 0 ? -7 : 7);
+    wheelDeltaRef.current = 0;
+  }
+
+  function handleCalendarTouchStart(event: ReactTouchEvent<HTMLElement>) {
+    touchStartYRef.current = event.touches.length === 1 ? event.touches[0].clientY : null;
+  }
+
+  function handleCalendarTouchEnd(event: ReactTouchEvent<HTMLElement>) {
+    const startY = touchStartYRef.current;
+    touchStartYRef.current = null;
+    if (startY === null || selectedDetail || state === "loading" || event.changedTouches.length !== 1) return;
+    const deltaY = startY - event.changedTouches[0].clientY;
+    if (Math.abs(deltaY) < 60) return;
+    const region = event.currentTarget;
+    const atTop = region.scrollTop <= 0;
+    const atBottom = region.scrollTop + region.clientHeight >= region.scrollHeight - 1;
+    if ((deltaY < 0 && !atTop) || (deltaY > 0 && !atBottom)) return;
+    moveWeek(deltaY < 0 ? -7 : 7);
   }
 
   async function confirmEdit() {
@@ -678,17 +780,15 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     }
   }
 
-  const weekDates = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(`${range.from}T00:00:00.000Z`);
-    date.setUTCDate(date.getUTCDate() + index);
-    return date.toISOString().slice(0, 10);
-  });
   const firstEditableDate = (() => {
     const date = new Date(`${today}T00:00:00.000Z`);
     date.setUTCDate(date.getUTCDate() + 1);
     return date.toISOString().slice(0, 10);
   })();
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? sessions[0] ?? null;
+
+  function modalReturnTarget(fallback: HTMLElement) {
+    return selectedDetail ? detailLauncherRef.current ?? fallback : fallback;
+  }
 
   function reviewMove(session: CalendarSessionView, launcher: HTMLElement) {
     const input = document.getElementById(`move-${session.id}`) as HTMLInputElement | null;
@@ -698,11 +798,12 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       : "The approved plan range could not be verified. Retry the calendar before moving this session.";
     const warnings = [sameDayConflictWarning(sessions, session.id, date), rangeWarning]
       .filter((warning): warning is string => Boolean(warning));
-    pendingLauncherRef.current = launcher;
+    pendingLauncherRef.current = modalReturnTarget(launcher);
+    setSelectedDetail(null);
     setPending({ session, operation: "reschedule", date, reason: "", warnings, blocksConfirmation: Boolean(rangeWarning) });
   }
 
-  function renderSessionCard(session: CalendarSessionView) {
+  function renderSessionCard(session: CalendarSessionView, includeId = true) {
     const isToday = session.effectiveDate === today;
     const isFuture = canAmendFutureSession(session, today);
     const canRecordPastSkip = canRecordPastSessionSkip(session, today);
@@ -712,7 +813,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       original.durationMinutes ? `${original.durationMinutes} min` : null,
       original.intensityRpe ? `RPE ${original.intensityRpe}` : null,
     ].filter(Boolean).join(" · ") || "Follow the approved prescription";
-    return <article className={`session-card${isToday ? " session-card--today" : ""}`} id={`session-${session.id}`} tabIndex={-1} key={session.id}>
+    return <article className={`session-card${isToday ? " session-card--today" : ""}`} id={includeId ? `session-${session.id}` : undefined} tabIndex={-1} key={session.id}>
       <div className="session-card-top"><div><p className="eyebrow">{session.kind.replace("_", " ")} · {session.status}</p>{isToday ? <span className="today-marker">Today</span> : null}</div><time dateTime={session.effectiveDate}>{formatCoachingDate(session.effectiveDate)}</time></div>
       <h3>{session.title}</h3><p><strong>Current purpose:</strong> {session.purpose}</p>
       <p className="session-prescription"><strong>Current prescription:</strong> {session.prescription}</p>
@@ -730,56 +831,66 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       {isFuture ? <div className="session-actions">
         <label><span>Move to date</span><input type="date" min={firstEditableDate} defaultValue={session.effectiveDate} id={`move-${session.id}`} /></label>
         <button className="button button-secondary" type="button" onClick={(event) => reviewMove(session, event.currentTarget)}>Review move</button>
-        <button className="button button-secondary" type="button" onClick={(event) => { amendmentLauncherRef.current = event.currentTarget; setActionState("idle"); setActionMessage(undefined); setAmendDraft(amendmentDraft(session)); }}>Amend session</button>
+        <button className="button button-secondary" type="button" onClick={(event) => { amendmentLauncherRef.current = modalReturnTarget(event.currentTarget); setSelectedDetail(null); setActionState("idle"); setActionMessage(undefined); setAmendDraft(amendmentDraft(session)); }}>Amend session</button>
         {session.status === "skipped"
-          ? <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "restore", reason: "", warnings: [] }); }}>Restore</button>
-          : <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "skip", reason: "", warnings: [] }); }}>Skip</button>}
+          ? <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = modalReturnTarget(event.currentTarget); setSelectedDetail(null); setPending({ session, operation: "restore", reason: "", warnings: [] }); }}>Restore</button>
+          : <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = modalReturnTarget(event.currentTarget); setSelectedDetail(null); setPending({ session, operation: "skip", reason: "", warnings: [] }); }}>Skip</button>}
       </div> : canRecordPastSkip ? <div className="session-actions">
         <p className="adjustment-cue">Past sessions can only be recorded as skipped. The approved source remains unchanged.</p>
-        <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = event.currentTarget; setPending({ session, operation: "skip", reason: "", warnings: [] }); }}>Record skipped</button>
+        <button className="button button-secondary" type="button" onClick={(event) => { pendingLauncherRef.current = modalReturnTarget(event.currentTarget); setSelectedDetail(null); setPending({ session, operation: "skip", reason: "", warnings: [] }); }}>Record skipped</button>
       </div> : <p className="adjustment-cue">Past and current-day sessions are read-only. Future changes belong in Calendar.</p>}
     </article>;
   }
 
-  function renderSessionSummary(session: CalendarSessionView) {
-    const isToday = session.effectiveDate === today;
-    const selected = session.id === selectedSession?.id;
-    return <button className={`calendar-session-summary${selected ? " calendar-session-summary--selected" : ""}`} type="button" aria-pressed={selected} aria-controls="calendar-selected-session" onClick={() => setSelectedSessionId(session.id)} key={session.id}>
-      <span className="calendar-summary-top"><span>{session.kind.replace("_", " ")}</span><span>{session.status}</span></span>
-      <strong>{session.title}</strong>
-      <span>{formatSessionTarget(session)}</span>
-      <small>{session.amendments.length > 0 ? `${session.amendments.length} reasoned change${session.amendments.length === 1 ? "" : "s"}` : session.prescribedDate !== session.effectiveDate ? "Date adjusted" : "Approved schedule"}{isToday ? " · Today" : ""}</small>
-    </button>;
+  function renderCalendarDay(date: string) {
+    const daySessions = sessions.filter((session) => session.effectiveDate === date);
+    const dayActivities = activities.filter((activity) => activity.localDate === date);
+    const isToday = date === today;
+    const isPast = date < today;
+    const showActivity = (isPast || isToday) && dayActivities.length > 0;
+    const primarySession = daySessions[0];
+    const supplementaryCount = Math.max(0, dayActivities.length + daySessions.length - 1);
+    let status = "Nothing scheduled";
+    let title = "No plan scheduled";
+    let metrics = "No plan or run recorded";
+    let cue = "No plan or run recorded";
+    let detail: CalendarDetail = { kind: "day", date };
+
+    if (showActivity) {
+      const activity = dayActivities[0];
+      const activityMetrics = [
+        activity.distanceMeters > 0 ? `${Number((activity.distanceMeters / 1000).toFixed(2))} km` : null,
+        activity.elapsedTimeSeconds > 0 ? formatDuration(activity.elapsedTimeSeconds) : null,
+        activity.averagePaceSecondsPerKm > 0 ? `${formatPace(activity.averagePaceSecondsPerKm)}/km` : null,
+      ].filter(Boolean).join(" · ");
+      status = dayActivities.length === 1 ? "Recorded run" : `${dayActivities.length} recorded runs`;
+      title = dayActivities.length === 1 ? activity.title : `${dayActivities.length} recorded runs`;
+      metrics = activityMetrics || "Recorded run";
+      cue = daySessions.length > 0 ? "Scheduled plan context available" : "No scheduled plan on this date";
+    } else if (!isPast && primarySession) {
+      status = primarySession.kind === "rest" ? "Rest scheduled" : primarySession.status === "skipped" ? "Skipped" : "Planned";
+      title = primarySession.title;
+      metrics = formatSessionTarget(primarySession);
+      cue = primarySession.amendments.length > 0
+        ? `${primarySession.amendments.length} approved schedule change${primarySession.amendments.length === 1 ? "" : "s"}`
+        : "Approved schedule";
+      detail = { kind: "session", id: primarySession.id, date };
+    } else if (isPast) {
+      status = activitiesReadStatus === "unavailable" ? "Records unavailable" : "No run recorded";
+      title = activitiesReadStatus === "unavailable" ? "Activity records could not be loaded" : "No recorded run";
+      metrics = daySessions.length > 0 ? "Scheduled plan available in details" : "No scheduled plan";
+      cue = activitiesReadStatus === "unavailable" ? "Retry the calendar to check recorded runs" : "No completion inferred";
+    }
+
+    return <section className={`calendar-day${isToday ? " calendar-day--today" : ""}`} aria-label={`${formatCoachingDate(date, planTimezone)}${isToday ? ", today" : ""}`} key={date}>
+      <header className="calendar-day-heading"><time dateTime={date}>{formatCoachingDate(date, planTimezone)}</time>{isToday ? <span className="today-marker">Today</span> : null}<button className="calendar-info-button" type="button" onClick={(event) => { detailLauncherRef.current = event.currentTarget; setSelectedDetail(detail); }} aria-label={`View details for ${formatCoachingDate(date, planTimezone)}`}>ⓘ</button></header>
+      <div className={`calendar-day-card${showActivity ? " calendar-day-card--actual" : ""}`}>
+        <p className="eyebrow">{status}</p><strong>{title}</strong><span>{metrics}</span><small>{supplementaryCount > 0 ? `${supplementaryCount + 1} records in details · ` : ""}{cue}</small>
+      </div>
+    </section>;
   }
 
-  function renderHistoricalSummary(session: HistoricalCalendarSessionView) {
-    return <article className="calendar-record-summary calendar-record-summary--historical" key={`historical-summary-${session.planId}-${session.id}`}>
-      <p className="eyebrow">{session.kind.replace("_", " ")} · historical v{session.planVersion}</p><strong>{session.title}</strong><span>{formatSessionTarget(session)}</span><small>Read-only plan record</small>
-    </article>;
-  }
-
-  function renderActivitySummary(activity: CalendarActivityView) {
-    const metrics = [
-      activity.distanceMeters > 0 ? `${Number((activity.distanceMeters / 1000).toFixed(2))} km` : null,
-      activity.elapsedTimeSeconds > 0 ? formatDuration(activity.elapsedTimeSeconds) : null,
-    ].filter(Boolean).join(" · ");
-    return <article className="calendar-record-summary calendar-record-summary--actual" key={`activity-summary-${activity.id}`}>
-      <p className="eyebrow">{activity.sport.replace("_", " ")} · recorded</p><strong>{activity.title}</strong><span>{metrics || "Recorded run"}</span><small>Activity record · no completion inferred</small>
-    </article>;
-  }
-
-  function renderHistoricalSessionCard(session: HistoricalCalendarSessionView) {
-    return <article className="session-card session-card--historical" id={`historical-session-${session.planId}-${session.id}`} tabIndex={-1} key={`historical-${session.planId}-${session.id}`}>
-      <div className="session-card-top"><p className="eyebrow">{session.kind.replace("_", " ")} · historical plan · v{session.planVersion}</p><time dateTime={session.scheduledDate}>{formatCoachingDate(session.scheduledDate)}</time></div>
-      <h3>{session.title}</h3>
-      <p><strong>Planned purpose:</strong> {session.purpose}</p>
-      <p className="session-prescription"><strong>Planned prescription:</strong> {session.prescription}</p>
-      <p><strong>Planned target:</strong> {formatSessionTarget(session)}</p>
-      <p className="adjustment-cue">Historical planned session · read-only.</p>
-    </article>;
-  }
-
-  function renderActivityCard(activity: CalendarActivityView, sameDayPlans: Array<CalendarSessionView | HistoricalCalendarSessionView>) {
+  function renderActivityCard(activity: CalendarActivityView) {
     const metrics = [
       activity.distanceMeters > 0 ? `${Number((activity.distanceMeters / 1000).toFixed(2))} km` : null,
       activity.elapsedTimeSeconds > 0 ? formatDuration(activity.elapsedTimeSeconds) : null,
@@ -790,28 +901,61 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       <div className="session-card-top"><p className="eyebrow">{activity.sport.replace("_", " ")} · recorded</p><time dateTime={activity.localDate}>{formatCoachingDate(activity.localDate)}</time></div>
       <h3>{activity.title}</h3>
       <p><strong>Actual workout:</strong> {metrics || "Recorded run"}</p>
-      {sameDayPlans.length === 0
-        ? <p className="adjustment-cue">No planned session for this activity.</p>
-        : <details className="session-source"><summary>Plan comparison ({sameDayPlans.length})</summary><div><p>Same-day plan records are shown below without inferring that any plan was completed.</p>{sameDayPlans.map((session) => <section className="calendar-comparison" key={`${"planId" in session ? session.planId : "active"}-${session.id}`}><strong>{session.title}{"planVersion" in session ? ` · historical plan v${session.planVersion}` : " · active plan"}</strong><p>{formatSessionTarget(session)}</p><p>{session.prescription}</p></section>)}</div></details>}
     </article>;
   }
 
+  function renderCalendarDetail() {
+    if (!selectedDetail) return null;
+    const date = selectedDetail.date;
+    const dayActivities = activities.filter((activity) => activity.localDate === date);
+    const daySessions = sessions.filter((session) => session.effectiveDate === date);
+    const selectedSession = selectedDetail.kind === "session"
+      ? daySessions.find((session) => session.id === selectedDetail.id) ?? null
+      : null;
+    const hasRecords = date <= today && dayActivities.length > 0;
+    const title = hasRecords ? "Run details" : selectedSession ? "Plan details" : "Calendar details";
+
+    return <div className="coach-dialog-backdrop"><section ref={detailModal.dialogRef} onKeyDown={detailModal.onKeyDown} className="coach-dialog coach-dialog--calendar-detail" role="dialog" aria-modal="true" aria-labelledby="calendar-detail-title">
+      <div className="calendar-detail-heading"><div><p className="eyebrow">{formatCoachingDate(date, planTimezone)}</p><h3 id="calendar-detail-title">{title}</h3></div><button autoFocus className="button button-secondary" type="button" onClick={() => setSelectedDetail(null)}>Close details</button></div>
+      {hasRecords ? <section className="calendar-detail-records" aria-label="Activity records">
+        {dayActivities.map((summary) => {
+          const detail = activityDetails[summary.id];
+          if (!detail || detail.status === "loading") return <p className="adjustment-cue" key={summary.id}>Loading activity record…</p>;
+          if (detail.status === "error") return <section className="coach-status coach-status--error" role="alert" key={summary.id}><p>Could not load this activity record: {detail.error}</p><button className="button button-secondary" type="button" onClick={() => setActivityDetails((current) => { const next = { ...current }; delete next[summary.id]; return next; })}>Retry</button></section>;
+          return detail.activity ? <section className="activity-detail calendar-activity-record" aria-labelledby={`calendar-activity-${summary.id}`} key={summary.id}><ActivityRecordContent activity={detail.activity} headingId={`calendar-activity-${summary.id}`} /></section> : null;
+        })}
+      </section> : date <= today ? <p className="adjustment-cue">{activitiesReadStatus === "unavailable" ? "Activity records could not be loaded. Retry the calendar to check recorded runs." : "No run recorded."}</p> : null}
+      <section className="calendar-plan-context" aria-label="Active plan session details">
+        <p className="eyebrow">Active plan · session scheduled for this date</p>
+        {daySessions.length > 0
+          ? <>{hasRecords ? <p className="adjustment-cue">This scheduled session is context only; it does not indicate that any recorded run completed the prescription.</p> : null}{daySessions.map((session) => renderSessionCard(session, true))}</>
+          : <p className="adjustment-cue">{planRange ? "No session scheduled in the active plan for this date." : "No active plan."}</p>}
+      </section>
+    </section></div>;
+  }
+
   return <CoachShell page="calendar" title="Calendar" subtitle={onlineMode ? "Owner-managed future sessions with preserved approved sources" : "Approved sessions and reasoned, auditable future changes"} meta={`${formatCoachingDate(range.from, planTimezone)} – ${formatCoachingDate(range.to, planTimezone)} · ${planTimezone}`}>
-    <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="coach-actions"><button className="button button-secondary" type="button" onClick={() => moveWeek(-7)}>Previous week</button><button className="button button-secondary" type="button" onClick={() => setAnchorDate(today)}>Today</button><button className="button button-secondary" type="button" onClick={() => moveWeek(7)}>Next week</button></div><div className="segmented" aria-label="Calendar view"><button type="button" aria-pressed={view === "week"} onClick={() => setView("week")}>Week</button><button type="button" aria-pressed={view === "agenda"} onClick={() => setView("agenda")}>Agenda</button></div></section>
+    <section className="coach-panel calendar-controls" aria-label="Calendar controls"><p id="calendar-scroll-help">Scroll to browse weeks · Page Up / Page Down when focused</p><div className="segmented" aria-label="Calendar view"><button type="button" aria-pressed={view === "week"} onClick={() => setView("week")}>Weeks</button><button type="button" aria-pressed={view === "agenda"} onClick={() => setView("agenda")}>Agenda</button></div></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
     {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h3>Calendar could not be loaded</h3><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
     {state === "success" && message ? <StatusLine state="success" message={message} /> : null}
     <StatusLine state={actionState} message={actionMessage} />
     {state === "success" && staleMessage ? <section className="coach-panel calendar-state-panel calendar-state-panel--stale" role="status"><h3>Schedule context needs review</h3><p>{staleMessage} The approved plan has not been changed.</p><Link className="text-link" href="/dashboard/plan">Review Plan</Link></section> : null}
     {state === "success" && focusMessage ? <p className="coach-status coach-status--error" role="alert">{focusMessage}</p> : null}
-    {state === "success" && sessions.length + historicalSessions.length + activities.length === 0
-      ? <section className="coach-panel coach-empty"><h3>No runs or planned sessions this week</h3><p>Use the week controls to inspect another date range, or import and sync your activity history.</p><Link className="text-link" href="/dashboard/activities">Open Activities</Link></section>
-      : state === "success" && view === "week" ? <div className="calendar-week-layout"><section className="calendar-week" aria-label="Seven-day training week">
-        {weekDates.map((date) => { const daySessions = sessions.filter((session) => session.effectiveDate === date); const dayHistoricalSessions = historicalSessions.filter((session) => session.scheduledDate === date); const dayActivities = activities.filter((activity) => activity.localDate === date); const isToday = date === today; return <section className={`calendar-day${isToday ? " calendar-day--today" : ""}`} aria-label={`${formatCoachingDate(date)}${isToday ? ", today" : ""}`} key={date}>
-          <header><p className="eyebrow">{new Intl.DateTimeFormat("en-ZA", { weekday: "long", timeZone: planTimezone }).format(new Date(`${date}T12:00:00.000Z`))}</p><time dateTime={date}>{formatCoachingDate(date, planTimezone)}</time>{isToday ? <span className="today-marker">Today</span> : null}</header>
-          <div className="calendar-day-sessions">{daySessions.length + dayHistoricalSessions.length + dayActivities.length > 0 ? <>{dayActivities.map(renderActivitySummary)}{daySessions.map(renderSessionSummary)}{dayHistoricalSessions.map(renderHistoricalSummary)}</> : <p className="calendar-day-empty">No run or planned session</p>}</div>
-        </section>; })}
-      </section>{selectedSession ? <aside className="calendar-selected-detail" id="calendar-selected-session" aria-label={`Selected session: ${selectedSession.title}`}><div className="calendar-detail-heading"><div><p className="eyebrow">Selected session</p><h3>Session detail</h3></div><span className="status-chip">{selectedSession.status}</span></div>{renderSessionCard(selectedSession)}</aside> : null}{activities.length + historicalSessions.length > 0 ? <details className="coach-panel calendar-supporting-records"><summary>Recorded and historical context ({activities.length + historicalSessions.length})</summary><div className="session-grid session-grid--agenda">{[...activities].sort((left, right) => left.localDate.localeCompare(right.localDate)).map((activity) => renderActivityCard(activity, [...sessions.filter((session) => session.effectiveDate === activity.localDate), ...historicalSessions.filter((session) => session.scheduledDate === activity.localDate)]))}{historicalSessions.map(renderHistoricalSessionCard)}</div></details> : null}</div> : state === "success" ? <section className="session-grid session-grid--agenda" aria-label="Agenda training schedule">{[...activities].sort((left, right) => left.localDate.localeCompare(right.localDate)).map((activity) => renderActivityCard(activity, [...sessions.filter((session) => session.effectiveDate === activity.localDate), ...historicalSessions.filter((session) => session.scheduledDate === activity.localDate)]))}{sessions.map(renderSessionCard)}{historicalSessions.map(renderHistoricalSessionCard)}</section> : null}
+    <p className="calendar-range-announcement" aria-live="polite">{rangeAnnouncement}</p>
+    {state === "success" ? <section ref={calendarRegionRef} className="calendar-scroll-region" aria-label="Four-week training calendar" aria-describedby="calendar-scroll-help" tabIndex={0} onKeyDown={handleCalendarKeyDown} onWheel={handleCalendarWheel} onTouchStart={handleCalendarTouchStart} onTouchEnd={handleCalendarTouchEnd}>
+    {view === "week" ? <section className="calendar-weeks">
+      <div className="calendar-weekday-headings"><span aria-hidden="true" />{weekdays.map((weekday) => <strong key={weekday}>{weekday}</strong>)}</div>
+      {range.weeks.map((week) => <section className="calendar-week-row" aria-label={`Week of ${formatCoachingDate(week.from, planTimezone)}`} key={week.from}>
+        <header className="calendar-week-label"><span>Week of</span><time dateTime={week.from}>{formatCoachingDate(week.from, planTimezone)}</time></header>
+        {Array.from({ length: 7 }, (_, index) => {
+          const day = new Date(`${week.from}T00:00:00.000Z`);
+          day.setUTCDate(day.getUTCDate() + index);
+          return day.toISOString().slice(0, 10);
+        }).map(renderCalendarDay)}
+      </section>)}
+    </section> : sessions.length + activities.length > 0 ? <section className="session-grid session-grid--agenda" aria-label="Agenda training schedule">{[...activities].sort((left, right) => left.localDate.localeCompare(right.localDate)).map(renderActivityCard)}{sessions.map((session) => renderSessionCard(session))}</section> : <section className="coach-panel coach-empty"><h3>No runs or planned sessions in this calendar window</h3><p>Scroll to inspect another date range, or import and sync your activity history.</p><Link className="text-link" href="/dashboard/activities">Open Activities</Link></section>}</section> : null}
+    {renderCalendarDetail()}
     {pending ? <div className="coach-dialog-backdrop"><form ref={pendingModal.dialogRef} onKeyDown={pendingModal.onKeyDown} onSubmit={(event) => { event.preventDefault(); void confirmEdit(); }} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">
       <h3 id="calendar-edit-title">Confirm {pending.operation}</h3>
       <p><strong>{pending.session.title}</strong>{pending.date ? ` will move from ${pending.session.effectiveDate} to ${pending.date}.` : ` will be marked ${pending.operation === "skip" ? "skipped" : "upcoming"}.`} Its prescribed date remains {pending.session.prescribedDate}.</p>

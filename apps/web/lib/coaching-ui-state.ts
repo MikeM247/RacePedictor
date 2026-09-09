@@ -82,6 +82,34 @@ export function weekRange(date: string): { from: string; to: string } {
   return { from, to: parsed.toISOString().slice(0, 10) };
 }
 
+export type CalendarWeekRange = {
+  from: string;
+  to: string;
+};
+
+export type CalendarWindowRange = CalendarWeekRange & {
+  weeks: CalendarWeekRange[];
+};
+
+function shiftCalendarDate(date: string, days: number): string {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+/**
+ * Shows the selected week first, followed by three consecutive weeks.
+ */
+export function calendarWindowRange(date: string): CalendarWindowRange {
+  const selectedWeek = weekRange(date);
+  const from = selectedWeek.from;
+  const weeks = Array.from({ length: 4 }, (_, index) => {
+    const weekFrom = shiftCalendarDate(from, index * 7);
+    return { from: weekFrom, to: shiftCalendarDate(weekFrom, 6) };
+  });
+  return { from, to: weeks[weeks.length - 1].to, weeks };
+}
+
 export function formatCoachingDate(date: string, timezone = "Africa/Johannesburg"): string {
   return new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium", timeZone: timezone }).format(
     new Date(`${date}T12:00:00.000Z`),
@@ -219,6 +247,10 @@ function calendarPayload(payload: unknown): Record<string, unknown> {
 
 export function canAmendFutureSession(session: Pick<CalendarSessionView, "effectiveDate">, currentLocalDate: string): boolean {
   return session.effectiveDate > currentLocalDate;
+}
+
+export function calendarActivitiesReadStatus(payload: unknown): "available" | "unavailable" {
+  return calendarPayload(payload).activitiesReadStatus === "unavailable" ? "unavailable" : "available";
 }
 
 export function canRecordPastSessionSkip(

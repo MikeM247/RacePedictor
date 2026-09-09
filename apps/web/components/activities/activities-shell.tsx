@@ -333,6 +333,19 @@ function ActivityDetailPanel({
     );
   }
 
+  return <aside className="activity-detail" aria-labelledby="activity-detail-heading"><ActivityRecordContent activity={activity} onClose={onClose} /></aside>;
+}
+
+export function ActivityRecordContent({
+  activity,
+  onClose,
+  headingId = "activity-detail-heading",
+}: {
+  activity: ActivityDetail;
+  onClose?: () => void;
+  headingId?: string;
+}) {
+  const coreReadoutHeadingId = `${headingId}-core-readout`;
   const metrics = [
     ["Distance", formatDistance(activity.distanceM)],
     ["Elapsed time", formatDuration(activity.elapsedTimeS)],
@@ -353,21 +366,21 @@ function ActivityDetailPanel({
   ].filter(([, value]) => value !== "—");
 
   return (
-    <aside className="activity-detail" aria-labelledby="activity-detail-heading">
+    <>
       <div className="detail-header">
-        <DetailBackButton onClose={onClose} />
+        {onClose ? <DetailBackButton onClose={onClose} /> : null}
         <div className="detail-header-meta">
           <p className="eyebrow">{sportLabel(activity.sport)}</p>
           <span className="detail-record-label">Activity record</span>
         </div>
-        <h3 id="activity-detail-heading">{activity.title || sportLabel(activity.sport)}</h3>
+        <h3 id={headingId}>{activity.title || sportLabel(activity.sport)}</h3>
         <p>{formatActivityDate(activity.localOccurredAt, activity.occurredAt)}</p>
       </div>
-      <section className="detail-core-readout" aria-labelledby="detail-core-readout-heading">
+      <section className="detail-core-readout" aria-labelledby={coreReadoutHeadingId}>
         <div className="detail-section-heading">
           <div>
             <p className="eyebrow">Mission readout</p>
-            <h4 id="detail-core-readout-heading">Run at a glance</h4>
+            <h4 id={coreReadoutHeadingId}>Run at a glance</h4>
           </div>
         </div>
         <dl className="detail-metrics detail-primary-metrics">
@@ -427,7 +440,7 @@ function ActivityDetailPanel({
         </div>
         <p>{activity.routeSignature ? "Route data is available for this activity." : "No route data was included in this imported activity."}</p>
       </section>
-    </aside>
+    </>
   );
 }
 

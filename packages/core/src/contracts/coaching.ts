@@ -689,6 +689,7 @@ export const calendarRouteDataSchema = z.object({
   sessions: z.array(calendarSessionSchema),
   historicalSessions: z.array(historicalCalendarSessionSchema).default([]),
   activities: z.array(calendarActivitySchema).default([]),
+  activitiesReadStatus: z.enum(["available", "unavailable"]).default("available"),
 }).strict();
 export const calendarEditHttpRequestSchema = z.discriminatedUnion("operation", [
   z.object({

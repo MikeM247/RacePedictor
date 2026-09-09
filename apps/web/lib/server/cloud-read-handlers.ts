@@ -216,30 +216,70 @@ export async function handleCloudCalendar(
   if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Calendar date range is invalid");
   const scope = requireScope(security);
   const composition = getComposition();
-  const sessions = await safelyReadCoaching(() => composition.calendarSessions.listActiveCalendar(scope, parsed.data));
-  const { timezone, historicalSessions } = await listCloudCalendarPlanContext(composition, scope, parsed.data);
-  const activities = await listCloudCalendarActivitiesSafely(composition, scope, parsed.data, timezone);
-  return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions, historicalSessions, activities }));
+  const sessions = await listCloudActiveCalendarSafely(composition, scope, parsed.data);
+  const { timezone } = await listCloudCalendarPlanContext(composition, scope);
+  const activityRead = await listCloudCalendarActivitiesSafely(composition, scope, parsed.data, timezone);
+  try {
+    return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions, historicalSessions: [], activities: activityRead.activities, activitiesReadStatus: activityRead.status }));
+  } catch (error) {
+    reportCalendarSupplementFailure("calendar response projection", error);
+    return success(calendarRouteDataSchema.parse({
+      ...parsed.data,
+      sessions: await approvedPlanCalendarSessions(composition, scope, parsed.data),
+      historicalSessions: [],
+      activities: [],
+      activitiesReadStatus: "unavailable",
+    }));
+  }
 }
 
-async function listCloudCalendarPlanContext(
+async function listCloudActiveCalendarSafely(
   composition: CloudReadComposition,
   scope: ReturnType<typeof athleteScopeFor>,
   range: { from: string; to: string },
 ) {
   try {
+    return await safelyReadCoaching(() => composition.calendarSessions.listActiveCalendar(scope, range));
+  } catch (error) {
+    reportCalendarSupplementFailure("effective session projection", error);
+    return approvedPlanCalendarSessions(composition, scope, range);
+  }
+}
+
+async function approvedPlanCalendarSessions(
+  composition: CloudReadComposition,
+  scope: ReturnType<typeof athleteScopeFor>,
+  range: { from: string; to: string },
+) {
+  const activePlan = await safelyReadCoaching(() => composition.coaching.getActivePlan(scope));
+  if (!activePlan) return [];
+  return activePlan.workouts
+    .filter((workout) => workout.scheduledDate >= range.from && workout.scheduledDate <= range.to)
+    .map((workout) => ({
+      ...workout,
+      prescribedDate: workout.scheduledDate,
+      effectiveDate: workout.scheduledDate,
+      originalDate: workout.scheduledDate,
+      status: "upcoming" as const,
+      revision: activePlan.revision,
+      warnings: ["The effective calendar projection is temporarily unavailable. Showing the approved plan source."],
+      original: workout,
+      amendments: [],
+    }));
+}
+
+async function listCloudCalendarPlanContext(
+  composition: CloudReadComposition,
+  scope: ReturnType<typeof athleteScopeFor>,
+) {
+  try {
     const plans = await safelyReadCoaching(() => composition.coaching.listHistory(scope));
     return {
       timezone: plans.find((plan) => plan.status === "active")?.timezone ?? "Africa/Johannesburg",
-      historicalSessions: plans
-        .filter((plan) => plan.status === "retired")
-        .flatMap((plan) => plan.workouts
-          .filter((workout) => workout.scheduledDate >= range.from && workout.scheduledDate <= range.to)
-          .map((workout) => ({ ...workout, planId: plan.id, planVersion: plan.version }))),
     };
   } catch (error) {
     reportCalendarSupplementFailure("plan history", error);
-    return { timezone: "Africa/Johannesburg", historicalSessions: [] };
+    return { timezone: "Africa/Johannesburg" };
   }
 }
 
@@ -250,10 +290,10 @@ async function listCloudCalendarActivitiesSafely(
   timezone: string,
 ) {
   try {
-    return await listCloudCalendarActivities(composition, scope, range, timezone);
+    return { activities: await listCloudCalendarActivities(composition, scope, range, timezone), status: "available" as const };
   } catch (error) {
     reportCalendarSupplementFailure("recorded activities", error);
-    return [];
+    return { activities: [], status: "unavailable" as const };
   }
 }
 

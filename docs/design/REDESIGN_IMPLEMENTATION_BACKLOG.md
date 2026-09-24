@@ -842,3 +842,13 @@ Medium
 ## Recommended next item
 
 Start with Ticket 01, then Ticket 02. The redesign cannot be evaluated consistently until semantic tokens, responsive ranges, and the three-destination shell are stable; these two tickets also reduce the risk of page-specific patterns appearing during later screen work.
+
+### F10 validation reconciliation — 2026-09-24
+
+The earlier F10 notes describing unresolved F05 heading-order defects, the F07 focus regression, expanded-axe coverage gaps and an aggregate-local shutdown failure are historical and superseded by the final run recorded in `docs/progress/race-predictor-astra-implementation-handoff.md`. The final aggregate local run passes 32 general + 16 seeded Home + 5 seeded readiness tests; online fixtures pass 44/44; owner-auth fixtures pass 3/3. All listed unit, local/cloud database, type/lint and production-build checks exit 0. The aggregate required elevated local Windows process rights so Playwright could stop its isolated Next servers; no runner code change was required. Schema-valid fixtures now render the Home prediction disclosure and Plan history for expanded axe scans.
+
+F05's additional dialog heading defects were fixed with level-2 modal titles and an internal heading-level option for shared activity content nested inside Calendar. The expanded all-route disclosure scans and the Plan/Calendar dialog scans pass. Earlier failure screenshots/traces are retained in their original isolated run directories and are explicitly superseded by separate final JSON reports.
+
+**Ticket 13 remains IN PROGRESS; release approval is not granted.** Real browser-controlled 200% zoom, screen reader, switch control, software keyboard, unfamiliar-runner comprehension, real OAuth/provider persistence, deployed authenticated journey, anonymous access-control checks and deployment smoke have not been performed. `db:test:contracts` is also outstanding because `DATABASE_URL` is unset; no live database was accessed. No deployment or live-account change occurred.
+
+Follow-up branch: `codex/release-readiness-2026-09-24`, based on merged `main` commit `0c5f5022b5b7cd600ade662b32907259f131c89c`. Changes remain uncommitted pending review.

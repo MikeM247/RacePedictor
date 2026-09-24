@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { expectNoApplicationWrites, recordApplicationWrites } from "./test-helpers.ts";
+import { expectAxeClean, expectNoApplicationWrites, openDetailDisclosures, recordApplicationWrites } from "./test-helpers.ts";
 
 const base = {
   athleteId: "e2e_athlete", sport: "run", distanceM: 8_000, elapsedTimeS: 2_400, avgPaceSecPerKm: 300,
@@ -77,6 +77,8 @@ test("F04 restores three loaded pages and focus through Back, keeps disclosures 
   await page.goForward();
   await expect(page.getByRole("heading", { name: "F04 selected beyond page one" })).toBeVisible();
   await expect(page.getByText("Average heart rate")).toBeVisible();
+  await openDetailDisclosures(page, 3);
+  await expectAxeClean(page, "F04 selected Training detail with telemetry, splits, and route disclosures expanded");
   expectNoApplicationWrites(writes);
 });
 

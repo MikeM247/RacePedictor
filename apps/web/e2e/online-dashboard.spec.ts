@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectAxeClean } from "./test-helpers.ts";
 
 const localDate = (date = new Date()) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -187,6 +188,7 @@ test("online Plan selects an approved version while Calendar remains prescriptio
   const pastDetails = page.getByRole("dialog", { name: "Calendar details" });
   await expect(pastDetails.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
   await expect(pastDetails.getByText("Past sessions can only be recorded as skipped. The approved source remains unchanged.")).toBeVisible();
+  await expectAxeClean(page, "F03 Calendar details dialog");
   await expect(pastDetails.getByRole("button", { name: "Review move" })).toHaveCount(0);
 });
 
@@ -241,6 +243,7 @@ test("online Calendar saves a reasoned amendment to a future owner session", asy
   await card.getByRole("button", { name: "Amend session" }).click();
   const dialog = page.getByRole("dialog", { name: "Amend future session" });
   await expect(dialog.getByRole("button", { name: "Save reasoned amendment" })).toBeDisabled();
+  await expectAxeClean(page, "F05 Calendar amendment dialog");
   await dialog.getByLabel("Prescription").fill("Run easily for 30 minutes on the treadmill.");
   await dialog.getByLabel("Reason for this amendment").fill("Work travel requires a shorter treadmill session.");
   await dialog.getByRole("button", { name: "Save reasoned amendment" }).click();
@@ -265,10 +268,12 @@ test("online Plan keeps a conflict and duplicate protection inside the reviewed 
   });
   await page.goto("/dashboard/plan");
   await page.getByText("Coaching version 1.0.0").click();
+  await expectAxeClean(page, "F05 expanded approved plan version");
   await page.getByRole("button", { name: "Make this approved plan active" }).click();
   const dialog = page.getByRole("alertdialog", { name: "Make coaching version 1.0.0 active?" });
   await dialog.getByRole("button", { name: "Confirm activation" }).dblclick();
   await expect(dialog.getByText(/Plan information changed while this confirmation was open/)).toBeVisible();
+  await expectAxeClean(page, "F07 Plan activation conflict dialog");
   expect(writes).toBe(1);
   await dialog.getByRole("button", { name: "Check current Plan" }).click();
   await expect(dialog.getByRole("button", { name: "Return to review" })).toBeVisible();

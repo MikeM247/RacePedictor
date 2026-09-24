@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 export type RecordedApplicationWrite = {
   method: string;
@@ -26,6 +27,17 @@ export function recordApplicationWrites(page: Page) {
 
 export function expectNoApplicationWrites(writes: RecordedApplicationWrite[]) {
   expect(writes).toEqual([]);
+}
+
+export async function expectAxeClean(page: Page, state: string) {
+  const result = await new AxeBuilder({ page }).analyze();
+  const violations = result.violations.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    help: violation.help,
+    nodes: violation.nodes.map((node) => ({ target: node.target, failureSummary: node.failureSummary })),
+  }));
+  expect(violations, `Accessibility violations in ${state}`).toEqual([]);
 }
 
 /**

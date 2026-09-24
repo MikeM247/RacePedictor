@@ -7,7 +7,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["redesign-home.spec.ts"],
+  testMatch: ["redesign-home.spec.ts", "redesign-home-accessibility.spec.ts"],
   globalSetup: "./e2e/home-local-fixture.ts",
   fullyParallel: false,
   workers: 1,

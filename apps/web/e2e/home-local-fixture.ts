@@ -8,7 +8,10 @@ export default async function prepareHomeLocalFixture() {
     stale: { isStale: false, staleReason: null, staleAtIso: null },
     data: {
       predictionSummary: { athleteId: "f02-athlete", targetDistanceM: 10_000, predictedTimeS: 3000, predictedPaceSecPerKm: 300, bandLowS: 2940, bandHighS: 3060, modelVersion: "f02-local", generatedAt: "2026-09-15T08:00:00.000Z" },
-      predictionOptions: [], driverContributions: [{ key: "load", label: "Recent load", contributionPct: -12, direction: "negative", confidence: 0.8 }], featureTrendPoints: [],
+      predictionOptions: [
+        { athleteId: "f02-athlete", targetDistanceM: 5000, predictedTimeS: 1440, predictedPaceSecPerKm: 288, bandLowS: 1380, bandHighS: 1500, modelVersion: "f02-local", generatedAt: "2026-09-15T08:00:00.000Z" },
+        { athleteId: "f02-athlete", targetDistanceM: 10_000, predictedTimeS: 3000, predictedPaceSecPerKm: 300, bandLowS: 2940, bandHighS: 3060, modelVersion: "f02-local", generatedAt: "2026-09-15T08:00:00.000Z" },
+      ], driverContributions: [{ key: "load", label: "Recent load", contributionPct: -12, direction: "negative", confidence: 0.8 }], featureTrendPoints: [],
       importProgress: { status: "completed", stagedCount: 1, normalizedCount: 1, duplicateCount: 0, rejectedCount: 0 },
     },
   };

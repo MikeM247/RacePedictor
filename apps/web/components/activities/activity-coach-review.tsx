@@ -10,12 +10,14 @@ import { useActivityCoachReview } from "./use-activity-coach-review";
 
 type ReviewData = ActivityCoachReviewResponse["data"];
 
-export function ActivityCoachReview({ activityId }: { activityId: string }) {
+export function ActivityCoachReview({ activityId, headingLevel = 3 }: { activityId: string; headingLevel?: 3 | 4 }) {
   const reviewRead = useActivityCoachReview(activityId);
   const [requestMessage, setRequestMessage] = useState<string>();
   const [requesting, setRequesting] = useState(false);
   const requestInFlight = useRef(false);
   const data = reviewRead.data;
+  const ReviewHeading = headingLevel === 3 ? "h3" : "h4";
+  const ReviewTitle = headingLevel === 3 ? "h4" : "h5";
 
   async function requestReview() {
     if (requestInFlight.current) return;
@@ -39,7 +41,7 @@ export function ActivityCoachReview({ activityId }: { activityId: string }) {
       <div className="detail-section-heading">
         <div>
           <p className="eyebrow">Athlete Intelligence</p>
-          <h3 id={`coach-review-${activityId}`}>Coach&apos;s review</h3>
+          <ReviewHeading id={`coach-review-${activityId}`}>Coach&apos;s review</ReviewHeading>
         </div>
         {data?.review ? <span className="activity-review-badge">AI-generated</span> : null}
       </div>
@@ -59,17 +61,17 @@ export function ActivityCoachReview({ activityId }: { activityId: string }) {
           {requestMessage ? <p className="activity-review-error" role="alert">{requestMessage}</p> : null}
         </div>
       ) : null}
-      {data?.review ? <ReviewContent review={data.review} status={data.status} onRefresh={() => void reviewRead.load()} /> : null}
+      {data?.review ? <ReviewContent review={data.review} status={data.status} onRefresh={() => void reviewRead.load()} titleElement={ReviewTitle} /> : null}
     </section>
   );
 }
 
-function ReviewContent({ review, status, onRefresh }: { review: NonNullable<ReviewData["review"]>; status: ReviewData["status"]; onRefresh: () => void }) {
+function ReviewContent({ review, status, onRefresh, titleElement: ReviewTitle }: { review: NonNullable<ReviewData["review"]>; status: ReviewData["status"]; onRefresh: () => void; titleElement: "h4" | "h5" }) {
   return (
     <div className="activity-review-content">
       <p className="activity-review-meta">Reviewed {new Date(review.publishedAt).toLocaleString()} · {review.model}</p>
       <p className="activity-review-context" role="status"><strong>{reviewStatusLabel(status)}:</strong> {reviewStatusMessage(status, true)}</p>
-      <h4>{review.headline}</h4>
+      <ReviewTitle>{review.headline}</ReviewTitle>
       <p className="activity-review-assessment">{review.assessment}</p>
       <div className="activity-review-next"><strong>Next step</strong><p>{review.nextStep}</p></div>
       <p className="activity-review-context"><strong>{reviewMatchLabel(review.comparison)}:</strong> {review.comparison.interpretation}{review.comparison.planVersion ? ` Plan version ${review.comparison.planVersion}.` : ""}</p>

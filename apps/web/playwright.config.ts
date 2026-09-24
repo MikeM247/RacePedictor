@@ -14,13 +14,13 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  testIgnore: ["online-dashboard.spec.ts", "owner-auth.spec.ts"],
+  testIgnore: ["online-dashboard.spec.ts", "redesign-coverage.spec.ts", "owner-auth.spec.ts", "redesign-home.spec.ts", "redesign-readiness.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   outputDir: path.join(e2eRoot, "test-results"),
-  reporter: [["list"]],
+  reporter: [["list"], ["json", { outputFile: path.join(e2eRoot, "results", "local.json") }]],
   use: {
     baseURL,
     trace: "retain-on-failure",
@@ -39,6 +39,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
+      RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-local-${process.env.RACEPREDICTOR_E2E_RUN_ID}`,
       RACEPREDICTOR_ATHLETE_ID: "e2e_athlete",
       RACEPREDICTOR_DATABASE_PATH: e2eDatabasePath,
       RACEPREDICTOR_DASHBOARD_SNAPSHOT: e2eSnapshotPath,

@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const LOCAL_DATABASE_SCHEMA_VERSION = 2;
+export const LOCAL_DATABASE_SCHEMA_VERSION = 5;
 
 const migrations = [
   {
@@ -222,6 +222,110 @@ const migrations = [
         PRIMARY KEY (athlete_id, revision),
         UNIQUE (athlete_id, content_hash)
       );
+    `,
+  },
+  {
+    version: 3,
+    name: "second_brain_publication_outbox",
+    sql: `
+      CREATE TABLE IF NOT EXISTS local_second_brain_publication_outbox (
+        athlete_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        content_hash TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        logical_source_refs_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_attempted_at TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+        PRIMARY KEY (athlete_id, revision),
+        UNIQUE (athlete_id, content_hash)
+      );
+      CREATE INDEX IF NOT EXISTS local_second_brain_publication_outbox_athlete_revision_idx
+        ON local_second_brain_publication_outbox (athlete_id, revision);
+    `,
+  },
+  {
+    version: 4,
+    name: "second_brain_content_hash_history",
+    sql: `
+      ALTER TABLE local_second_brain_publications RENAME TO local_second_brain_publications_v3;
+      CREATE TABLE local_second_brain_publications (
+        athlete_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        content_hash TEXT NOT NULL,
+        selected_fields_json TEXT NOT NULL,
+        logical_source_refs_json TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        PRIMARY KEY (athlete_id, revision)
+      );
+      INSERT INTO local_second_brain_publications (
+        athlete_id, revision, content_hash, selected_fields_json, logical_source_refs_json, published_at
+      ) SELECT athlete_id, revision, content_hash, selected_fields_json, logical_source_refs_json, published_at
+        FROM local_second_brain_publications_v3;
+      DROP TABLE local_second_brain_publications_v3;
+      CREATE INDEX local_second_brain_publications_athlete_hash_idx
+        ON local_second_brain_publications (athlete_id, content_hash);
+
+      ALTER TABLE local_second_brain_publication_outbox RENAME TO local_second_brain_publication_outbox_v3;
+      CREATE TABLE local_second_brain_publication_outbox (
+        athlete_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        content_hash TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        logical_source_refs_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_attempted_at TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+        PRIMARY KEY (athlete_id, revision)
+      );
+      INSERT INTO local_second_brain_publication_outbox (
+        athlete_id, revision, content_hash, snapshot_json, logical_source_refs_json,
+        created_at, last_attempted_at, attempt_count
+      ) SELECT athlete_id, revision, content_hash, snapshot_json, logical_source_refs_json,
+        created_at, last_attempted_at, attempt_count
+        FROM local_second_brain_publication_outbox_v3;
+      DROP TABLE local_second_brain_publication_outbox_v3;
+      CREATE INDEX local_second_brain_publication_outbox_athlete_revision_idx
+        ON local_second_brain_publication_outbox (athlete_id, revision);
+      CREATE INDEX local_second_brain_publication_outbox_athlete_hash_idx
+        ON local_second_brain_publication_outbox (athlete_id, content_hash);
+    `,
+  },
+  {
+    version: 5,
+    name: "activity_coach_reviews",
+    sql: `
+      CREATE TABLE IF NOT EXISTS local_activity_review_requests (
+        athlete_id TEXT NOT NULL,
+        activity_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued'
+          CHECK (status IN ('queued', 'processing', 'ready', 'retry_wait', 'attention')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+        available_at TEXT NOT NULL,
+        last_error_code TEXT,
+        updated_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (athlete_id, activity_id)
+      );
+      CREATE INDEX IF NOT EXISTS local_activity_review_requests_pending_idx
+        ON local_activity_review_requests (athlete_id, status, available_at);
+
+      CREATE TABLE IF NOT EXISTS local_activity_reviews (
+        id TEXT PRIMARY KEY,
+        athlete_id TEXT NOT NULL,
+        activity_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        input_fingerprint TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        generated_at TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (athlete_id, activity_id, revision)
+      );
+      CREATE INDEX IF NOT EXISTS local_activity_reviews_activity_idx
+        ON local_activity_reviews (athlete_id, activity_id, revision DESC);
+      CREATE INDEX IF NOT EXISTS local_activity_reviews_recent_idx
+        ON local_activity_reviews (athlete_id, published_at DESC);
     `,
   },
 ];

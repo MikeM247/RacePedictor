@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+// @ts-expect-error Runtime uses Node 22 SQLite; the project retains Node 20 type declarations.
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 // @ts-expect-error Existing local importer is JavaScript without a declaration file.
 import { importGarminCsv } from "../../../packages/db/src/local-garmin-pipeline.js";
@@ -121,8 +123,17 @@ test("republishing context after activation keeps Today fresh when history is un
       startsOn: "2026-08-03",
       endsOn: "2026-08-09",
       timezone: "Africa/Johannesburg",
-      weeklyStructure: [{ weekStartsOn: "2026-08-03", focus: "Easy consistency", sessionIds: ["today_easy_run"] }],
+      weeklyStructure: [{ weekStartsOn: "2026-08-03", focus: "Easy consistency", sessionIds: ["yesterday_rest", "today_easy_run"] }],
       workouts: [{
+        id: "yesterday_rest",
+        kind: "rest",
+        scheduledDate: "2026-08-05",
+        title: "Rest / gentle mobility",
+        purpose: "Recover between sessions.",
+        prescription: "Rest.",
+        cautions: [],
+        durationMinutes: 0,
+      }, {
         id: "today_easy_run",
         kind: "run",
         scheduledDate: "2026-08-06",
@@ -158,6 +169,45 @@ test("republishing context after activation keeps Today fresh when history is un
     assert.equal(today.state, "upcoming");
     assert.deepEqual(today.stale, { isStale: false, reason: null });
     assert.equal(today.session?.id, "today_easy_run");
+    assert.deepEqual(today.scheduleWarnings, [], "a past rest day is not a missed workout");
+    assert.equal(service.buildTodayOverview({ date: "2026-08-05" }).state, "rest");
+
+    const newRunPath = path.join(directory, "NewRun.csv");
+    await writeFile(newRunPath, [
+      "Activity Type,Date,Title,Distance,Elapsed Time,Avg Pace,Total Ascent,Total Descent",
+      "Running,2026-08-07 06:00:00,New training after approval,6.00,00:36:00,6:00,20,15",
+    ].join("\n"), "utf8");
+    await importGarminCsv({ sourcePath: newRunPath, vaultPath, databasePath });
+    const db = new DatabaseSync(databasePath);
+    try {
+      // A newly connected provider must not change the approved-period coverage either.
+      db.prepare("UPDATE activities SET source_type = 'strava' WHERE title = ?").run("New training after approval");
+      assert.equal(service.buildTodayOverview().stale.isStale, false, "new training is expected, not stale history");
+      const fullContext = await service.publishCoachingContext();
+      assert.notEqual(fullContext.fingerprint, sourceContext.fingerprint, "planning context still includes every new activity");
+      assert.equal(service.buildTodayOverview().stale.isStale, false, "republishing cannot invalidate the approved baseline");
+
+      db.prepare("UPDATE activities SET title = 'Corrected source run' WHERE title = 'Synthetic history run'").run();
+      assert.equal(service.buildTodayOverview().stale.isStale, true, "corrections to the approved history require review");
+      db.prepare("UPDATE activities SET title = 'Synthetic history run' WHERE title = 'Corrected source run'").run();
+      assert.equal(service.buildTodayOverview().stale.isStale, false);
+
+      const lateRunPath = path.join(directory, "LateHistory.csv");
+      await writeFile(lateRunPath, [
+        "Activity Type,Date,Title,Distance,Elapsed Time,Avg Pace,Total Ascent,Total Descent",
+        "Running,2026-08-02 06:00:00,Late historical import,4.00,00:24:00,6:00,10,10",
+      ].join("\n"), "utf8");
+      await importGarminCsv({ sourcePath: lateRunPath, vaultPath, databasePath });
+      assert.equal(service.buildTodayOverview().stale.isStale, true, "late imports from before approval still require review");
+      db.prepare("DELETE FROM activities WHERE title = 'Late historical import'").run();
+      assert.equal(service.buildTodayOverview().stale.isStale, false);
+
+      db.prepare("DELETE FROM activities WHERE title = 'Synthetic history run'").run();
+      assert.equal(service.buildTodayOverview().stale.isStale, true, "deletion of approved history requires review");
+      assert.deepEqual(service.getActivePlan(), active, "freshness checks never alter approval or prescriptions");
+    } finally {
+      db.close();
+    }
   } finally {
     service.close();
   }

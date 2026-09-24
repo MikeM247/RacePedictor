@@ -12,7 +12,7 @@ export class PrismaOnlineStatusRepository {
 
   async getFacts(scope) {
     const athleteId = assertAthleteScope(scope);
-    const [provider, pendingJobs, failedJobs, event, revision, activity, device, snapshot] = await Promise.all([
+    const [provider, pendingJobs, failedJobs, event, revision, activity, activeDevice, snapshot] = await Promise.all([
       this.#prisma.providerConnection.findUnique({
         where: { athleteId_provider: { athleteId, provider: "strava" } },
         select: {
@@ -44,7 +44,7 @@ export class PrismaOnlineStatusRepository {
         select: { occurredAt: true },
       }),
       this.#prisma.pairedDevice.findFirst({
-        where: { athleteId },
+        where: { athleteId, status: "active" },
         orderBy: [{ lastSeenAt: "desc" }, { createdAt: "desc" }],
         select: { name: true, status: true, createdAt: true, lastSeenAt: true, lastErrorCode: true },
       }),
@@ -54,6 +54,11 @@ export class PrismaOnlineStatusRepository {
         select: { sourceRevision: true, publishedAt: true },
       }),
     ]);
+    const device = activeDevice ?? await this.#prisma.pairedDevice.findFirst({
+      where: { athleteId },
+      orderBy: { createdAt: "desc" },
+      select: { name: true, status: true, createdAt: true, lastSeenAt: true, lastErrorCode: true },
+    });
 
     return immutableCopy({
       athleteId,

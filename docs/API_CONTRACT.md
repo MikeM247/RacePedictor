@@ -66,6 +66,32 @@ This contract is aligned to Prisma-style domain models:
 - `GET /api/v1/activities/:activityId/splits`
   - Response: `{ activityId: string, items: ActivitySplitKmDTO[] }`
 
+- `GET /api/v1/activities/:activityId/coach-review`
+  - Purpose: read the latest athlete-scoped asynchronous coach review for an activity.
+  - Response: `{ data: { activityId, status, review, requestId, updatedAt, readRevision } }`.
+  - `status`: `not_requested | queued | processing | ready | retry_wait | attention`.
+  - `review` is nullable and contains measured activity facts, the matched plan/session when unambiguous, evidence labels, limitations, and bounded natural-language feedback.
+
+- `POST /api/v1/activities/:activityId/coach-review`
+  - Purpose: queue or re-queue one activity for the local AI review job.
+  - Response: `{ data: { activityId, requestId, status, reused, updatedAt } }`.
+
+- `GET /api/v1/coaching/activity-reviews/latest`
+  - Query: optional `limit` capped at 40.
+  - Response: `{ data: { items: ActivityCoachReviewSummary[] } }`.
+  - The cloud read path reconciles eligible running activities created in the last 48 hours into the durable review queue; this reconciliation is bounded and idempotent.
+
+Device-only review exchange:
+
+- `GET /api/v1/sync/device/activity-reviews`
+  - Purpose: claim bounded queued review requests for the paired local device.
+  - Response: `{ data: { items: [{ requestId, activityId, leaseToken, status: "processing" }] } }`.
+
+- `POST /api/v1/sync/device/activity-reviews/publish`
+  - Purpose: publish one locally generated, schema-validated review while holding its device lease.
+  - Request: review artifact plus `requestId`, `leaseToken`, and `expectedActivityRevision`.
+  - The device route never accepts arbitrary athlete scope; the authenticated paired device supplies it.
+
 ### Features (weekly-first)
 - `GET /api/v1/features/weekly`
   - Query: `athleteId?`, date range, pagination cursor.

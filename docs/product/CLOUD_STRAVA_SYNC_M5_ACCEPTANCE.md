@@ -50,6 +50,14 @@ PASS. One explicit structured input and exact selected-section array are require
 
 These dependencies do not waive authentication, privacy, tenant isolation, immutable history, or explicit plan approval.
 
+## Follow-on delivery boundary — ADR 0006 (2026-08-28)
+
+This historical M5 acceptance remains unchanged. ADR 0006 is a follow-on local-agent delivery that replaces the manual JSON publication step with a fixed vault-relative structured source, a bounded pull-then-publish cycle, and a durable local SQLite publication outbox. It does not widen the M5 privacy boundary or change cloud authority.
+
+The follow-on acceptance evidence must prove that the agent reads only `RacePredictor/second-brain-context.v1.json`, never scans or uploads the vault, preserves pending immutable revisions while offline, and fails closed on malformed managed-note markers. It must also prove that cloud plan/calendar/activity projections remain generated-only and cannot be overwritten through local source edits.
+
+This addendum does not grant production approval. The M8 live production checks for automatic Strava webhook delivery, independent raw-object integrity, and paired-device selected-context pull/publish remain blocked until separately evidenced.
+
 ## Product Owner decision
 
 **PASS - GO for M6.**

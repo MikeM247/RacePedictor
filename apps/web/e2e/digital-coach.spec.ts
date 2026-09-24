@@ -2,6 +2,17 @@ import { expect, test } from "@playwright/test";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { e2eExchangePath } from "./fixture-paths.ts";
+import {
+  absent as absentResponse,
+  coachingFixtures,
+  fixtureCalendarSession as validCalendarSession,
+  fixtureContext as validContext,
+  fixtureGoal as validGoal,
+  fixturePlan as validPlan,
+  fixtureProposal as validProposal,
+  fixtureToday as validToday,
+} from "./coaching-fixtures.ts";
+import { loadInterceptedTrainingHistory, openDetailDisclosures } from "./test-helpers.ts";
 import { calculatePlanProposalContentHash } from "../lib/local-coaching-service.ts";
 
 const localDate = (date = new Date()) => {
@@ -27,13 +38,37 @@ const weekStartsOn = (date: string) => {
   return value.toISOString().slice(0, 10);
 };
 
+const fixtureTime = "2026-09-13T08:00:00.000Z";
+const fixtureHash = "a".repeat(64);
+const fixtureGoal = (id = "goal_resume") => ({
+  id, athleteId: "e2e_athlete", revision: 1, title: "Autumn half marathon", why: "Finish confidently",
+  target: { kind: "performance", distanceMeters: 21100, targetDate: "2026-10-12" }, status: "draft", createdAt: fixtureTime, updatedAt: fixtureTime,
+});
+const fixtureProposal = (id = "proposal_resume", contextArtifactId = "context_resume") => {
+  const goal = fixtureGoal();
+  return {
+    id, athleteId: "e2e_athlete", goalId: goal.id, goalRevision: 1, routineRevision: 1, version: 2, revision: 1,
+    startsOn: "2026-09-14", endsOn: "2026-10-12", timezone: "Africa/Johannesburg", contextArtifactId, createdAt: fixtureTime,
+    status: "proposed", proposedGoal: goal, goalRationale: "Continue with a gradual build.", rationale: "Continue with a gradual build.", summary: "A saved plan draft.", assumptions: [], cautions: [], sourceHistoryFingerprint: fixtureHash, contentHash: fixtureHash,
+    weeklyStructure: [{ weekStartsOn: "2026-09-14", focus: "Easy start", sessionIds: ["workout_resume"] }],
+    workouts: [{ id: "workout_resume", kind: "run", scheduledDate: "2026-09-15", startTime: "06:00", title: "Easy run and strides", purpose: "Maintain rhythm.", prescription: "Run easily.", cautions: [], durationMinutes: 45, distanceMeters: 7000, intensityRpe: 3 }],
+    review: { historyStatus: "current", requiresStaleAcknowledgement: false, goalTitle: goal.title, goalTarget: goal.target, materialDifferences: [{ field: "plan", change: "initial", summary: "First plan." }] },
+  };
+};
+const fixtureContext = () => ({
+  schema: "coaching-context.v1", artifact: { id: "context_resume", athleteId: "e2e_athlete", schemaVersion: 1, capturedAt: fixtureTime, activityCount: 0, earliestActivityDate: null, latestActivityDate: null, sources: ["manual"], historyFingerprint: fixtureHash, contentHash: fixtureHash, digest: fixtureHash, activePlan: null, noteReferences: [], warnings: [] },
+  profile: { id: "profile_resume", athleteId: "e2e_athlete", revision: 1, displayName: "Runner", timezone: "Africa/Johannesburg", units: "metric", why: "Finish confidently", experience: "intermediate", constraints: [], updatedAt: fixtureTime },
+  routine: { id: "routine_resume", athleteId: "e2e_athlete", revision: 1, timezone: "Africa/Johannesburg", desiredSessionsPerWeek: 1, preferredLongRunDay: "tuesday", days: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((day) => day === "tuesday" ? { day, available: true, startTime: "06:00", endTime: "08:00", maxDurationMinutes: 120, allowedKinds: ["run"] } : { day, available: false }), updatedAt: fixtureTime },
+  planningGoal: fixtureGoal(), settledGoal: null, activePlan: null, historyCoverage: { athleteId: "e2e_athlete", activityCount: 0, earliestOccurredAt: null, latestOccurredAt: null, totalDistanceM: 0, sourceTypes: [] }, activities: [],
+});
+
 const currentScreenRoutes = [
-  { href: "/dashboard", label: "Today" },
-  { href: "/dashboard/calendar", label: "Calendar" },
-  { href: "/dashboard/plan", label: "Plan" },
-  { href: "/dashboard/activities", label: "Activities" },
-  { href: "/dashboard/data-quality", label: "Data Quality" },
-  { href: "/dashboard/settings", label: "Settings" },
+  { href: "/dashboard", heading: "Home", nav: "Home" },
+  { href: "/dashboard/calendar", heading: "Calendar", nav: "Plan" },
+  { href: "/dashboard/plan", heading: "Plan", nav: "Plan" },
+  { href: "/dashboard/activities", heading: "Training", nav: "Training" },
+  { href: "/dashboard/data-quality", heading: "Data Quality", nav: "Data Quality" },
+  { href: "/dashboard/settings", heading: "Settings", nav: "Settings" },
 ] as const;
 
 const syntheticGpx = (date: string) => `<?xml version="1.0" encoding="UTF-8"?>
@@ -69,17 +104,17 @@ test("manual history becomes an explicitly approved and safely scheduled digital
     buffer: Buffer.from(syntheticGpx(today)),
   });
   await page.getByRole("button", { name: "Import selected file" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Import finished" })).toBeVisible();
+  await expect(page.getByText(/Accepted activities can be viewed in Training/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Validation summary" })).toBeVisible();
-  await expect(page.getByText("No corrective action is needed.")).toBeVisible();
+  await expect(page.getByText(/Import acceptance does not establish/)).toBeVisible();
 
   await page.goto("/dashboard/plan");
   await expect(page.getByRole("region", { name: "Active plan" })).toBeVisible();
   await expect(page.getByLabel("Goal", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Create a plan with Codex" }).click();
-  await expect(page.getByRole("heading", { name: "Create a plan with Codex" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Set your race goal" })).toBeFocused();
   await page.getByLabel("Name").fill("Synthetic Athlete");
-  await page.getByLabel("Goal", { exact: true }).fill("Run a confident synthetic half marathon");
+  await page.getByLabel("Target outcome", { exact: true }).fill("Run a confident synthetic half marathon");
   await page.getByLabel("Target date").fill(targetDate);
   await page.getByLabel("Target distance (km)").fill("21.1");
   await page.getByLabel("Why this matters").fill("Complete the synthetic coaching journey consistently.");
@@ -95,7 +130,8 @@ test("manual history becomes an explicitly approved and safely scheduled digital
     page.getByRole("button", { name: "Publish context for Codex" }).click(),
   ]);
   expect(publishResponse.ok()).toBe(true);
-  await expect(page.getByRole("status").filter({ hasText: /Context .* is ready/ })).toBeVisible();
+  await expect(page.getByText("Context saved", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "I have a proposal" }).click();
 
   const contextPath = path.join(e2eExchangePath, "Generated", "coaching-context.v1.json");
   await expect.poll(async () => {
@@ -205,7 +241,8 @@ test("manual history becomes an explicitly approved and safely scheduled digital
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(proposal)),
   });
-  await expect(page.getByRole("status").filter({ hasText: "Draft imported for review. Nothing is active yet." })).toBeVisible();
+  await page.getByRole("button", { name: "Import selected proposal" }).click();
+  await expect(page.getByText("Draft imported for review. Nothing is active yet.", { exact: true })).toBeVisible();
   await expect(page.getByText("Draft proposal", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("No plan is active yet");
 
@@ -218,14 +255,15 @@ test("manual history becomes an explicitly approved and safely scheduled digital
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Synthetic easy aerobic run" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Active goal" })).toContainText("Run a confident synthetic half marathon");
-  await expect(page.getByRole("region", { name: "Active goal" })).toContainText("days to target");
-  await expect(page.getByRole("link", { name: "Open this session" })).toHaveAttribute("href", /synthetic_easy_session/);
+  await expect(page.getByRole("link", { name: "View session" })).toHaveAttribute("href", /synthetic_easy_session/);
   await expect(page.getByRole("link", { name: "Open active plan" })).toHaveAttribute("href", "/dashboard/plan#active-plan-heading");
 
   await page.goto("/dashboard/calendar");
-  await page.getByRole("button", { name: /Synthetic future aerobic run/ }).click();
-  const sessionCard = page.locator("#session-synthetic_future_session");
+  const futureDay = page.locator(".calendar-day").filter({ hasText: "Synthetic future aerobic run" });
+  const futureDetailButton = futureDay.getByRole("button", { name: /View details for/ });
+  await futureDetailButton.click();
+  let planDetail = page.getByRole("dialog", { name: "Plan details" });
+  let sessionCard = planDetail.locator("#session-synthetic_future_session");
   await expect(sessionCard).toBeVisible();
   await sessionCard.getByRole("button", { name: "Skip" }).click();
   const skipDialog = page.getByRole("alertdialog", { name: "Confirm skip" });
@@ -236,7 +274,9 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await skipDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(skipDialog).toBeHidden();
   await page.reload();
-  await page.getByRole("button", { name: /Synthetic future aerobic run/ }).click();
+  await futureDetailButton.click();
+  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  sessionCard = planDetail.locator("#session-synthetic_future_session");
   await expect(sessionCard).toContainText("skipped");
   await expect(sessionCard.getByRole("button", { name: "Restore" })).toBeVisible();
 
@@ -246,34 +286,44 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await restoreDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(restoreDialog).toBeHidden();
   await page.reload();
-  await page.getByRole("button", { name: /Synthetic future aerobic run/ }).click();
+  await futureDetailButton.click();
+  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  sessionCard = planDetail.locator("#session-synthetic_future_session");
   await expect(sessionCard).toContainText("upcoming");
   await expect(sessionCard.getByRole("button", { name: "Skip" })).toBeVisible();
   await expect(sessionCard.getByLabel("Move to date")).toHaveValue(sameWeekConflictDate);
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Synthetic easy aerobic run" })).toBeVisible();
-  await expect(page.getByText("Plan v1")).toBeVisible();
-  await expect(page.getByText(/synthetic coaching journey/).first()).toBeVisible();
 
   await page.goto("/dashboard/settings");
   await expect(page.getByLabel("Local time")).toHaveValue("06:30");
   await expect(page.getByLabel("IANA timezone")).toHaveValue("Africa/Johannesburg");
-  await expect(page.getByRole("button", { name: "Save preferences" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Save preferences" })).toBeDisabled();
   await page.getByLabel("Local time").fill("07:15");
   await page.getByLabel("IANA timezone").fill("America/Los_Angeles");
+  const reminderSave = page.waitForRequest((request) => request.method() === "PUT" && request.url().endsWith("/api/v1/coaching/reminder-preferences"));
   await page.getByRole("button", { name: "Save preferences" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Not configured" })).toBeVisible();
+  expect((await reminderSave).postDataJSON()).toMatchObject({
+    localTime: "07:15",
+    timezone: "America/Los_Angeles",
+    days: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+    channel: "codex_task",
+  });
+  await expect(page.getByRole("status").filter({ hasText: "App reminder preference saved" })).toBeVisible();
   await page.reload();
   await expect(page.getByLabel("Local time")).toHaveValue("07:15");
   await expect(page.getByLabel("IANA timezone")).toHaveValue("America/Los_Angeles");
-  await page.getByRole("button", { name: "Generate handoff" }).click();
+  await page.locator(".settings-group > summary").filter({ hasText: "Reminder handoff" }).click();
+  await page.getByRole("button", { name: "Prepare reminder handoff" }).click();
   await expect(page.getByLabel("Generated Codex reminder handoff")).toContainText("prepared, not yet scheduled");
   await expect(page.getByLabel("Generated Codex reminder handoff")).toContainText("Context artifact: Coach Exchange/Generated/coaching-context.v1.json");
   await expect(page.getByLabel("Generated Codex reminder handoff")).toContainText("Do not provide medical diagnosis or medical authority");
   await expect(page.getByLabel("Generated Codex reminder handoff")).toContainText("Do not review a completed run or claim automatic adaptation");
   await expect(page.getByText("Not scheduled — handoff prepared")).toBeVisible();
+  await page.getByRole("button", { name: "Continue to confirmation" }).click();
   await page.reload();
+  await page.locator(".settings-group > summary").filter({ hasText: "Reminder handoff" }).click();
   await expect(page.locator(".status-chip").filter({ hasText: "Prepared for Codex" })).toBeVisible();
   await expect(page.getByText("Not scheduled — handoff prepared")).toBeVisible();
   await page.getByLabel("External task reference").fill("codex-task-e2e-confirmation");
@@ -281,6 +331,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await expect(page.getByRole("status").filter({ hasText: "app does not infer or verify external delivery" })).toBeVisible();
   await expect(page.getByText("Scheduled externally — user confirmed")).toBeVisible();
   await page.reload();
+  await page.locator(".settings-group > summary").filter({ hasText: "Reminder handoff" }).click();
   await expect(page.getByText("Scheduled externally — user confirmed")).toBeVisible();
 
   const generatedFiles = await readdir(path.join(e2eExchangePath, "Generated"));
@@ -290,11 +341,12 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await page.goto("/dashboard/plan");
   const replacementTargetDate = addDays(today, 56);
   await page.getByRole("button", { name: "Create a new plan with Codex" }).click();
-  await page.getByLabel("Goal", { exact: true }).fill("Run a stronger synthetic half marathon");
+  await page.getByLabel("Target outcome", { exact: true }).fill("Run a stronger synthetic half marathon");
   await page.getByLabel("Target date").fill(replacementTargetDate);
   await page.getByLabel("Why this matters").fill("Keep building the synthetic coaching habit with a reviewed progression.");
   await page.getByRole("button", { name: "Publish context for Codex" }).click();
-  await expect(page.getByRole("status").filter({ hasText: /Context .* is ready/ })).toBeVisible();
+  await expect(page.getByText("Context saved", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "I have a proposal" }).click();
   await expect.poll(async () => {
     const latest = JSON.parse(await readFile(contextPath, "utf8"));
     return latest.planningGoal?.title;
@@ -352,6 +404,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify({ schema: "coaching-plan-proposal.v1", proposal: replacementProposalBody })),
   });
+  await page.getByRole("button", { name: "Import selected proposal" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Draft imported for review. Nothing is active yet." })).toBeVisible();
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record1");
   const versionHistory = page.getByRole("region", { name: "Approved plan version history" });
@@ -360,10 +413,12 @@ test("manual history becomes an explicitly approved and safely scheduled digital
 
   await page.getByRole("button", { name: "Review and approve" }).click();
   const replacementDialog = page.getByRole("alertdialog", { name: "Activate this plan version?" });
-  await expect(replacementDialog).toContainText("retires active plan v1");
+  await expect(replacementDialog).toContainText("retires the reviewed active plan");
   const decisionRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().includes("/api/v1/coaching/proposals/") && request.url().endsWith("/decision"));
   await replacementDialog.getByRole("button", { name: "Confirm approve" }).click();
   expect((await decisionRequest).postDataJSON()).toMatchObject({ replacingPlanId: replacementContext.activePlan.id });
+  await expect(replacementDialog).toContainText("Plan activated after explicit approval");
+  await replacementDialog.getByRole("button", { name: "Close" }).click();
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record2");
   await expect(versionHistory).toContainText("Approved record 2");
   const retiredVersion = versionHistory.locator("details").filter({ hasText: "Approved record 1" });
@@ -380,58 +435,70 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   const targetDate = addDays(today, 42);
   let approved = false;
   let moved = false;
-  let reminderStatus = "not_configured";
-  const plan = { id: "plan_mobile_journey", version: 1, revision: 1, startsOn: weekStartsOn(today), endsOn: targetDate, status: "active" };
-  const session = () => ({
-    id: "session_mobile_journey", kind: "run", title: "Mobile confidence run",
+  let published = false;
+  let reminderStatus: "not_configured" | "prepared" | "scheduled" = "not_configured";
+  const mobileGoal = validGoal({ id: "goal_mobile_journey", title: "Mobile half marathon", why: "Build confidence and consistency.", target: { kind: "performance", distanceMeters: 21_100, targetDate } });
+  const mobileWorkout = {
+    id: "session_mobile_journey", kind: "run", scheduledDate: tomorrow, startTime: "06:00", title: "Mobile confidence run",
     purpose: "Build confidence through repeatable easy running.", prescription: "Run easily for 40 minutes at conversational effort.",
-    cautions: ["Stop if pain changes your gait."], durationMinutes: 40, distanceMeters: 6000, intensityRpe: 3,
-    scheduledDate: tomorrow, prescribedDate: tomorrow, effectiveDate: moved ? moveDate : tomorrow,
-    status: "upcoming", revision: moved ? 2 : 1, warnings: [],
-  });
-  const proposal = {
-    id: "proposal_mobile_journey", version: 1, revision: 1, startsOn: weekStartsOn(today), endsOn: targetDate,
-    status: "proposed", summary: "A conservative mobile coaching plan.", rationale: "Build consistent aerobic work.",
-    workouts: [session()], weeklyStructure: [{ weekStartsOn: weekStartsOn(today), focus: "Consistency", sessionIds: ["session_mobile_journey"] }],
-    assumptions: ["Easy running is currently appropriate."], cautions: ["Persistent pain needs professional review."],
-    review: { historyStatus: "current", goalTitle: "Mobile half marathon", goalTarget: { kind: "performance", distanceMeters: 21100, targetDate }, materialDifferences: [{ field: "plan", change: "added", summary: "Creates the first approved plan." }] },
+    cautions: ["Stop if pain changes your gait."], durationMinutes: 40, distanceMeters: 6_000, intensityRpe: 3,
   };
+  const session = () => validCalendarSession({ ...mobileWorkout, prescribedDate: tomorrow, originalDate: tomorrow, effectiveDate: moved ? moveDate : tomorrow, scheduledDate: moved ? moveDate : tomorrow, revision: moved ? 2 : 1 });
+  const proposal = validProposal({
+    id: "proposal_mobile_journey", goalId: mobileGoal.id, proposedGoal: mobileGoal, version: 1, revision: 1,
+    startsOn: weekStartsOn(today), endsOn: targetDate, contextArtifactId: "context_mobile_journey", workouts: [mobileWorkout],
+    weeklyStructure: [{ weekStartsOn: weekStartsOn(today), focus: "Consistency", sessionIds: ["session_mobile_journey"] }],
+    summary: "A conservative mobile coaching plan.", rationale: "Build consistent aerobic work.", goalRationale: "The mobile goal is achievable through a gradual build.",
+    assumptions: ["Easy running is currently appropriate."], cautions: ["Persistent pain needs professional review."],
+    review: { historyStatus: "current", requiresStaleAcknowledgement: false, goalTitle: mobileGoal.title, goalTarget: mobileGoal.target, materialDifferences: [{ field: "plan", change: "added", summary: "Creates the first approved plan." }] },
+  });
+  const plan = validPlan({
+    id: "plan_mobile_journey", goalId: mobileGoal.id, version: 1, revision: 1, startsOn: weekStartsOn(today), endsOn: targetDate,
+    contextArtifactId: "context_mobile_journey", workouts: [mobileWorkout], weeklyStructure: proposal.weeklyStructure,
+    approval: { ...validPlan().approval, summary: proposal.summary, rationale: proposal.rationale, goalRationale: proposal.goalRationale, assumptions: proposal.assumptions, cautions: proposal.cautions },
+  });
 
-  await page.route("**/api/v1/imports/upload", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { status: "completed", normalizedCount: 1, duplicateCount: 0, rejectedCount: 0, parseWarnings: [] } }) }));
-  await page.route("**/api/v1/coaching/context/publish", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { artifactId: "context_mobile_journey" } }) }));
-  await page.route("**/api/v1/coaching/proposals/import", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { proposal } }) }));
+  await page.route("**/api/v1/imports/upload", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.importUpload()) }));
+  await page.route("**/api/v1/coaching/context/publish", (route) => {
+    published = true;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.contextPublish({ artifactId: "context_mobile_journey", artifact: { ...validContext().artifact, id: "context_mobile_journey" } })) });
+  });
+  await page.route("**/api/v1/coaching/proposals/import", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.proposalImport(proposal)) }));
   await page.route("**/api/v1/coaching/proposals/proposal_mobile_journey/decision", (route) => {
     approved = true;
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plan } }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.decision(plan, proposal.id)) });
   });
   await page.route("**/api/v1/coaching/plans/active", (route) => approved
-    ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: plan }) })
-    : route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "No active plan" } }) }));
-  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: approved ? [plan] : [] } }) }));
-  await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { sessions: approved ? [session()] : [] } }) }));
+    ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.activePlan(plan)) })
+    : route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify(absentResponse()) }));
+  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.history(approved ? [plan] : [])) }));
+  await page.route("**/api/v1/coaching/proposals/latest", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.latestProposal(null)) }));
+  await page.route("**/api/v1/coaching/calendar?**", (route) => {
+    const url = new URL(route.request().url());
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.calendar(approved ? [session()] : [], url.searchParams.get("from") ?? today, url.searchParams.get("to") ?? targetDate)) });
+  });
   await page.route("**/api/v1/coaching/calendar/sessions/session_mobile_journey/edits", (route) => {
     moved = true;
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: session() }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.calendarEdit(session())) });
   });
-  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {
-    date: today, timezone: "Africa/Johannesburg", state: "upcoming", message: "Your approved easy session supports the settled goal.",
-    localCue: "Start gently and remember why consistency matters.", goal: { id: "goal_mobile_journey", title: "Mobile half marathon", targetDate, countdown: { label: "42 days to target" } },
-    plan, session: { ...session(), effectiveDate: today }, stale: { isStale: false, reason: null }, scheduleWarnings: [],
-    links: { plan: "/dashboard/plan#active-plan-heading", calendar: "/dashboard/calendar", session: `/dashboard/calendar?session=session_mobile_journey&date=${today}#session-session_mobile_journey` },
-  } }) }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.today({
+    date: today, sessionId: session().id, goal: { id: mobileGoal.id, title: mobileGoal.title, why: mobileGoal.why, targetDate, countdown: { days: 42, label: "42 days to target" } },
+    plan: { id: plan.id, version: plan.version, startsOn: plan.startsOn, endsOn: plan.endsOn }, planVersion: plan.version,
+    session: { ...session(), effectiveDate: today, scheduledDate: today }, links: { plan: "/dashboard/plan#active-plan-heading", calendar: "/dashboard/calendar", session: `/dashboard/calendar?session=session_mobile_journey&date=${today}#session-session_mobile_journey` },
+  })) }));
   await page.route("**/api/v1/coaching/reminder-preferences", (route) => {
     if (route.request().method() === "PUT") reminderStatus = "not_configured";
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { enabled: true, localTime: "06:30", timezone: "Africa/Johannesburg", externalStatus: reminderStatus } }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.reminderPreferences({ externalStatus: reminderStatus, externalReference: reminderStatus === "prepared" ? "Coach Exchange/Generated/coaching-context.v1.json" : reminderStatus === "scheduled" ? "codex-mobile-task" : null })) });
   });
   await page.route("**/api/v1/coaching/reminder-handoffs", (route) => {
     reminderStatus = "prepared";
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { externalStatus: "prepared", handoff: "Prepared, not yet scheduled. Use the approved local coaching context." } }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.reminderHandoff()) });
   });
   await page.route("**/api/v1/coaching/reminder-handoffs/status", (route) => {
     reminderStatus = "scheduled";
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { externalStatus: "scheduled", externalReference: "codex-mobile-task" } }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.reminderStatus({ externalStatus: "scheduled", externalReference: "codex-mobile-task" })) });
   });
-  await page.route("**/api/v1/coaching/context/current", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { exchangeReference: "Coach Exchange/Generated/coaching-context.v1.json" } }) }));
+  await page.route("**/api/v1/coaching/context/current", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.currentContext(published ? validContext({ artifact: { ...validContext().artifact, id: "context_mobile_journey" } }) : null)) }));
 
   await page.goto("/dashboard/data-quality");
   await page.getByLabel("CSV or GPX file").setInputFiles({ name: "mobile-run.gpx", mimeType: "application/gpx+xml", buffer: Buffer.from(syntheticGpx(today)) });
@@ -440,12 +507,14 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
 
   await page.goto("/dashboard/plan");
   await page.getByRole("button", { name: "Create a plan with Codex" }).click();
-  await page.getByLabel("Goal", { exact: true }).fill("Mobile half marathon");
+  await page.getByLabel("Target outcome", { exact: true }).fill("Mobile half marathon");
   await page.getByLabel("Target date").fill(targetDate);
   await page.getByLabel("Why this matters").fill("Build confidence and consistency.");
   await page.getByRole("button", { name: "Publish context for Codex" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "context_mobile_journey" })).toBeVisible();
+  await expect(page.getByText("Context saved", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "I have a proposal" }).click();
   await page.getByLabel("Codex proposal JSON").setInputFiles({ name: "mobile-plan.json", mimeType: "application/json", buffer: Buffer.from("{}") });
+  await page.getByRole("button", { name: "Import selected proposal" }).click();
   await expect(page.getByText("Draft proposal", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Review and approve" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Confirm approve" }).click();
@@ -466,44 +535,43 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   await expect(page.getByText("Approved prescription: Run easily for 40 minutes")).toBeVisible();
 
   await page.goto("/dashboard/settings");
-  await page.getByRole("button", { name: "Save preferences" }).click();
-  await page.getByRole("button", { name: "Generate handoff" }).click();
+  await expect(page.getByRole("button", { name: "Save preferences" })).toBeDisabled();
+  await page.locator("details.settings-group").filter({ hasText: "Recurring motivation setup" }).locator("summary").click();
+  await page.getByRole("button", { name: "Prepare reminder handoff" }).click();
+  await page.getByRole("button", { name: "Continue to confirmation" }).click();
   await expect(page.getByText("Not scheduled — handoff prepared")).toBeVisible();
   await page.getByLabel("External task reference").fill("codex-mobile-task");
   await page.getByRole("button", { name: "Confirm scheduled externally" }).click();
   await expect(page.getByText("Scheduled externally — user confirmed")).toBeVisible();
-  await expect(page.getByText("Coach Exchange/Generated/coaching-context.v1.json")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-const noPlanToday = {
+const noPlanToday = validToday({
   date: "2026-08-05",
-  timezone: "Africa/Johannesburg",
+  sessionId: null,
   state: "no-plan",
+  status: "no-plan",
   message: "No active coaching plan is approved yet.",
   localCue: "Settle a goal and approve a plan before relying on daily coaching.",
   goal: null,
   plan: null,
+  planVersion: null,
   session: null,
   scheduleWarnings: [],
   links: { plan: "/dashboard/plan", calendar: "/dashboard/calendar", session: null },
-};
+});
 
 test("Plan keeps the active version in focus across Today navigation and hides superseded drafts", async ({ page }) => {
-  const activePlan = {
-    id: "plan_active_focus",
-    version: 2,
-    revision: 2,
-    startsOn: "2026-08-09",
-    endsOn: "2026-10-04",
-    timezone: "Africa/Johannesburg",
-    status: "active",
-    workouts: [],
-  };
-  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: activePlan }) }));
-  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: [activePlan] } }) }));
-  await page.route("**/api/v1/coaching/proposals/latest", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { proposal: { id: "superseded_draft", status: "proposed", version: 1, revision: 1 } } }) }));
-  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: noPlanToday }) }));
+  const activePlan = validPlan({
+    id: "plan_active_focus", version: 2, revision: 2, startsOn: "2026-08-09", endsOn: "2026-10-04",
+    approval: { ...validPlan().approval, summary: "Approval record2" },
+  });
+  const supersededDraft = validProposal({ id: "superseded_draft", status: "withdrawn" });
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.activePlan(activePlan)) }));
+  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.history([activePlan])) }));
+  await page.route("**/api/v1/coaching/proposals/latest", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.latestProposal(supersededDraft)) }));
+  await page.route("**/api/v1/coaching/context/current", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.currentContext(null)) }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.today(noPlanToday)) }));
 
   await page.goto("/dashboard/plan");
   const activePlanRegion = page.getByRole("region", { name: "Active plan" });
@@ -512,9 +580,9 @@ test("Plan keeps the active version in focus across Today navigation and hides s
   await expect(page.getByRole("button", { name: "Create a new plan with Codex" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Review saved draft" })).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Today", exact: true }).click();
+  await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Plan", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard\/plan$/);
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record2");
@@ -523,50 +591,32 @@ test("Plan keeps the active version in focus across Today navigation and hides s
 });
 
 test("Plan proposal validation exposes field-level repair details", async ({ page }) => {
-  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "No active plan" } }) }));
-  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: [] } }) }));
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify(absentResponse()) }));
+  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.history()) }));
+  await page.route("**/api/v1/coaching/proposals/latest", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.latestProposal(null)) }));
+  await page.route("**/api/v1/coaching/context/current", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.currentContext(null)) }));
   await page.route("**/api/v1/coaching/proposals/import", (route) => route.fulfill({
     status: 400,
     contentType: "application/json",
-    body: JSON.stringify({ error: { message: "Request validation failed", details: [{ path: ["proposal", "workouts", 0, "prescription"], message: "Required" }] } }),
+    body: JSON.stringify({ error: { code: "VALIDATION_ERROR", message: "Request validation failed", details: [{ path: ["proposal", "workouts", 0, "prescription"], message: "Required" }] } }),
   }));
   await page.goto("/dashboard/plan");
   await page.getByRole("button", { name: "Create a plan with Codex" }).click();
+  await page.getByRole("button", { name: "I already have a proposal" }).click();
   await page.getByLabel("Codex proposal JSON").setInputFiles({ name: "invalid-proposal.json", mimeType: "application/json", buffer: Buffer.from("{}") });
+  await page.getByRole("button", { name: "Import selected proposal" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "proposal.workouts.0.prescription" })).toContainText("proposal.workouts.0.prescription: Required");
 });
 
 test("Plan surfaces the latest saved draft without opening the creation workflow", async ({ page }) => {
-  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "No active plan" } }) }));
-  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: [] } }) }));
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify(absentResponse()) }));
+  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.history()) }));
   await page.route("**/api/v1/coaching/proposals/latest", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ data: { proposal: {
-      id: "RP-HM-GATERITE-20261004-SUB2",
-      status: "proposed",
-      version: 1,
-      revision: 1,
-      startsOn: "2026-08-10",
-      endsOn: "2026-10-04",
-      summary: "Eight-week Gaterite Challenge half-marathon plan.",
-      rationale: "Build recoverable race-specific fitness toward a conditional sub-two-hour goal.",
-      assumptions: ["Wednesday recovery runs remain optional."],
-      cautions: ["Monitor right-Achilles morning stiffness."],
-      weeklyStructure: [{ weekStartsOn: "2026-08-10", focus: "Absorb a supported long run", sessionIds: ["gaterite-w1-tue"] }],
-      workouts: [{
-        id: "gaterite-w1-tue", kind: "run", scheduledDate: "2026-08-11", title: "Easy run and strides",
-        purpose: "Maintain rhythm.", prescription: "Run 8 km easy, then complete four relaxed strides.",
-        cautions: ["Keep the easy running conversational."], durationMinutes: 60, distanceMeters: 8000, intensityRpe: 3,
-      }],
-      review: {
-        historyStatus: "current", requiresStaleAcknowledgement: false,
-        goalTitle: "Gaterite Challenge 21.1 km under 2:00:00",
-        goalTarget: { kind: "performance", distanceMeters: 21097.5, targetTimeSeconds: 7199, targetDate: "2026-10-04", eventName: "Gaterite Challenge 21.1 km" },
-        materialDifferences: [{ field: "plan", change: "initial", summary: "This would be the first approved plan." }],
-      },
-    } } }),
+    body: JSON.stringify(coachingFixtures.latestProposal(validProposal())),
   }));
+  await page.route("**/api/v1/coaching/context/current", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.currentContext(null)) }));
 
   await page.goto("/dashboard/plan");
 
@@ -575,11 +625,45 @@ test("Plan surfaces the latest saved draft without opening the creation workflow
   await expect(page.getByText("Draft proposal", { exact: true })).toBeHidden();
   await expect(page.getByText("A newer saved draft is ready for review.")).toBeVisible();
   await page.getByRole("button", { name: "Review saved draft" }).click();
-  await expect(page.getByRole("heading", { name: "Import and review proposal" })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Review proposal" })).toBeFocused();
   await expect(page.getByText("Saved draft loaded for review. Nothing is active until you approve it.")).toBeVisible();
   await expect(page.getByText("Draft proposal", { exact: true })).toBeVisible();
-  await expect(page.getByText("Gaterite Challenge 21.1 km under 2:00:00")).toBeVisible();
+  await expect(page.getByText("Autumn half marathon")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Easy run and strides" })).toBeVisible();
+});
+
+test("Plan treats documented no-plan absence as normal while independently restoring draft, history, and context", async ({ page }) => {
+  const calls = { active: 0, history: 0, proposal: 0, context: 0 };
+  await page.route("**/api/v1/coaching/plans/active", (route) => {
+    calls.active += 1;
+    return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "NOT_FOUND", message: "No active plan" } }) });
+  });
+  await page.route("**/api/v1/coaching/plans/history", (route) => {
+    calls.history += 1;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: [] } }) });
+  });
+  await page.route("**/api/v1/coaching/proposals/latest", (route) => {
+    calls.proposal += 1;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { proposal: fixtureProposal() } }) });
+  });
+  await page.route("**/api/v1/coaching/context/current", (route) => {
+    calls.context += 1;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { context: fixtureContext() } }) });
+  });
+
+  await page.goto("/dashboard/plan");
+  await expect.poll(() => Math.min(calls.active, calls.history, calls.proposal, calls.context)).toBeGreaterThanOrEqual(1);
+  await expect(page.getByRole("alert").filter({ hasText: "Active-plan status could not be checked" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Active plan" })).toContainText("No plan is active yet");
+  await expect(page.getByRole("button", { name: "Review saved draft" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Review saved draft" }).click();
+  await expect(page.getByRole("heading", { name: "Review proposal" })).toBeFocused();
+  await page.getByRole("button", { name: "Import another proposal" }).click();
+  await expect(page.getByRole("heading", { name: "Import your Codex proposal" })).toBeFocused();
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(page.getByRole("heading", { name: "Continue with your published context" })).toBeFocused();
+  await expect(page.getByText("coaching-context.v1.json")).toBeVisible();
 });
 
 test("Today distinguishes loading, error recovery, and no-plan", async ({ page }) => {
@@ -601,89 +685,110 @@ test("Today distinguishes loading, error recovery, and no-plan", async ({ page }
   releaseRequest();
   await expect(page.getByRole("heading", { name: "Today's coaching context is unavailable" })).toBeVisible();
   await expect(page.getByRole("alert").filter({ hasText: "Synthetic Today outage" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry Today" }).click();
+  await page.getByRole("button", { name: "Retry today" }).click();
   await expect(page.getByRole("heading", { name: "No active coaching plan yet" })).toBeVisible();
   await expect(page.getByText("No active plan", { exact: true })).toBeVisible();
 });
 
-test("Today shows stale context, goal countdown, warnings, and specific links", async ({ page }) => {
+test("Today shows stale context and specific links when the local Home snapshot is unavailable", async ({ page }) => {
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ data: {
-      date: "2026-08-05",
-      timezone: "Africa/Johannesburg",
-      state: "stale",
+    body: JSON.stringify(coachingFixtures.today({
+      date: "2026-08-05", sessionId: "session_synthetic", state: "stale", status: "stale",
       message: "Imported activity history changed after the active plan context was captured.",
       localCue: "Review the latest app-owned context before relying on the approved schedule; no plan change has been made.",
       goal: { id: "goal_synthetic", title: "Synthetic half marathon", why: "Synthetic purpose", targetDate: "2026-09-16", countdown: { days: 42, label: "42 days to target" } },
       plan: { id: "plan_synthetic", version: 3, startsOn: "2026-08-03", endsOn: "2026-09-16" },
-      session: { id: "session_synthetic", status: "upcoming", title: "Synthetic threshold session", purpose: "Practice controlled effort.", prescription: "Run three controlled threshold intervals.", durationMinutes: 40, scheduledDate: "2026-08-05", effectiveDate: "2026-08-05" },
+      planVersion: 3,
+      session: validCalendarSession({ id: "session_synthetic", title: "Synthetic threshold session", purpose: "Practice controlled effort.", prescription: "Run three controlled threshold intervals.", durationMinutes: 40, scheduledDate: "2026-08-05", prescribedDate: "2026-08-05", effectiveDate: "2026-08-05", originalDate: "2026-08-05" }),
       scheduleWarnings: ["Imported history is newer than the active plan context."],
+      stale: { isStale: true, reason: "Imported activity history is newer than the active plan context." },
       links: { plan: "/dashboard/plan#active-plan-heading", calendar: "/dashboard/calendar", session: "/dashboard/calendar?session=session_synthetic&date=2026-08-05#session-session_synthetic" },
-    } }),
+    })),
   }));
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Synthetic threshold session" })).toBeVisible();
   await expect(page.getByText("Approved prescription: Run three controlled threshold intervals.")).toBeVisible();
   await expect(page.getByText("Stale context", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Active goal" })).toContainText("42 days to target");
-  await expect(page.getByText("Schedule warnings", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open this session" })).toHaveAttribute("href", /session_synthetic/);
+  await expect(page.getByText("Imported activity history changed after the active plan context was captured.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View session" })).toHaveAttribute("href", /session_synthetic/);
   await expect(page.getByRole("link", { name: "Open active plan" })).toHaveAttribute("href", "/dashboard/plan#active-plan-heading");
 });
 
 test("Calendar deep links reveal a prescribed session outside the current week and show stale context", async ({ page }) => {
   const sessionDate = "2026-09-16";
-  await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ data: { sessions: [{
-      id: "session_deep_link", kind: "run", title: "Deep-link progression run",
-      purpose: "Build controlled stamina.", prescription: "Run 50 minutes with a controlled final 10 minutes.",
-      cautions: ["Keep the finish controlled."], durationMinutes: 50, distanceMeters: 8000,
-      intensityRpe: 5, startTime: "06:15", scheduledDate: sessionDate, prescribedDate: sessionDate,
-      effectiveDate: sessionDate, originalDate: sessionDate, status: "upcoming", revision: 1, warnings: [],
-    }] } }),
-  }));
+  const requestedRanges: string[] = [];
+  await page.clock.setFixedTime(new Date("2026-09-17T08:00:00.000+02:00"));
+  await page.route("**/api/v1/coaching/calendar?**", (route) => {
+    const request = new URL(route.request().url());
+    const from = request.searchParams.get("from") ?? "2026-09-14";
+    const to = request.searchParams.get("to") ?? "2026-10-11";
+    requestedRanges.push(from);
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(coachingFixtures.calendar([
+        validCalendarSession({
+          id: "session_deep_link", title: "Deep-link progression run", purpose: "Build controlled stamina.",
+          prescription: "Run 50 minutes with a controlled final 10 minutes.", cautions: ["Keep the finish controlled."],
+          durationMinutes: 50, distanceMeters: 8_000, intensityRpe: 5, startTime: "06:15", scheduledDate: sessionDate,
+          prescribedDate: sessionDate, effectiveDate: sessionDate, originalDate: sessionDate,
+        }),
+      ], from, to)),
+    });
+  });
   await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({
     status: 200, contentType: "application/json",
-    body: JSON.stringify({ data: { id: "plan_deep_link", version: 2, startsOn: "2026-09-01", endsOn: "2026-09-30" } }),
+    body: JSON.stringify(coachingFixtures.activePlan(validPlan({ id: "plan_deep_link", version: 2, startsOn: "2026-09-01", endsOn: "2026-09-30" }))),
   }));
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
-    status: 200, contentType: "application/json",
-    body: JSON.stringify({ data: { stale: { isStale: true, reason: "Imported activity history is newer than this plan." } } }),
+    status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.today({ stale: { isStale: true, reason: "Imported activity history is newer than this plan." } })),
   }));
 
   await page.goto(`/dashboard/calendar?date=${sessionDate}&session=session_deep_link#session-session_deep_link`);
-  await expect(page.getByRole("region", { name: "Seven-day training week" })).toBeVisible();
-  await expect(page.locator(".calendar-day")).toHaveCount(7);
-  const card = page.locator("#session-session_deep_link");
+  await expect(page.getByRole("region", { name: "Four-week training calendar" })).toBeVisible();
+  await expect(page.locator(".calendar-day")).toHaveCount(28);
+  await expect(page.locator("section.calendar-day[aria-label='16 Sept 2026']")).toContainText("No run recorded");
+  const panelHeights = await page.locator(".calendar-week-row").first().locator(".calendar-day").evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().height)));
+  expect(new Set(panelHeights).size).toBe(1);
+  const detail = page.getByRole("dialog", { name: "Plan details" });
+  await expect(detail).toBeVisible();
+  const card = detail.locator("#session-session_deep_link");
   await expect(card).toContainText("Current prescription: Run 50 minutes");
   await expect(card).toContainText("Approved source prescription");
   await expect(card).toContainText("Current target: 8 km · 50 min · RPE 5");
   await expect(page.getByRole("heading", { name: "Schedule context needs review" })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("session-session_deep_link");
+  await expect(detail.getByRole("button", { name: "Close details" })).toBeFocused();
+  await detail.getByRole("button", { name: "Close details" }).click();
+  const calendar = page.getByRole("region", { name: "Four-week training calendar" });
+  await calendar.focus();
+  await page.keyboard.press("PageDown");
+  await expect.poll(() => requestedRanges).toContain("2026-09-21");
+  await expect(page.locator(".calendar-range-announcement")).toContainText("21 Sept 2026");
+  await calendar.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientY: 80 }] });
+  await calendar.dispatchEvent("touchend", { changedTouches: [{ identifier: 1, clientY: 220 }] });
+  await expect.poll(() => requestedRanges.filter((range) => range === "2026-09-14").length).toBe(2);
+  await expect(page.getByRole("dialog", { name: "Plan details" })).toHaveCount(0);
 });
 
-test("Calendar shows recorded runs and retained historical plans together without inferring completion", async ({ page }) => {
+test("Calendar shows full recorded runs before current active-plan context", async ({ page }) => {
   const date = "2026-08-13";
   await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({ data: {
-      sessions: [],
+      sessions: [{
+        id: "active-plan-run", kind: "run", scheduledDate: date, prescribedDate: date, effectiveDate: date,
+        originalDate: date, title: "Easy 10 km", purpose: "Maintain aerobic volume.", prescription: "Run 10 km at an easy effort.",
+        cautions: [], durationMinutes: 60, distanceMeters: 10000, intensityRpe: 3, status: "upcoming", revision: 1, warnings: [],
+      }],
       activities: [{
         id: "activity-recorded-run", athleteId: "e2e_athlete", localDate: date, title: "Morning Run",
         sport: "run", occurredAt: "2026-08-13T04:30:00.000Z", localOccurredAt: "2026-08-13T06:30:00.000Z",
         distanceM: 10000, elapsedTimeS: 3600, avgPaceSecPerKm: 360, elevationGainM: 120,
         hrAvailable: false, cadenceAvailable: false,
-      }],
-      historicalSessions: [{
-        id: "retired-plan-run", planId: "retired-plan", planVersion: 2, kind: "run", scheduledDate: date,
-        title: "Easy 10 km", purpose: "Maintain aerobic volume.", prescription: "Run 10 km at an easy effort.",
-        cautions: [], durationMinutes: 60, distanceMeters: 10000, intensityRpe: 3,
       }],
     } }),
   }));
@@ -694,18 +799,27 @@ test("Calendar shows recorded runs and retained historical plans together withou
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ data: { stale: { isStale: false, reason: null } } }),
   }));
+  await page.route("**/api/v1/activities/activity-recorded-run", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ data: { activity: {
+      id: "activity-recorded-run", athleteId: "e2e_athlete", title: "Morning Run", sport: "run",
+      occurredAt: "2026-08-13T04:30:00.000Z", localOccurredAt: "2026-08-13T06:30:00.000Z", endedAt: "2026-08-13T05:30:00.000Z",
+      sourceType: "manual", distanceM: 10000, elapsedTimeS: 3600, avgPaceSecPerKm: 360, elevationGainM: 120, elevationLossM: 95,
+      hrAvailable: false, cadenceAvailable: false, dedupeHash: "a".repeat(64), createdAt: "2026-08-13T05:31:00.000Z", splits: [], routeSignature: null,
+    } } }),
+  }));
 
   await page.goto(`/dashboard/calendar?date=${date}`);
-  await page.locator("details.calendar-supporting-records > summary").click();
-  const actual = page.locator("#activity-activity-recorded-run");
-  await expect(actual).toContainText("Morning Run");
-  await expect(actual).toContainText("Actual workout: 10 km · 1:00:00 · 6:00/km · +120 m");
-  await actual.locator("summary").click();
-  await expect(actual).toContainText("Same-day plan records are shown below without inferring that any plan was completed.");
-  await expect(actual).toContainText("Easy 10 km · historical plan v2");
-  const historical = page.locator("#historical-session-retired-plan-retired-plan-run");
-  await expect(historical).toContainText("Historical planned session · read-only.");
-  await expect(historical).toContainText("Run 10 km at an easy effort.");
+  await expect(page.locator(".calendar-day")).toHaveCount(28);
+  await expect(page.locator("section.calendar-day[aria-label='14 Aug 2026']")).toContainText("No run recorded");
+  await page.getByRole("button", { name: "View details for 13 Aug 2026" }).click();
+  const detail = page.getByRole("dialog", { name: "Run details" });
+  await expect(detail.getByRole("heading", { name: "Morning Run" })).toBeVisible();
+  await expect(detail.getByRole("heading", { name: "Run at a glance" })).toBeVisible();
+  await expect(detail).toContainText("10.00 km");
+  await expect(detail).toContainText("Active plan · session scheduled for this date");
+  await expect(detail).toContainText(/does not indicate that any recorded run completed the prescription/i);
+  await expect(detail).toContainText("Run 10 km at an easy effort.");
+  await expect(detail).not.toContainText("historical plan");
 });
 
 test("Calendar recovers from errors, marks today, and warns before conflicting or out-of-range moves on mobile", async ({ page }) => {
@@ -792,7 +906,11 @@ test("Calendar saves a reasoned future-session amendment and preserves its appro
   });
 
   await page.goto(`/dashboard/calendar?date=${sessionDate}`);
-  const card = page.locator("#session-session_reasoned_amendment");
+  const sessionDay = page.locator(".calendar-day").filter({ hasText: "Approved aerobic run" });
+  const sessionDetailButton = sessionDay.getByRole("button", { name: /View details for/ });
+  await sessionDetailButton.click();
+  let planDetail = page.getByRole("dialog", { name: "Plan details" });
+  let card = planDetail.locator("#session-session_reasoned_amendment");
   const amendButton = card.getByRole("button", { name: "Amend session" });
   await amendButton.click();
   let dialog = page.getByRole("dialog", { name: "Amend future session" });
@@ -803,8 +921,12 @@ test("Calendar saves a reasoned future-session amendment and preserves its appro
   await expect(dialog.getByLabel("Title")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(amendButton).toBeFocused();
-  await amendButton.click();
+  await expect(sessionDetailButton).toBeFocused();
+  await sessionDetailButton.click();
+  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  card = planDetail.locator("#session-session_reasoned_amendment");
+  const reopenedAmendButton = card.getByRole("button", { name: "Amend session" });
+  await reopenedAmendButton.click();
   dialog = page.getByRole("dialog", { name: "Amend future session" });
   const saveAmendment = dialog.getByRole("button", { name: "Save reasoned amendment" });
   await expect(saveAmendment).toBeDisabled();
@@ -821,6 +943,9 @@ test("Calendar saves a reasoned future-session amendment and preserves its appro
   await expect(saveAmendment).toBeEnabled();
   await saveAmendment.click();
   await expect(page.getByRole("status").filter({ hasText: "Session amended" })).toBeVisible();
+  await sessionDetailButton.click();
+  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  card = planDetail.locator("#session-session_reasoned_amendment");
   await expect(card).toContainText("Current prescription: Run easily on the treadmill for 30 minutes.");
   await card.getByText("Approved source prescription").click();
   await expect(card).toContainText("Run easily for 50 minutes.");
@@ -831,16 +956,18 @@ test("Calendar saves a reasoned future-session amendment and preserves its appro
 test("Settings rehydrates prepared handoff status and its coaching-context reference", async ({ page }) => {
   await page.route("**/api/v1/coaching/reminder-preferences", (route) => route.fulfill({
     status: 200, contentType: "application/json",
-    body: JSON.stringify({ data: { enabled: true, localTime: "06:30", timezone: "Africa/Johannesburg", externalStatus: "prepared" } }),
+    body: JSON.stringify(coachingFixtures.reminderPreferences({ externalStatus: "prepared", externalReference: "Coach Exchange/Generated/coaching-context.v1.json" })),
   }));
   await page.route("**/api/v1/coaching/context/current", (route) => route.fulfill({
     status: 200, contentType: "application/json",
-    body: JSON.stringify({ data: { exchangeReference: "Coach Exchange/Generated/coaching-context.v1.json" } }),
+    body: JSON.stringify(coachingFixtures.currentContext(validContext())),
   }));
   await page.goto("/dashboard/settings");
+  await page.locator("details.settings-group").filter({ hasText: "Recurring motivation setup" }).locator("summary").click();
+  await expect(page.getByRole("heading", { name: "Recurring motivation setup" })).toBeVisible();
   await expect(page.locator(".status-chip").filter({ hasText: "Prepared for Codex" })).toBeVisible();
   await expect(page.getByText("Not scheduled — handoff prepared")).toBeVisible();
-  await expect(page.getByText("Coach Exchange/Generated/coaching-context.v1.json")).toBeVisible();
+  await expect(page.getByText("Prepared artifact: Coach Exchange/Generated/coaching-context.v1.json")).toBeVisible();
 });
 
 test("Today keeps a missed-session warning and actions usable at the mobile baseline", async ({ page }) => {
@@ -866,7 +993,7 @@ test("Today keeps a missed-session warning and actions usable at the mobile base
   const card = page.getByRole("region", { name: "Past session needs attention" });
   await expect(card).toBeVisible();
   await expect(card).toContainText("Missed · unconfirmed");
-  await expect(card.getByRole("link", { name: "Open this session" })).toBeVisible();
+  await expect(card.getByRole("link", { name: "View session" })).toBeVisible();
   await expect(card.getByRole("link", { name: "Open active plan" })).toBeVisible();
   const bounds = await card.boundingBox();
   expect(bounds).not.toBeNull();
@@ -889,14 +1016,14 @@ test("all current screens keep one active route and no horizontal overflow at de
     for (const route of currentScreenRoutes) {
       await page.goto(route.href);
       await expect(page).toHaveURL(new RegExp(`${route.href.replaceAll("/", "\\/")}$`));
-      await expect(page.getByRole("heading", { level: 1, name: route.label, exact: true })).toHaveCount(1);
-      const currentLinks = page.getByRole("navigation", { name: "Dashboard pages" }).locator('a[aria-current="page"]');
+      await expect(page.getByRole("heading", { level: 1, name: route.heading, exact: true })).toHaveCount(1);
+      const currentLinks = page.getByLabel("Application navigation").locator('a[aria-current="page"]');
       await expect(currentLinks).toHaveCount(1);
-      await expect(currentLinks).toHaveAccessibleName(route.label);
+      await expect(currentLinks).toHaveAccessibleName(new RegExp(`^${route.nav}`));
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
-      if (viewport.width === 1024 && route.label === "Calendar") {
+      if (viewport.width === 1024 && route.heading === "Calendar") {
         await expect(page.getByRole("button", { name: "Agenda", exact: true })).toHaveAttribute("aria-pressed", "true");
-        await expect(page.getByRole("button", { name: "Week", exact: true })).toHaveAttribute("aria-pressed", "false");
+        await expect(page.getByRole("button", { name: "Weeks", exact: true })).toHaveCount(0);
       }
     }
 
@@ -955,6 +1082,7 @@ test("local Activities filters imported history and restores selected-row focus 
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Recent activities" })).toBeVisible();
   }
+  await page.locator(".activity-filter-disclosure summary").click();
   await page.getByLabel("Search activities").fill(activityTitle);
   await page.getByLabel("Activity type").selectOption("run");
   await page.getByLabel("From").fill(today);
@@ -975,8 +1103,9 @@ test("local Activities filters imported history and restores selected-row focus 
   await expect(activityRow).toBeVisible();
   await activityRow.click();
   await expect(page.getByRole("heading", { name: activityTitle })).toBeVisible();
+  await page.locator("details.detail-disclosure").first().locator("summary").click();
   await expect(page.getByText("No additional telemetry was included in this activity.")).toBeVisible();
-  await page.getByRole("button", { name: "Back to activities" }).click();
+  await page.getByRole("button", { name: "Back to Training" }).click();
   await expect(activityRow).toBeVisible();
   await expect(activityRow).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -1042,27 +1171,118 @@ test("Activities presents a scannable Night Ops record for a run with telemetry,
   });
 
   await page.goto("/dashboard/activities");
-  const initialState = page.getByRole("heading", { name: /No activities yet|Unable to load activities/ });
-  await expect(initialState).toBeVisible();
-  if (await page.getByRole("button", { name: "Try again" }).isVisible()) {
-    await page.getByRole("button", { name: "Try again" }).click();
-  } else {
-    await page.getByRole("button", { name: "Apply filters" }).click();
-  }
+  await loadInterceptedTrainingHistory(page);
   await expect(page.getByRole("button", { name: /Morning Run/ })).toBeVisible();
   await page.getByRole("button", { name: /Morning Run/ }).click();
 
   await expect(page.getByRole("heading", { name: "Run at a glance" })).toBeVisible();
   await expect(page.getByText("Activity record", { exact: true })).toBeVisible();
+  await openDetailDisclosures(page, 1);
   await expect(page.getByText("5 signals", { exact: true })).toBeVisible();
+  await openDetailDisclosures(page, 2);
   const splits = page.getByRole("list", { name: "Per kilometre splits" });
   await expect(splits).toContainText("KM 01");
   await expect(splits).toContainText("8:56/km");
   await expect(splits).toContainText("KM 03");
   await expect(splits).toContainText("8:09/km");
+  await openDetailDisclosures(page, 3);
   await expect(page.getByText("Available", { exact: true })).toBeVisible();
   await expect(page.getByText("Route data is available for this activity.")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+});
+
+test("Activities exposes queued Coach's review feedback and renders the completed review", async ({ page }) => {
+  const activityId = "activity-coach-review";
+  const activity = {
+    id: activityId,
+    athleteId: "e2e_athlete",
+    title: "Coach review run",
+    occurredAt: "2026-08-27T02:48:00.000Z",
+    localOccurredAt: "2026-08-27T04:48:00.000+02:00",
+    sport: "run",
+    distanceM: 8_200,
+    elapsedTimeS: 2_890,
+    avgPaceSecPerKm: 352,
+    elevationGainM: 70,
+    hrAvailable: false,
+    cadenceAvailable: false,
+  };
+  let ready = false;
+  const review = {
+    id: "review-coach-review",
+    athleteId: "e2e_athlete",
+    activityId,
+    revision: 1,
+    inputFingerprint: "a".repeat(64),
+    headline: "A controlled aerobic run",
+    assessment: "The run delivered useful aerobic work close to the planned duration.",
+    nextStep: "Keep the next easy run conversational.",
+    comparison: {
+      matchState: "suggested",
+      planId: "plan-1",
+      sessionId: "session-1",
+      planVersion: 1,
+      sessionTitle: "Easy run",
+      plannedDurationMinutes: 45,
+      actualDurationMinutes: 48.2,
+      plannedDistanceMeters: 8_000,
+      actualDistanceMeters: 8_200,
+      plannedIntensityRpe: 3,
+      actualPerceivedEffort: null,
+      interpretation: "Elapsed time was 3.2 minutes over the effective prescription.",
+    },
+    evidence: [{ source: "activity", label: "Distance and elapsed time" }],
+    limitations: ["Heart-rate data is unavailable, so intensity cannot be inferred from heart rate."],
+    generatedAt: "2026-08-27T05:00:00.000Z",
+    publishedAt: "2026-08-27T05:00:00.000Z",
+    model: "test-model",
+    promptVersion: "activity-coach-review.v1",
+  };
+
+  await page.route("**/api/v1/activities**", (route) => {
+    const requestPath = new URL(route.request().url()).pathname;
+    const body = requestPath === `/api/v1/activities/${activityId}`
+      ? { activity: {
+        ...activity,
+        endedAt: "2026-08-27T03:36:10.000Z",
+        sourceType: "gpx",
+        elevationLossM: 62,
+        dedupeHash: "c".repeat(64),
+        createdAt: "2026-08-27T05:00:00.000Z",
+        splits: [],
+        routeSignature: null,
+      } }
+      : { items: [activity] };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.route(`**/api/v1/activities/${activityId}/coach-review`, async (route) => {
+    if (route.request().method() === "POST") {
+      ready = true;
+      return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ data: {
+        activityId, requestId: "request-coach-review", status: "queued", reused: false, updatedAt: "2026-08-27T05:00:00.000Z",
+      } }) });
+    }
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {
+      activityId, status: ready ? "ready" : "not_requested", review: ready ? review : null,
+      requestId: ready ? "request-coach-review" : null, updatedAt: ready ? "2026-08-27T05:00:00.000Z" : null, readRevision: null,
+    } }) });
+  });
+
+  await page.goto("/dashboard/activities");
+  await loadInterceptedTrainingHistory(page);
+  await expect(page.getByRole("button", { name: /Coach review run/ })).toBeVisible();
+  await page.getByRole("button", { name: /Coach review run/ }).click();
+  await expect(page.getByRole("heading", { name: "Coach's review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request coach feedback" })).toBeVisible();
+  await page.getByRole("button", { name: "Request coach feedback" }).click();
+  await expect(page.getByRole("button", { name: "Review queued" })).toBeVisible();
+  await page.getByRole("button", { name: "Check for updated feedback" }).click();
+  await expect(page.getByRole("heading", { name: "A controlled aerobic run" })).toBeVisible();
+  await expect(page.getByText("Keep the next easy run conversational.")).toBeVisible();
+  await page.getByText("Compare with the plan").click();
+  await expect(page.getByText("Easy run", { exact: true })).toBeVisible();
+  await page.getByText("Review evidence").click();
+  await expect(page.getByText(/Heart-rate data is unavailable/)).toBeVisible();
 });
 
 test("core screens render without overflow with reduced motion and forced colors", async ({ page }) => {
@@ -1075,23 +1295,22 @@ test("core screens render without overflow with reduced motion and forced colors
 
   for (const route of currentScreenRoutes) {
     await page.goto(route.href);
-    await expect(page.getByRole("heading", { level: 1, name: route.label, exact: true })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Dashboard pages" })
-      .getByRole("link", { name: route.label, exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { level: 1, name: route.heading, exact: true })).toBeVisible();
+    await expect(page.getByLabel("Application navigation")
+      .getByRole("link", { name: route.nav, exact: true })).toHaveAttribute("aria-current", "page");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   }
 });
 
-test("core shell has no horizontal overflow at a 200 percent zoom viewport proxy", async ({ page }) => {
+test("core shell has no horizontal overflow at a compact viewport proxy", async ({ page }) => {
   test.setTimeout(90_000);
   const zoomProxy = { width: 720, height: 450 };
   await page.setViewportSize(zoomProxy);
 
   for (const route of currentScreenRoutes) {
     await page.goto(route.href);
-    await expect(page.getByRole("heading", { level: 1, name: route.label, exact: true })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Dashboard pages" }))
-      .toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: route.heading, exact: true })).toBeVisible();
+    await expect(page.getByLabel("Application navigation")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(zoomProxy.width);
   }
 });

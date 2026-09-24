@@ -37,6 +37,7 @@ async function publishContext(request: Request) {
         kind: "performance",
         distanceMeters: input.goalDraft.distanceMeters,
         targetDate: input.goalDraft.targetDate,
+        ...(input.goalDraft.targetTimeSeconds === undefined ? {} : { targetTimeSeconds: input.goalDraft.targetTimeSeconds }),
       },
     });
     const published = await service.publishCoachingContext({ planningGoalId: goal.id });

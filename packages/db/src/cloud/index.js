@@ -25,5 +25,6 @@ export { PrismaTrainingPlanProjectionPublisher, TrainingPlanProjectionConflictEr
 export { PrismaTrainingPlanProjectionActivator, TrainingPlanActivationError } from "./prisma-training-plan-projection-activator.js";
 export { PrismaCalendarSessionAmendmentRepository, CalendarSessionAmendmentError } from "./prisma-calendar-session-amendment-repository.js";
 export { PrismaOperationalUsageRepository } from "./prisma-operational-usage-repository.js";
+export { PrismaActivityReviewRepository } from "./prisma-activity-review-repository.js";
 export { PrismaReconciliationScopeRepository } from "./prisma-reconciliation-scope-repository.js";
 export { PrismaIdentityRepository } from "./prisma-identity-repository.js";

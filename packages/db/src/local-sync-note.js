@@ -18,11 +18,15 @@ export async function updateCloudSyncNote(filePath, generatedContent) {
   if (existing === null) {
     next = `# RacePredictor Cloud Sync\n\n${block}\n\n## My notes\n\n`;
   } else {
-    const start = existing.indexOf(CLOUD_SYNC_START);
-    const end = existing.indexOf(CLOUD_SYNC_END);
-    next = start >= 0 && end > start
-      ? `${existing.slice(0, start)}${block}${existing.slice(end + CLOUD_SYNC_END.length)}`
-      : `${existing}${existing.endsWith("\n") ? "" : "\n"}\n${block}\n`;
+    const starts = markerOffsets(existing, CLOUD_SYNC_START);
+    const ends = markerOffsets(existing, CLOUD_SYNC_END);
+    if (starts.length === 0 && ends.length === 0) {
+      next = `${existing}${existing.endsWith("\n") ? "" : "\n"}\n${block}\n`;
+    } else if (starts.length === 1 && ends.length === 1 && starts[0] < ends[0]) {
+      next = `${existing.slice(0, starts[0])}${block}${existing.slice(ends[0] + CLOUD_SYNC_END.length)}`;
+    } else {
+      throw new Error("Cloud sync generated markers are malformed; refusing to overwrite the note");
+    }
   }
   if (next === existing) return { filePath, created: false, changed: false };
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -33,21 +37,64 @@ export async function updateCloudSyncNote(filePath, generatedContent) {
 }
 
 export function renderCloudSyncSummary({ cursor, entities }) {
-  const activityCount = entities.filter((entity) => entity.entityType === "activity" && entity.operation === "upsert").length;
-  const planCount = entities.filter((entity) => entity.entityType === "plan" && entity.operation === "upsert").length;
-  const calendarCount = entities.filter((entity) => entity.entityType === "calendar_session" && entity.operation === "upsert").length;
-  const latestActivity = entities
-    .filter((entity) => entity.entityType === "activity" && entity.operation === "upsert")
-    .sort((left, right) => String(right.payload?.occurredAt ?? "").localeCompare(String(left.payload?.occurredAt ?? "")))[0];
-  return [
+  const projection = entities ?? { activePlan: null, activities: [], calendarSessions: [] };
+  const activePlan = projection.activePlan;
+  const calendarSessions = projection.calendarSessions ?? [];
+  const activities = projection.activities ?? [];
+  const lines = [
     "> Generated from the selected structured RacePredictor cloud projection. Text outside this block is never changed.",
+    "> Cloud-owned plans, calendar sessions, and activities are read-only here; update them in RacePredictor.",
     "",
     "## Sync status",
     "",
     `- Cursor: ${cursor ?? "not started"}`,
-    `- Workouts available locally: ${activityCount}`,
-    `- Approved plans available locally: ${planCount}`,
-    `- Calendar sessions available locally: ${calendarCount}`,
-    `- Latest workout: ${latestActivity?.payload?.title ?? "None"}${latestActivity?.payload?.occurredAt ? ` (${latestActivity.payload.occurredAt})` : ""}`,
-  ].join("\n");
+    `- Workouts available locally: ${activities.length}`,
+    `- Active approved plan: ${activePlan ? safeText(activePlan.id) : "None"}`,
+    `- Calendar sessions available locally: ${calendarSessions.length}`,
+  ];
+  lines.push("", "## Active approved plan", "");
+  if (!activePlan) {
+    lines.push("- None");
+  } else {
+    lines.push(
+      `- Plan: ${safeText(activePlan.id)} (revision ${activePlan.revision})`,
+      `- Dates: ${activePlan.startsOn} to ${activePlan.endsOn}`,
+      `- Summary: ${safeText(activePlan.approval.summary)}`,
+    );
+  }
+  lines.push("", "## Calendar sessions", "");
+  if (calendarSessions.length === 0) {
+    lines.push("- None");
+  } else {
+    for (const session of calendarSessions) {
+      lines.push(`- ${session.effectiveDate}${session.startTime ? ` ${session.startTime}` : ""} — ${safeText(session.title)} (${session.status})`);
+    }
+  }
+  lines.push("", "## Recent activities", "");
+  if (activities.length === 0) {
+    lines.push("- None");
+  } else {
+    for (const activity of activities.slice(0, 10)) {
+      lines.push(`- ${activity.occurredAt} — ${safeText(activity.title ?? activity.sport)} (${formatDistance(activity.distanceM)})`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function markerOffsets(content, marker) {
+  const offsets = [];
+  let offset = content.indexOf(marker);
+  while (offset >= 0) {
+    offsets.push(offset);
+    offset = content.indexOf(marker, offset + marker.length);
+  }
+  return offsets;
+}
+
+function safeText(value) {
+  return String(value).replace(/[\r\n]+/gu, " ").replace(/<!--/gu, "&lt;!--").trim();
+}
+
+function formatDistance(distanceM) {
+  return `${(Number(distanceM) / 1000).toFixed(1)} km`;
 }

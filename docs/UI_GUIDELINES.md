@@ -1,4 +1,7 @@
 # UI_GUIDELINES.md
+
+> Redesign authority: [Design Intent Contract](design/DESIGN_INTENT_CONTRACT.md) governs redesign visual and interaction decisions where these guidelines differ, including navigation, control sizing, typography, and responsive behavior. Use the remaining compatible guidance below as supporting context.
+
 **RacePredictor — Visual Design & Component Guidelines**
 
 ---

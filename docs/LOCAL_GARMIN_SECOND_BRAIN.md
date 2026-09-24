@@ -48,3 +48,32 @@ Useful options:
 Use `Areas/Health & Fitness/Running/Running Context.md` for longer-lived goals, constraints, injury context, preferences, and shoes. Add weekly lived experience—energy, sleep, pain, heat, stress, and session reflections—to the Personal context section of each generated review. Use `Templates/Running Activity Context.md` when a particular run needs a richer note.
 
 Do not manually edit files under `Raw/Garmin`. If Garmin issues a corrected export, run the refresh with the new file; its checksum creates a separate raw record and the canonical activity signature prevents duplicates.
+
+## Automatic selected Second Brain publication
+
+The automated cloud publisher is deliberately separate from the Garmin refresh. It reads exactly one vault-relative structured source, `RacePredictor/second-brain-context.v1.json`. It never scans the vault, parses Markdown prose, follows links, or uploads attachments.
+
+Use only the strict selected-context shape. For example:
+
+```json
+{
+  "selectedFields": ["availability", "wellbeingCheckIns"],
+  "context": {
+    "availability": { "weeklyMinutesBudget": 300, "availableWeekdays": ["monday", "wednesday", "saturday"] },
+    "wellbeingCheckIns": [{ "recordedOn": "2026-08-28", "energy": 4, "fatigue": 2, "soreness": 1, "sleepQuality": 4, "stress": 2 }]
+  },
+  "logicalSourceRefs": ["weekly-availability", "morning-check-in"]
+}
+```
+
+`logicalSourceRefs` are local labels only. They cannot contain paths and are never part of the cloud snapshot. The permitted context sections and their limits are defined in [the cloud Second Brain architecture](plans/CLOUD_STRAVA_SECOND_BRAIN_ARCHITECTURE.md); arbitrary text, goals, prescriptions, event names, note identities, paths, attachments, credentials, and raw provider data are rejected.
+
+After the computer is paired, configure the local scheduled task with the vault root and cloud URL. Each bounded run first pulls cloud-authoritative activities, approved plans, and effective calendar sessions into the local SQLite projection, then validates the fixed JSON source and drains the durable local publication outbox. The cloud projection is rendered only in `Dashboards/RacePredictor Cloud Sync.md` inside its managed span; all text outside that span remains owner-authored.
+
+The Windows runner starts the sync command without a console window. The latest completed run's output, errors, and timestamp/exit code are saved beside the configuration in `logs/local-sync.stdout.log`, `logs/local-sync.stderr.log`, and `logs/local-sync.status.log` (normally under `%LOCALAPPDATA%\RacePredictor`). These files are replaced on each completed run. A failed sync still reports failure to Windows Task Scheduler.
+
+The activity coach review uses the same `OPENAI_API_KEY` as Second Brain processing. Keep that key in the current Windows user's environment; the scheduled runner inherits it or reads the user-level value at launch. The local-sync configuration stores paths and the cloud URL only, so the key is never copied into the configuration or logs.
+
+Editing the JSON normally becomes visible online within the configured schedule interval (15 minutes by default). Run `npm run sync:local -- sync-and-publish` for the same pull-then-publish cycle immediately. When offline, a validated immutable snapshot remains queued locally and is retried on a later run; do not edit or copy database/outbox files to force a retry.
+
+Plans, calendars, activities, provider connections, and goals are never editable through this file. RacePredictor cloud data remains authoritative for those entities. If the source is invalid or the managed note markers are corrupted, the run fails safely and reports an actionable status without uploading the vault or overwriting note text.

@@ -280,7 +280,7 @@ export type LocalCoachingRepository = {
     preferences: JsonRecord;
   }>): ReminderPreferences;
   loadReminderPreferences(): ReminderPreferences | null;
-  getHistoryCoverage(): HistoryCoverage;
+  getHistoryCoverage(input?: { through?: string }): HistoryCoverage;
   listPlanAuditEvents(input: { planId: string; limit?: number }): PlanAuditEvent[];
 };
 

@@ -188,9 +188,10 @@ const loadCompleteHistory = (input: {
   databasePath: string;
   athleteId: string;
   repository: LocalCoachingRepository;
+  through?: string;
 }) => {
   const activities: ReturnType<typeof listLocalActivities>["items"] = [];
-  const coverage = input.repository.getHistoryCoverage();
+  const coverage = input.repository.getHistoryCoverage({ through: input.through });
   let cursor: string | null = null;
   if (coverage.activityCount > 0) {
     do {
@@ -200,7 +201,7 @@ const loadCompleteHistory = (input: {
         cursor,
         limit: 100,
       });
-      activities.push(...page.items);
+      activities.push(...page.items.filter((activity) => !input.through || activity.occurredAt <= input.through));
       cursor = page.nextCursor ?? null;
     } while (cursor);
   }
@@ -1361,7 +1362,7 @@ export class LocalCoachingService {
       const upcomingSession = todaySessions.find((session) => session.status === "upcoming") ?? null;
       const skippedSession = todaySessions.find((session) => session.status === "skipped") ?? null;
       const missedSession = calendar
-        .filter((session) => session.status === "upcoming" && session.effectiveDate < date)
+        .filter((session) => session.kind !== "rest" && session.status === "upcoming" && session.effectiveDate < date)
         .at(-1) ?? null;
       const latestContext = this.repository.getLatestContextSnapshot();
       const summary = jsonObject(active.summary);
@@ -1379,16 +1380,19 @@ export class LocalCoachingService {
         databasePath: this.databasePath,
         athleteId: this.athleteId,
         repository: this.repository,
+        // New training after approval does not invalidate an approved plan.
+        // Corrections, deletions and late imports within its source period still do.
+        through: active.activatedAt ?? undefined,
       }).historyFingerprint;
       const staleReason = !planHistoryFingerprint
         ? "The active plan has no verifiable source-history fingerprint."
         : planHistoryFingerprint !== currentHistoryFingerprint
-          ? "Imported activity history changed after the active plan was reviewed."
+          ? "Activity history from before plan approval has changed since it was reviewed."
           : null;
       const state: TodayCoachingState = staleReason
         ? "stale"
         : upcomingSession
-          ? "upcoming"
+          ? upcomingSession.kind === "rest" ? "rest" : "upcoming"
           : skippedSession
             ? "skipped"
             : missedSession

@@ -154,6 +154,15 @@ export type SecondBrainSelectedField = z.infer<typeof secondBrainSelectedFieldSc
 export type SecondBrainContext = z.infer<typeof secondBrainContextSchema>;
 export type SecondBrainContextSnapshot = z.infer<typeof secondBrainContextSnapshotSchema>;
 
+/**
+ * A new immutable revision is a no-op only when it repeats the immediately
+ * preceding snapshot. Older content may be restored in a later revision.
+ */
+export const isImmediateSecondBrainContentRepeat = (
+  previous: Pick<SecondBrainContextSnapshot, "athleteId" | "contentHash"> | null,
+  next: Pick<SecondBrainContextSnapshot, "athleteId" | "contentHash">,
+) => previous !== null && previous.athleteId === next.athleteId && previous.contentHash === next.contentHash;
+
 const selectedFieldOrder: readonly SecondBrainSelectedField[] = [
   "availability",
   "trainingPreferences",

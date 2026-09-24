@@ -94,6 +94,22 @@ test("all migrations apply to PostgreSQL and enforce tenant-safe cloud persisten
       context: { availability: { weeklyMinutesBudget: 300 } },
     }]);
 
+    await database.exec(`
+      INSERT INTO "second_brain_snapshots" (
+        "id", "athleteId", "pairedDeviceId", "schemaVersion", "sourceRevision",
+        "contentHash", "selectedFields", "context", "publishedAt"
+      ) VALUES (
+        'snapshot_2', 'athlete_legacy', 'device_legacy', 'second-brain-context.v1', 2,
+        '${"a".repeat(64)}', '["availability"]'::jsonb,
+        '{"availability":{"weeklyMinutesBudget":300}}'::jsonb, CURRENT_TIMESTAMP
+      );
+    `);
+    const restoredSnapshot = await database.query(`
+      SELECT COUNT(*)::int AS "count" FROM "second_brain_snapshots"
+      WHERE "athleteId" = 'athlete_legacy' AND "contentHash" = '${"a".repeat(64)}'
+    `);
+    assert.deepEqual(restoredSnapshot.rows, [{ count: 2 }]);
+
     const oauthAttempt = await database.query(`
       SELECT "athleteId", "userId", "stateHash", "consumedAt"
       FROM "provider_oauth_attempts" WHERE "id" = 'oauth_attempt_1'

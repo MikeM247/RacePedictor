@@ -11,6 +11,7 @@ import {
   todayRouteDataSchema,
   todayQueryRequestSchema,
 } from "../../../../packages/core/src/contracts/coaching.ts";
+import { ApiHttpError, success } from "./api-response.ts";
 import { projectCloudToday } from "../../../../packages/core/src/services/cloud-coaching.ts";
 import {
   CloudActivityCursorError,
@@ -20,12 +21,44 @@ import {
   TrainingPlanActivationError,
 } from "../../../../packages/db/src/cloud/index.js";
 import type { CloudCalendarSession } from "../../../../packages/db/src/cloud/index.js";
-import { ApiHttpError, success } from "./api-response.ts";
 import { getCloudReadComposition } from "./cloud-read-composition.ts";
 import type { SensitiveRouteContext } from "./route-security.ts";
 
 export type CloudReadComposition = ReturnType<typeof getCloudReadComposition>;
 export type GetCloudReadComposition = () => CloudReadComposition;
+
+export async function handleCloudActivityReview(
+  security: SensitiveRouteContext,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  const result = await getComposition().activityReviews.get(scope, decodeId(activityId));
+  return success(result);
+}
+
+export async function handleCloudActivityReviewRequest(
+  security: SensitiveRouteContext,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  const result = await getComposition().activityReviews.queue(scope, decodeId(activityId));
+  if (!result) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
+  return success(result, 202);
+}
+
+export async function handleCloudLatestActivityReviews(
+  security: SensitiveRouteContext,
+  request: Request,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  const rawLimit = new URL(request.url).searchParams.get("limit");
+  const limit = rawLimit ? Number(rawLimit) : 10;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 40) throw new ApiHttpError(400, "VALIDATION_ERROR", "Review limit is invalid");
+  return success({ items: await getComposition().activityReviews.listLatest(scope, limit) });
+}
 
 export async function handleCloudActivities(
   security: SensitiveRouteContext,
@@ -35,6 +68,11 @@ export async function handleCloudActivities(
   const scope = requireScope(security);
   const params = new URL(request.url).searchParams;
   try {
+    try {
+      await getComposition().activityReviews.reconcileRecent(scope);
+    } catch (error) {
+      console.warn("Activity coach review reconciliation could not run", error instanceof Error ? error.message : "unknown error");
+    }
     return success(await getComposition().activities.list(scope, {
       cursor: params.get("cursor"),
       limit: params.has("limit") ? Number(params.get("limit")) : undefined,

@@ -1,5 +1,7 @@
 # UI_UX_SPEC
 
+> Redesign authority: [Design Intent Contract](design/DESIGN_INTENT_CONTRACT.md) takes precedence for redesign information architecture, presentation, interaction, and UX acceptance. Existing domain, privacy, and approval rules remain binding. Older navigation and layout requirements below are historical where they conflict with the contract.
+
 ## Product UX Direction
 - **Primary target:** desktop users (analyst/coaching workflows).
 - **Secondary target:** responsive baseline for tablet/mobile access, with feature parity evolving later.
@@ -7,6 +9,7 @@
 ## Dashboard Information Architecture (Desktop-First)
 
 ### Global Shell
+- Race Predictor branding uses the supplied runner-and-prediction logo in the sign-in experience and a cropped runner mark in the dashboard rail; the tab uses the dedicated Race Predictor app icon.
 - Initial analytics navigation order:
   1. Overview
   2. Activities
@@ -145,11 +148,11 @@ Every page definition above must include and test the following states:
 
 - Today: goal purpose, active plan, local session/rest state, intent/prescription, and calendar link; usable without Codex delivery.
 - Plan: active approved plan first, with a prominent Create a plan with Codex button that reveals the context-publish and proposal-import workflow; Sunday is the default preferred long-run day for new routines. Surface a newer persisted draft from the active-plan panel without automatically expanding the workflow, hide superseded drafts, then provide schema/freshness feedback and review/diff with Approve/Reject. Online approved history distinguishes coaching version from approval record and lets the signed-in owner explicitly confirm an inactive approved version as active. The confirmation states that prescriptions are unchanged; drafts never expose this control.
-- Calendar: week/agenda views and confirmed, keyboard-accessible amend/reschedule/skip/restore for future sessions while preserving the approved source prescription. A past session may only be recorded as skipped; it cannot otherwise be changed or restored. Every change requires a 1–500 character reason, shows current effective values separately from the approved source, and exposes readable reasoned history without claiming an AI review occurred. Current-day sessions remain read-only.
+- Calendar: the Weeks view presents a rolling four Monday–Sunday rows beginning with the current or deep-linked week. Scroll within Calendar, or use Page Up/Page Down when it is focused, to shift one week at a time. Every date has the same-sized panel with an ⓘ control that opens a keyboard-accessible detail dialog. Future details show active-plan sessions. Today and past details show the full Activity record first, then active-plan context without claiming that a run completed a plan. Retired plans never appear in Calendar. Agenda remains the compact-screen alternative. Confirmed, keyboard-accessible amend/reschedule/skip/restore actions preserve the approved source prescription. A past session may only be recorded as skipped; it cannot otherwise be changed or restored. Every change requires a 1–500 character reason, shows current effective values separately from the approved source, and exposes readable reasoned history without claiming an AI review occurred. Current-day sessions remain read-only.
 - Activities/Data Quality: explicit bounded CSV or one-activity GPX import with duplicate/rejected/warning feedback.
 - Settings: timezone/reminder defaults (06:30 `Africa/Johannesburg`), exchange setup, and Codex handoff; app preference, handoff, and external automation statuses remain separate.
 
-Every screen distinguishes loading/empty/error/stale. Today also distinguishes no plan, rest, upcoming, missed/unconfirmed, and skipped. Phase 1 does not infer completion from an unmatched imported activity and does not claim automatic Garmin sync, post-run review, or adaptation.
+Every screen distinguishes loading/empty/error/stale. Today also distinguishes no plan, rest, upcoming, missed/unconfirmed, and skipped. RacePredictor does not infer completion from an unmatched imported activity, change a plan, or adapt training automatically. Activity Coach's review is an asynchronous, evidence-bounded readout.
 
 ## Night Ops Interaction Addendum (2026-08-20)
 

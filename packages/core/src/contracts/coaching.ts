@@ -553,6 +553,7 @@ export const contextPublishRequestSchema = z.object({
     title: z.string().trim().min(1),
     targetDate: dateSchema,
     distanceMeters: z.number().positive(),
+    targetTimeSeconds: z.number().int().positive().max(7 * 24 * 60 * 60).optional(),
   }).strict(),
   weeklyRoutine: z.object({
     timezone: ianaTimezoneSchema,

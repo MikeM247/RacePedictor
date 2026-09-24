@@ -4,14 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "prebuild": "node ../../packages/db/scripts/migrate-runtime-database.js",
     "dev": "next dev --webpack",
     "build": "prisma generate --schema ../../packages/db/prisma/schema.prisma && next build --webpack",
+    "vercel-build": "prisma generate --schema ../../packages/db/prisma/schema.prisma && prisma migrate deploy --schema ../../packages/db/prisma/schema.prisma && next build --webpack",
     "start": "next start",
     "lint": "tsc --project tsconfig.typecheck.json --noEmit",
     "typecheck": "tsc --project tsconfig.typecheck.json --noEmit",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "test:e2e": "playwright test --config playwright.config.ts",
+    "test:e2e:local": "node scripts/assert-e2e-port.mjs 3311 && playwright test --config playwright.config.ts && node scripts/assert-e2e-port.mjs 3314 && playwright test --config playwright.home.local.config.ts && node scripts/assert-e2e-port.mjs 3313 && playwright test --config playwright.readiness.local.config.ts",
     "test:e2e:online": "playwright test --config playwright.online.config.ts",
     "test:e2e:auth": "playwright test --config playwright.auth.config.ts",
     "coaching:today": "node --experimental-strip-types scripts/read-today-coaching.ts"
@@ -27,6 +28,7 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "1.62.1",
     "@types/node": "20.16.5",
     "@types/react": "18.3.5",

@@ -71,6 +71,7 @@ async function mockDashboard(page: Page, overview = dashboard) {
 test("online dashboard stays useful while the local device and Second Brain are stale", async ({ page }) => {
   await mockDashboard(page);
   await page.goto("/dashboard");
+  await page.getByText("Data freshness", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Independent freshness signals" })).toBeVisible();
   await expect(page.getByText("Workout data").locator("..").getByText("Current", { exact: true })).toBeVisible();
   await expect(page.getByText("Local sync device").locator("..").getByText("Stale", { exact: true })).toBeVisible();
@@ -84,7 +85,8 @@ test("online dashboard exposes a recoverable service error", async ({ page }) =>
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "Unavailable", details: [] } }) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: status }) }));
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Unable to load online data" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Outlook unavailable" })).toBeVisible();
+  await expect(page.getByText("Online dashboard data is temporarily unavailable.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
@@ -109,12 +111,20 @@ test("online Activities renders cloud-enveloped Strava data without a client cra
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
 
+  await page.setViewportSize({ width: 1024, height: 844 });
   await page.goto("/dashboard/activities");
   await expect(page.getByRole("heading", { name: "Recent activities" })).toBeVisible();
   await expect(page.getByText("Morning Strava Run")).toBeVisible();
   await page.getByRole("button", { name: /Morning Strava Run/u }).click();
+  await expect(page).toHaveURL(/activityId=activity-a/u);
   await expect(page.getByRole("heading", { name: "Morning Strava Run" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to Training" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Morning Strava Run" })).toBeFocused();
+  await page.locator("details.detail-disclosure").filter({ hasText: "Splits" }).locator("summary").click();
   await expect(page.getByText("No split data was included in this imported activity.")).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Recent activities" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Morning Strava Run" })).toBeFocused();
   expect(browserErrors).toEqual([]);
 });
 
@@ -128,8 +138,7 @@ test("online Activities handles a malformed success envelope as a recoverable er
   }));
 
   await page.goto("/dashboard/activities");
-  await expect(page.getByRole("heading", { name: "Unable to load activities" })).toBeVisible();
-  await expect(page.getByText("The server returned an invalid activity response.")).toBeVisible();
+  await expect(page.locator(".activity-list-error")).toContainText("Could not load training history.");
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   expect(browserErrors).toEqual([]);
 });
@@ -156,19 +165,29 @@ test("online Plan selects an approved version while Calendar remains prescriptio
   await page.goto("/dashboard/plan");
   await expect(page.getByText("Online plan control")).toBeVisible();
   await expect(page.getByText("Coaching version 1.1.0").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
+  // The active-plan overview presents the compact session title as its primary
+  // text, rather than inventing a second heading level for every session.
+  await expect(page.getByRole("region", { name: "Sessions by explicit calendar week" }).getByText("Cloud easy run", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Create a plan/u })).toHaveCount(0);
   await page.getByText("Coaching version 1.0.0").click();
   await page.getByRole("button", { name: "Make this approved plan active" }).click();
   await expect(page.getByRole("heading", { name: "Make coaching version 1.0.0 active?" })).toBeVisible();
-  await page.getByRole("button", { name: "Make active" }).click();
-  await expect(page.getByText("Coaching version 1.0.0 is now active. Today and Calendar use this approved version.")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm activation" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Make coaching version 1.0.0 active?" })).toContainText("Home and Calendar use this approved version.");
 
-  await page.setViewportSize({ width: 390, height: 844 });
+  // Compact layouts intentionally default to Agenda. Keep this source-of-
+  // authority check in the explicit Weeks layout instead of asking for a
+  // control that is not rendered below the responsive breakpoint.
+  await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto("/dashboard/calendar?date=2026-08-10");
-  await expect(page.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
-  await expect(page.getByText("Past and current-day sessions are read-only. Future changes belong in Calendar.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Review move" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Weeks" }).click();
+  const pastDay = page.locator(".calendar-day").filter({ hasText: "Scheduled plan available in details" });
+  await expect(pastDay).toContainText("No run recorded");
+  await pastDay.getByRole("button", { name: /View details for/ }).click();
+  const pastDetails = page.getByRole("dialog", { name: "Calendar details" });
+  await expect(pastDetails.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
+  await expect(pastDetails.getByText("Past sessions can only be recorded as skipped. The approved source remains unchanged.")).toBeVisible();
+  await expect(pastDetails.getByRole("button", { name: "Review move" })).toHaveCount(0);
 });
 
 test("online Calendar saves a reasoned amendment to a future owner session", async ({ page }) => {
@@ -215,7 +234,10 @@ test("online Calendar saves a reasoned amendment to a future owner session", asy
   });
 
   await page.goto(`/dashboard/calendar?date=${futureDate}`);
-  const card = page.getByRole("article").filter({ hasText: "Cloud future run" });
+  const futureDay = page.locator(".calendar-day").filter({ hasText: "Cloud future run" });
+  await futureDay.getByRole("button", { name: /View details for/ }).click();
+  const details = page.getByRole("dialog", { name: "Plan details" });
+  let card = details.locator("#session-run-future");
   await card.getByRole("button", { name: "Amend session" }).click();
   const dialog = page.getByRole("dialog", { name: "Amend future session" });
   await expect(dialog.getByRole("button", { name: "Save reasoned amendment" })).toBeDisabled();
@@ -224,10 +246,35 @@ test("online Calendar saves a reasoned amendment to a future owner session", asy
   await dialog.getByRole("button", { name: "Save reasoned amendment" }).click();
 
   await expect(page.getByRole("status").filter({ hasText: "approved source and your reason are preserved" })).toBeVisible();
+  await futureDay.getByRole("button", { name: /View details for/ }).click();
+  card = page.getByRole("dialog", { name: "Plan details" }).locator("#session-run-future");
   await expect(card).toContainText("Current prescription: Run easily for 30 minutes on the treadmill.");
   await card.getByText("Change history (1)").click();
   await expect(card).toContainText("Work travel requires a shorter treadmill session.");
   await expect(card).toContainText("No AI review is claimed");
+});
+
+test("online Plan keeps a conflict and duplicate protection inside the reviewed activation dialog", async ({ page }) => {
+  let writes = 0;
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: plan }) }));
+  await page.route("**/api/v1/coaching/plans/history", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { plans: [plan, previousPlan] } }) }));
+  await page.route("**/api/v1/coaching/plans/plan-previous/activate", (route) => {
+    writes += 1;
+    expect(route.request().postDataJSON()).toEqual({ expectedActivePlanId: "plan-a" });
+    return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "CONFLICT", message: "changed", details: [] } }) });
+  });
+  await page.goto("/dashboard/plan");
+  await page.getByText("Coaching version 1.0.0").click();
+  await page.getByRole("button", { name: "Make this approved plan active" }).click();
+  const dialog = page.getByRole("alertdialog", { name: "Make coaching version 1.0.0 active?" });
+  await dialog.getByRole("button", { name: "Confirm activation" }).dblclick();
+  await expect(dialog.getByText(/Plan information changed while this confirmation was open/)).toBeVisible();
+  expect(writes).toBe(1);
+  await dialog.getByRole("button", { name: "Check current Plan" }).click();
+  await expect(dialog.getByRole("button", { name: "Return to review" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Return to review" }).click();
+  await expect(page.getByRole("heading", { name: "Approved plan version history" })).toBeFocused();
+  expect(writes).toBe(1);
 });
 
 test("online Calendar records a past session as skipped without changing its approved source", async ({ page }) => {
@@ -267,7 +314,10 @@ test("online Calendar records a past session as skipped without changing its app
   });
 
   await page.goto(`/dashboard/calendar?date=${pastDate}`);
-  const card = page.getByRole("article").filter({ hasText: "Thursday hilly run" });
+  const pastDay = page.locator(".calendar-day").filter({ hasText: "Scheduled plan available in details" });
+  await pastDay.getByRole("button", { name: /View details for/ }).click();
+  const details = page.getByRole("dialog", { name: "Calendar details" });
+  let card = details.locator("#session-run-past");
   await expect(card.getByText("Past sessions can only be recorded as skipped.")).toBeVisible();
   await expect(card.getByRole("button", { name: "Amend session" })).toHaveCount(0);
   await card.getByRole("button", { name: "Record skipped" }).click();
@@ -275,6 +325,9 @@ test("online Calendar records a past session as skipped without changing its app
   await dialog.getByLabel("Reason for this change").fill("Skipped by athlete.");
   await dialog.getByRole("button", { name: "Confirm change" }).click();
 
+  await expect(page.getByRole("status").filter({ hasText: "approved source remains unchanged" })).toBeVisible();
+  await pastDay.getByRole("button", { name: /View details for/ }).click();
+  card = page.getByRole("dialog", { name: "Calendar details" }).locator("#session-run-past");
   await expect(card).toContainText("run · skipped");
   await expect(card.getByText("Approved source prescription")).toBeVisible();
   await card.getByText("Change history (1)").click();
@@ -379,7 +432,7 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
   ]);
   const stravaPanel = page.getByRole("region", { name: "Automatic workouts from Strava" });
   await expect(stravaPanel.locator(".status-chip")).toHaveText("Connected");
-  await expect(page.getByText("Completed workouts will be imported automatically.")).toBeVisible();
+  await expect(page.getByText("Connect once and completed Strava workouts can arrive automatically.")).toBeVisible();
   await page.getByRole("button", { name: "Import last 90 days" }).click();
   await expect(page.getByText("Strava history is temporarily unavailable")).toBeVisible();
   failNextBackfill = false;
@@ -391,12 +444,16 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
   await expect(page.getByText("Strava disconnected. Existing workouts and raw history were preserved.")).toBeVisible();
   await expect(stravaPanel.locator(".status-chip")).toHaveText("Disconnected");
 
-  await expect(page.getByRole("heading", { name: "Paired computer" })).toBeVisible();
+  await page.getByText("Paired computer", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Pair and manage a computer" })).toBeVisible();
   await expect(page.getByText("Stale · computer has not synced recently")).toBeVisible();
+  await page.getByText("Privacy", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Only selected structured context leaves your computer" })).toBeVisible();
+  await page.getByText("Operations", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Operations guardrails" })).toBeVisible();
   await expect(page.getByText("Review usage before enabling additional work.")).toBeVisible();
 
+  await page.getByText("Paired computer", { exact: true }).click();
   await page.getByLabel("Computer name").fill("Race workstation");
   await page.getByRole("button", { name: "Replace paired computer" }).click();
   await expect(page.getByRole("heading", { name: "Save the device credential" })).toBeVisible();
@@ -410,6 +467,7 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
+  await page.getByText("Paired computer", { exact: true }).click();
   await expect(page.getByText("Revoked", { exact: true })).toBeVisible();
   await expect(page.getByLabel("One-time device credential")).toHaveCount(0);
 });

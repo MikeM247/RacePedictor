@@ -52,14 +52,24 @@ test("Prisma snapshots are immutable, monotonic, idempotent, and remain readable
   assert.equal((await snapshots.storeImmutable(scopeA, first, "device_first")).reused, true);
   const conflict = { ...first, contentHash: "f".repeat(64) };
   await assert.rejects(snapshots.storeImmutable(scopeA, conflict, "device_first"));
-  const gap = snapshot(3, { availability: { weeklyMinutesBudget: 300 } }, ["availability"]);
+  const changed = snapshot(2, { availability: { weeklyMinutesBudget: 300 } }, ["availability"]);
+  assert.equal((await snapshots.storeImmutable(scopeA, changed, "device_first")).reused, false);
+  const restored = { ...first, revision: 3 };
+  assert.equal((await snapshots.storeImmutable(scopeA, restored, "device_first")).reused, false);
+  assert.equal((await snapshots.storeImmutable(scopeA, restored, "device_first")).reused, true);
+  const immediateRepeat = { ...first, revision: 4 };
+  await assert.rejects(
+    snapshots.storeImmutable(scopeA, immediateRepeat, "device_first"),
+    (error) => error instanceof SecondBrainSnapshotConflictError && error.code === "DUPLICATE_CONTENT",
+  );
+  const gap = snapshot(5, { availability: { weeklyMinutesBudget: 360 } }, ["availability"]);
   await assert.rejects(
     snapshots.storeImmutable(scopeA, gap, "device_first"),
     (error) => error instanceof SecondBrainSnapshotConflictError && error.code === "REVISION_GAP",
   );
   await devices.revoke(scopeA, { deviceId: "device_first", occurredAt: NOW });
-  assert.deepEqual(await snapshots.latest(scopeA), first);
-  await assert.rejects(snapshots.storeImmutable(scopeA, snapshot(2, { availability: { weeklyMinutesBudget: 260 } }, ["availability"]), "device_first"), /unavailable/u);
+  assert.deepEqual(await snapshots.latest(scopeA), restored);
+  await assert.rejects(snapshots.storeImmutable(scopeA, snapshot(4, { availability: { weeklyMinutesBudget: 260 } }, ["availability"]), "device_first"), /unavailable/u);
   assert.equal(await snapshots.latest(scopeB), null);
 });
 

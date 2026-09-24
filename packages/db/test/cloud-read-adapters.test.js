@@ -6,6 +6,7 @@ import {
   CloudActivityCursorError,
   CloudSyncCursorError,
   PrismaCloudActivityRepository,
+  PrismaActivityReviewRepository,
   PrismaCloudDashboardRepository,
   PrismaCloudCoachingRepository,
   PrismaOnlineStatusRepository,
@@ -99,6 +100,74 @@ test("status facts and projection keep local device and Second Brain staleness s
   assert.equal(status.secondBrain.state, "stale");
   assert.equal(status.secondBrain.latestRevision, 7);
   assert.doesNotMatch(JSON.stringify(status), /errorCode|credential|storageKey/u);
+});
+
+test("recent running activities are reconciled into the athlete-scoped review queue", async () => {
+  const queued = [];
+  const repository = new PrismaActivityReviewRepository({ prisma: {
+    activity: {
+      findMany: async ({ where }) => {
+        assert.equal(where.athleteId, "athlete-a");
+        assert.deepEqual(where.sport.in, ["run", "trail_run", "treadmill_run"]);
+        return [{ id: "activity-a-new" }];
+      },
+    },
+    activityReviewRequest: {
+      upsert: async ({ where, create }) => {
+        queued.push({ where, create });
+        return create;
+      },
+      findFirst: async () => null,
+      findUnique: async () => null,
+      findMany: async () => [],
+    },
+    activityCoachReview: { findMany: async () => [], findFirst: async () => null },
+  } });
+  const count = await repository.reconcileRecent(scopeA, { now: NOW });
+  assert.equal(count, 1);
+  assert.equal(queued[0].where.athleteId_activityId.activityId, "activity-a-new");
+  assert.equal(queued[0].create.athleteId, "athlete-a");
+});
+
+test("status facts prefer an active paired device over a newer revoked device", async () => {
+  const deviceQueries = [];
+  const activeDevice = { name: "Current computer", status: "active", createdAt: new Date("2026-08-01T00:00:00Z"), lastSeenAt: new Date("2026-08-10T11:30:00Z"), lastErrorCode: null };
+  const revokedDevice = { name: "Old computer", status: "revoked", createdAt: new Date("2026-08-11T00:00:00Z"), lastSeenAt: null, lastErrorCode: null };
+  const repository = new PrismaOnlineStatusRepository({ prisma: {
+    ...statusPrisma(),
+    pairedDevice: {
+      findFirst: async ({ where }) => {
+        deviceQueries.push(where);
+        return where.status === "active" ? activeDevice : revokedDevice;
+      },
+    },
+  } });
+
+  const facts = await repository.getFacts(scopeA);
+
+  assert.deepEqual(deviceQueries, [{ athleteId: "athlete-a", status: "active" }]);
+  assert.equal(facts.device.name, "Current computer");
+  assert.equal(facts.device.status, "active");
+});
+
+test("status facts retain the newest revoked device when no active pairing exists", async () => {
+  const deviceQueries = [];
+  const revokedDevice = { name: "Old computer", status: "revoked", createdAt: new Date("2026-08-11T00:00:00Z"), lastSeenAt: null, lastErrorCode: null };
+  const repository = new PrismaOnlineStatusRepository({ prisma: {
+    ...statusPrisma(),
+    pairedDevice: {
+      findFirst: async ({ where }) => {
+        deviceQueries.push(where);
+        return where.status === "active" ? null : revokedDevice;
+      },
+    },
+  } });
+
+  const status = projectOnlineStatus(await repository.getFacts(scopeA), NOW);
+
+  assert.deepEqual(deviceQueries, [{ athleteId: "athlete-a", status: "active" }, { athleteId: "athlete-a" }]);
+  assert.equal(status.localDevice.state, "action_required");
+  assert.equal(status.localDevice.deviceName, "Old computer");
 });
 
 function scope(athleteId) {

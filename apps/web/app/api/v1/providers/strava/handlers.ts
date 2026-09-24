@@ -58,15 +58,18 @@ export async function handleStravaCallback(
       callbackInput(request),
       composition.redirectUri,
     );
+    let initialBackfill = "unavailable";
     try {
-      await composition.enqueueInitialBackfill?.(scope);
+      const queued = await composition.enqueueInitialBackfill?.(scope);
+      if (queued) initialBackfill = queued.reused ? "already_queued" : "queued";
     } catch {
       // The connection succeeded. Initial backfill is a separate recoverable
-      // ingestion operation and must not make the OAuth result untruthful.
+      // operation, but the return UI must make a failed queue visible.
     }
     const location = new URL(completed.returnTo, request.url);
     location.searchParams.set("provider", "strava");
     location.searchParams.set("connection", "connected");
+    location.searchParams.set("backfill", initialBackfill);
     return Response.redirect(location, 303);
   } catch (error) {
     translateStravaRouteError(error);

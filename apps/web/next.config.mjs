@@ -2,6 +2,9 @@ import path from "node:path";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // E2E runs can opt into an isolated build directory without disturbing a
+  // developer's active Next server or its .next lock.
+  distDir: process.env.RACEPREDICTOR_NEXT_DIST_DIR || ".next",
   experimental: {
     externalDir: true,
   },

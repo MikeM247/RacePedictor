@@ -143,6 +143,21 @@ Current package scripts relevant to this work:
 
 Before every milestone completion, run the tests owned by that milestone plus the current regression suite. Before a production release, require successful build, types, unit/contract checks, migration validation, deployment health check, authenticated tenant-bound smoke test, Strava webhook verification, raw-object integrity check, and Second Brain selected-field boundary test.
 
+### Automated local publication release-readiness checklist
+
+This checklist applies to the ADR 0006 follow-on delivery. It is additive to the M8 production gate, not a replacement for it.
+
+- [ ] The fixed vault-relative source is the only automatic input; tests prove no Markdown, vault scan, path, attachment, credential, or free-text upload path exists.
+- [ ] Strict schema, size, allow-list, source-reference, canonical-hash, revision, and disabled-feature rejection paths pass at local and API boundaries.
+- [ ] The local SQLite outbox persists the exact snapshot before the network call; offline restart, duplicate retry, acknowledgement loss, and ordering tests pass without duplicate cloud revisions.
+- [ ] A bounded scheduled/manual cycle pulls cloud changes first, then drains the outbox; independent pull and publish failures remain visible and recoverable.
+- [ ] Cursor replay, activity correction/tombstone, approved-plan/calendar projection, atomic managed-span update, and malformed-marker fail-closed tests pass.
+- [ ] Full affected regression, type, build, dependency-audit, and browser suites pass in a clean test environment.
+- [ ] Product test proves a selected local edit reaches the authenticated dashboard, a cloud plan/calendar edit reaches the managed local span, and owner-authored adjacent content is unchanged.
+- [ ] Preview smoke passes with Second Brain sync disabled, then production enablement is performed only after the feature-specific checks pass.
+
+The complete M8 production decision remains **Needs Review** until its separately required live automatic Strava webhook delivery, independent raw-object checksum read, and paired-device selected-context pull/publish evidence are recorded. This delivery must not mark those checks as complete.
+
 ## M8 Authentication and Provisioning Checklist
 
 This is deliberately deferred because it requires account authentication and user action.
@@ -170,7 +185,8 @@ The local device credential is enrolled through standard input and protected wit
 1. Pair the computer in online Settings and copy the one-time credential.
 2. From the repository, pipe it to `npm run sync:local -- enroll`; never put it in a command argument or environment variable.
 3. Set or supply the non-secret cloud URL, local database path, Obsidian vault path, and athlete ID.
-4. Run `npm run sync:local -- sync` for a bounded immediate synchronization.
-5. Install periodic execution with `npm run sync:local:install --` plus `-RepositoryPath`, `-DatabasePath`, `-VaultPath`, `-CloudUrl`, optional `-AthleteId`, and optional `-IntervalMinutes` (default 15).
+4. Create the single allowed automatic publication source at `<vault>\RacePredictor\second-brain-context.v1.json`. It contains only `selectedFields`, `context`, and optional path-free logical source references; it is not a copy of a note or vault export.
+5. Run `npm run sync:local -- sync-and-publish` for an immediate pull and publication-outbox drain. The legacy `sync` command remains pull-only.
+6. Install periodic execution with `npm run sync:local:install --` plus `-RepositoryPath`, `-DatabasePath`, `-VaultPath`, `-CloudUrl`, optional `-AthleteId`, and optional `-IntervalMinutes` (default 15). The installed delivery task must execute the combined pull-then-outbox cycle.
 
-The scheduled task runs hidden as the current interactive Windows user so the same-user DPAPI credential can be decrypted. Its `%LOCALAPPDATA%\RacePredictor\local-sync-config.json` contains only non-secret paths, URL, and athlete ID. Re-pairing or server-side revocation immediately invalidates the old credential; do not copy or attempt to recover the protected credential file.
+The scheduled task runs hidden as the current interactive Windows user so the same-user DPAPI credential can be decrypted. Its `%LOCALAPPDATA%\RacePredictor\local-sync-config.json` contains only non-secret paths, URL, and athlete ID. Pending publication records remain in the local SQLite state, not this configuration file. Re-pairing or server-side revocation immediately invalidates the old credential; do not copy or attempt to recover the protected credential file.

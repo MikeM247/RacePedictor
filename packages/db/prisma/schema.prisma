@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 enum SourceType {
@@ -94,6 +94,15 @@ enum StagingRowStatus {
   error
 }
 
+enum ActivityReviewRequestStatus {
+  queued
+  processing
+  ready
+  retry_wait
+  attention
+  cancelled
+}
+
 model Activity {
   id                      String                    @id @default(cuid())
   athleteId               String
@@ -140,6 +149,8 @@ model Activity {
   revisions               ActivityRevision[]
   analyticsRecompute      AnalyticsRecomputeMarker?
   weeklyFeaturesAsLongest WeeklyFeature[]           @relation("WeeklyFeatureLongestRun")
+  activityReviewRequests  ActivityReviewRequest[]
+  activityReviews         ActivityCoachReview[]
 
   @@unique([id, athleteId])
   @@unique([athleteId, dedupeHash])
@@ -344,6 +355,8 @@ model Athlete {
   secondBrainSnapshots    SecondBrainSnapshot[]
   trainingPlanProjections TrainingPlanProjection[]
   calendarSessions        CalendarSessionProjection[]
+  activityReviewRequests  ActivityReviewRequest[]
+  activityReviews         ActivityCoachReview[]
 
   @@map("athletes")
 }
@@ -608,9 +621,61 @@ model SecondBrainSnapshot {
   pairedDevice   PairedDevice @relation(fields: [pairedDeviceId, athleteId], references: [id, athleteId], onDelete: Restrict)
 
   @@unique([athleteId, sourceRevision])
-  @@unique([athleteId, contentHash])
+  @@index([athleteId, contentHash])
   @@index([athleteId, createdAt])
   @@map("second_brain_snapshots")
+}
+
+model ActivityReviewRequest {
+  id              String                     @id @default(cuid())
+  athleteId       String
+  activityId      String
+  status          ActivityReviewRequestStatus @default(queued)
+  attemptCount    Int                        @default(0)
+  availableAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  lockedAt        DateTime?                  @db.Timestamptz(3)
+  lockedBy        String?
+  leaseToken      String?
+  lastErrorCode   String?
+  requestedAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                   @updatedAt @db.Timestamptz(3)
+  athlete         Athlete                    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity        Activity                   @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  reviews         ActivityCoachReview[]
+
+  @@unique([athleteId, activityId])
+  @@unique([id, athleteId])
+  @@index([athleteId, status, availableAt])
+  @@map("activity_review_requests")
+}
+
+model ActivityCoachReview {
+  id                 String                @id @default(cuid())
+  athleteId          String
+  activityId         String
+  requestId          String
+  revision           Int
+  inputFingerprint   String
+  headline           String
+  assessment         String
+  nextStep           String
+  comparison         Json
+  evidence           Json
+  limitations        Json
+  generatedAt        DateTime              @db.Timestamptz(3)
+  publishedAt        DateTime              @db.Timestamptz(3)
+  model              String
+  promptVersion      String
+  createdAt          DateTime              @default(now()) @db.Timestamptz(3)
+  athlete            Athlete               @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity           Activity              @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  request            ActivityReviewRequest @relation(fields: [requestId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, activityId, revision])
+  @@unique([id, athleteId])
+  @@index([athleteId, publishedAt(sort: Desc)])
+  @@index([athleteId, activityId, revision(sort: Desc)])
+  @@map("activity_coach_reviews")
 }
 
 model TrainingPlanProjection {

@@ -1,5 +1,7 @@
 # Phase 1 Digital Coach Screens
 
+> Redesign authority: [DESIGN_INTENT_CONTRACT.md](DESIGN_INTENT_CONTRACT.md) now governs redesign navigation, presentation, interaction, and UX acceptance where this specification differs. Retain the domain behavior and data/approval boundaries documented here. The historical specification below remains a reference for existing functionality.
+
 This is the Phase 1 screen and state source of truth. `docs/UI_UX_SPEC.md` defines shared UX behavior and `docs/UI_GUIDELINES.md` defines visual rules.
 
 ## Navigation and Routes
@@ -24,7 +26,7 @@ The former Overview purpose evolves into Today. Planning conversation is launche
 - Place the approved workout or rest state before healthy infrastructure/freshness detail. Show concise current-week calendar context without implying that imported activities completed planned sessions.
 - Show deterministic motivational context from the approved plan. Codex supplies the AI-written recurring reminder outside the app.
 - Distinguish: no plan, rest day, upcoming, skipped, missed/unconfirmed, loading, stale, and error.
-- Do not infer completion from an unmatched imported activity. Trustworthy activity-to-session matching and post-run review are an explicit Phase 2 gap.
+- Do not infer completion from an unmatched imported activity. Trustworthy activity-to-session completion matching and automatic plan adaptation remain outside this slice; evidence-bounded Coach's reviews are available asynchronously.
 - Primary no-plan action: generate coaching context and plan with Codex. Never imply automatic review/adaptation.
 
 ### Plan
@@ -41,9 +43,10 @@ The former Overview purpose evolves into Today. Planning conversation is launche
 
 ### Calendar
 
-- Default to week view with agenda alternative; today and local timezone remain visible.
-- Session cards show type, title, intent, prescription, duration, and effective status/date.
-- Week cells use concise session summaries; selecting a session reveals its full effective/source detail, cautions, and history in context. Agenda becomes the default when seven columns cannot remain readable.
+- Default to a rolling four-week Monday–Sunday view with Agenda as the compact alternative; the first row is the week containing today on a normal visit.
+- Scroll within the focused Calendar region, or use Page Up/Page Down, to replace one week at a time. Do not show previous, today, or next navigation buttons.
+- Each date has an information control. It opens active-plan details for future dates. For today and past dates, it shows each full Activity record first, then the currently active plan's scheduled session context.
+- Calendar includes sessions from the current active plan only. Retired plan versions remain available on Plan.
 - Reschedule, skip, and restore require confirmation and have keyboard-accessible alternatives to drag-and-drop.
 - Warn before confirmation about same-day collisions and dates outside the plan range; an out-of-range move cannot be confirmed.
 - Preserve and expose the original prescribed date plus adjustment history.
@@ -88,7 +91,7 @@ This journey is the minimum browser-automation and Product Owner acceptance path
 ## Phase 2 Exclusions in the UI
 
 - No Garmin account-connect or automatic sync controls.
-- No automatic post-run review, adaptation, or apply-recommendation action.
+- No automatic plan adaptation or apply-recommendation action. Activity Coach's review may be generated asynchronously by the local job and shown as evidence-bounded feedback.
 - No inferred completed-session state until imported activities can be matched to prescriptions reliably.
 - No autonomous plan activation, in-app AI chat, or app-owned push-delivery promise.
 
@@ -98,6 +101,7 @@ The Phase 1 exclusions above still prohibit Garmin and automatic coaching adapta
 
 - **Today:** separate workout freshness, Second Brain snapshot freshness, and local-device state; the page continues to work when the local agent is off.
 - **Activities:** automatic Strava activities share the canonical timeline with manual history and show safe provenance/processing state.
+- **Coach's review:** Activity detail contains the asynchronous Coach's review section. It exposes queued, processing, retry, attention, empty, and ready states; ready feedback shows the assessment, next step, plan comparison, evidence labels, and evidence limits. Today may show the latest review preview, and Calendar reuses the same activity detail section.
 - **Data Quality:** durable ingestion/retry/reconciliation state and supported recovery action.
 - **Settings:** authenticated owner session, Strava connect/status/disconnect, and one local sync-device pair/status/revoke flow.
 

@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { activityDetailSchema } from "../../core/src/contracts/activity.ts";
-import { trainingPlanSchema } from "../../core/src/contracts/coaching.ts";
+import { calendarSessionSchema, plannedWorkoutSchema, trainingPlanSchema } from "../../core/src/contracts/coaching.ts";
+import { secondBrainContextSnapshotSchema } from "../../core/src/contracts/second-brain-context.ts";
 import { syncChangeSchema } from "../../core/src/contracts/sync.ts";
 import { createLocalSchema } from "./local-garmin-pipeline.js";
 import { openLocalDatabase } from "./local-database.js";
@@ -31,6 +32,19 @@ export class LocalSyncProjectionRepository {
     return this.#read((database) => database.prepare(
       "SELECT second_brain_revision AS revision FROM local_sync_state WHERE athlete_id = ?",
     ).get(athleteId)?.revision ?? 0);
+  }
+
+  getNextSecondBrainRevision(athleteId) {
+    return this.#read((database) => {
+      const row = database.prepare(`
+        SELECT MAX(revision) AS revision FROM (
+          SELECT revision FROM local_second_brain_publications WHERE athlete_id = ?
+          UNION ALL
+          SELECT revision FROM local_second_brain_publication_outbox WHERE athlete_id = ?
+        )
+      `).get(athleteId, athleteId);
+      return (row?.revision ?? this.getSecondBrainRevision(athleteId)) + 1;
+    });
   }
 
   applyChanges(athleteId, rawChanges) {
@@ -77,9 +91,9 @@ export class LocalSyncProjectionRepository {
   }
 
   recordSecondBrainPublication(athleteId, snapshot, logicalSourceRefs) {
-    if (!Array.isArray(logicalSourceRefs) || logicalSourceRefs.some((item) => typeof item !== "string" || !item || /[\\/]/u.test(item))) {
-      throw new Error("Second Brain logical source references must not contain paths");
-    }
+    const parsed = secondBrainContextSnapshotSchema.parse(snapshot);
+    if (parsed.athleteId !== athleteId) throw new Error("Second Brain publication crosses athlete scope");
+    assertLogicalSourceReferences(logicalSourceRefs);
     const database = new DatabaseSync(this.#databasePath);
     database.exec("BEGIN IMMEDIATE;");
     try {
@@ -90,12 +104,16 @@ export class LocalSyncProjectionRepository {
         ON CONFLICT (athlete_id, revision) DO NOTHING
       `).run(
         athleteId,
-        snapshot.revision,
-        snapshot.contentHash,
-        JSON.stringify(snapshot.selectedFields),
+        parsed.revision,
+        parsed.contentHash,
+        JSON.stringify(parsed.selectedFields),
         JSON.stringify(logicalSourceRefs),
-        snapshot.publishedAt,
+        parsed.publishedAt,
       );
+      database.prepare(`
+        DELETE FROM local_second_brain_publication_outbox
+        WHERE athlete_id = ? AND revision = ? AND content_hash = ?
+      `).run(athleteId, parsed.revision, parsed.contentHash);
       const now = this.#now().toISOString();
       database.prepare(`
         INSERT INTO local_sync_state (athlete_id, second_brain_revision, updated_at)
@@ -103,7 +121,7 @@ export class LocalSyncProjectionRepository {
         ON CONFLICT (athlete_id) DO UPDATE SET
           second_brain_revision = MAX(second_brain_revision, excluded.second_brain_revision),
           updated_at = excluded.updated_at
-      `).run(athleteId, snapshot.revision, now);
+      `).run(athleteId, parsed.revision, now);
       database.exec("COMMIT");
     } catch (error) {
       database.exec("ROLLBACK");
@@ -111,6 +129,70 @@ export class LocalSyncProjectionRepository {
     } finally {
       database.close();
     }
+  }
+
+  queueSecondBrainPublication(athleteId, snapshot, logicalSourceRefs) {
+    const parsed = secondBrainContextSnapshotSchema.parse(snapshot);
+    if (parsed.athleteId !== athleteId) throw new Error("Second Brain publication crosses athlete scope");
+    assertLogicalSourceReferences(logicalSourceRefs);
+    const database = new DatabaseSync(this.#databasePath);
+    database.exec("BEGIN IMMEDIATE;");
+    try {
+      const latest = database.prepare(`
+        SELECT revision, content_hash AS contentHash, source FROM (
+          SELECT revision, content_hash, 'published' AS source
+          FROM local_second_brain_publications WHERE athlete_id = ?
+          UNION ALL
+          SELECT revision, content_hash, 'outbox' AS source
+          FROM local_second_brain_publication_outbox WHERE athlete_id = ?
+        ) ORDER BY revision DESC LIMIT 1
+      `).get(athleteId, athleteId);
+      if (latest?.contentHash === parsed.contentHash) {
+        database.exec("COMMIT");
+        return { status: latest.source === "outbox" ? "already_queued" : "already_published", revision: latest.revision };
+      }
+      database.prepare(`
+        INSERT INTO local_second_brain_publication_outbox (
+          athlete_id, revision, content_hash, snapshot_json, logical_source_refs_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        athleteId,
+        parsed.revision,
+        parsed.contentHash,
+        JSON.stringify(parsed),
+        JSON.stringify(logicalSourceRefs),
+        this.#now().toISOString(),
+      );
+      database.exec("COMMIT");
+      return { status: "queued", snapshot: parsed, logicalSourceRefs };
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    } finally {
+      database.close();
+    }
+  }
+
+  listPendingSecondBrainPublications(athleteId) {
+    return this.#read((database) => database.prepare(`
+      SELECT snapshot_json AS snapshotJson, logical_source_refs_json AS logicalSourceRefsJson
+      FROM local_second_brain_publication_outbox
+      WHERE athlete_id = ?
+      ORDER BY revision ASC
+    `).all(athleteId).map((row) => ({
+      snapshot: secondBrainContextSnapshotSchema.parse(JSON.parse(row.snapshotJson)),
+      logicalSourceRefs: JSON.parse(row.logicalSourceRefsJson),
+    })));
+  }
+
+  markSecondBrainPublicationAttempt(athleteId, snapshot) {
+    const parsed = secondBrainContextSnapshotSchema.parse(snapshot);
+    const now = this.#now().toISOString();
+    this.#write((database) => database.prepare(`
+      UPDATE local_second_brain_publication_outbox
+      SET attempt_count = attempt_count + 1, last_attempted_at = ?
+      WHERE athlete_id = ? AND revision = ? AND content_hash = ?
+    `).run(now, athleteId, parsed.revision, parsed.contentHash));
   }
 
   listEntities(athleteId) {
@@ -124,6 +206,59 @@ export class LocalSyncProjectionRepository {
       payload: row.payloadJson === null ? null : JSON.parse(row.payloadJson),
       payloadJson: undefined,
     })));
+  }
+
+  getCloudSyncNoteProjection(athleteId) {
+    const entities = this.listEntities(athleteId);
+    const activities = [];
+    const calendarSessions = [];
+    const activePlans = [];
+
+    for (const entity of entities) {
+      if (entity.operation !== "upsert") continue;
+      if (entity.entityType === "activity") {
+        const parsed = activityDetailSchema.safeParse(entity.payload);
+        if (parsed.success && parsed.data.athleteId === athleteId && parsed.data.id === entity.entityId) {
+          activities.push(parsed.data);
+        }
+        continue;
+      }
+      if (entity.entityType === "plan") {
+        const parsed = trainingPlanSchema.safeParse(entity.payload);
+        if (parsed.success && parsed.data.athleteId === athleteId && parsed.data.id === entity.entityId && parsed.data.status === "active") {
+          activePlans.push(parsed.data);
+        }
+        continue;
+      }
+      if (entity.entityType === "calendar_session") {
+        const parsed = calendarSessionSchema.safeParse(entity.payload);
+        if (parsed.success) {
+          calendarSessions.push(parsed.data);
+          continue;
+        }
+        const plannedWorkout = plannedWorkoutSchema.safeParse(entity.payload);
+        if (plannedWorkout.success) {
+          calendarSessions.push({
+            ...plannedWorkout.data,
+            prescribedDate: plannedWorkout.data.scheduledDate,
+            effectiveDate: plannedWorkout.data.scheduledDate,
+            originalDate: plannedWorkout.data.scheduledDate,
+            status: "upcoming",
+            revision: entity.entityRevision,
+            warnings: [],
+            amendments: [],
+          });
+        }
+      }
+    }
+    if (activePlans.length > 1) throw new Error("Cloud plan projection is inconsistent");
+    return {
+      cursor: this.getCursor(athleteId),
+      activePlan: activePlans[0] ?? null,
+      activities: activities.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)),
+      calendarSessions: calendarSessions.sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate)
+        || (left.startTime ?? "").localeCompare(right.startTime ?? "") || left.id.localeCompare(right.id)),
+    };
   }
 
   #applyChange(database, athleteId, change) {
@@ -278,5 +413,12 @@ export class LocalSyncProjectionRepository {
   #write(action) {
     const database = new DatabaseSync(this.#databasePath);
     try { return action(database); } finally { database.close(); }
+  }
+}
+
+function assertLogicalSourceReferences(logicalSourceRefs) {
+  if (!Array.isArray(logicalSourceRefs)
+    || logicalSourceRefs.some((item) => typeof item !== "string" || !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/u.test(item))) {
+    throw new Error("Second Brain logical source references must not contain paths and must be logical identifiers");
   }
 }

@@ -1,5 +1,6 @@
 import { syncChangesResponseSchema } from "../../core/src/contracts/sync.ts";
 import { secondBrainContextPublishApiResponseSchema } from "../../core/src/contracts/second-brain-context.ts";
+import { activityReviewClaimResponseSchema, activityCoachReviewSchema } from "../../core/src/contracts/activity-review.ts";
 
 export class RacePredictorSyncClient {
   #baseUrl;
@@ -51,6 +52,18 @@ export class RacePredictorSyncClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(plan),
+    });
+  }
+
+  async claimActivityReviews(token, limit = 5) {
+    const url = new URL("/api/v1/sync/device/activity-reviews", this.#baseUrl);
+    url.searchParams.set("limit", String(limit));
+    return activityReviewClaimResponseSchema.parse(await this.#request(token, url, { method: "GET" }));
+  }
+
+  async publishActivityReview(token, artifact) {
+    return this.#request(token, new URL("/api/v1/sync/device/activity-reviews/publish", this.#baseUrl), {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...activityCoachReviewSchema.parse(artifact), requestId: artifact.requestId, leaseToken: artifact.leaseToken, expectedActivityRevision: artifact.expectedActivityRevision }),
     });
   }
 

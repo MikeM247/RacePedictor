@@ -13,6 +13,7 @@ import {
 } from "../src/contracts/providers.ts";
 import {
   canonicalSecondBrainHashInput,
+  isImmediateSecondBrainContentRepeat,
   SECOND_BRAIN_CONTEXT_MAX_BYTES,
   secondBrainContextSnapshotSchema,
 } from "../src/contracts/second-brain-context.ts";
@@ -134,6 +135,16 @@ test("Second Brain selectedFields exactly equal the strict context sections", ()
     selectedFields: ["availability"],
     context: {},
   }).success, false);
+});
+
+test("Second Brain content repeats are evaluated only against the immediately preceding snapshot", () => {
+  const first = { athleteId: "athlete_001", contentHash: "a".repeat(64) };
+  const changed = { athleteId: "athlete_001", contentHash: "b".repeat(64) };
+  const restored = { athleteId: "athlete_001", contentHash: "a".repeat(64) };
+
+  assert.equal(isImmediateSecondBrainContentRepeat(first, first), true);
+  assert.equal(isImmediateSecondBrainContentRepeat(changed, restored), false);
+  assert.equal(isImmediateSecondBrainContentRepeat(first, { ...first, athleteId: "athlete_other" }), false);
 });
 
 test("Second Brain v1 rejects free text, unknown keys, vault paths, and plan mutations", () => {

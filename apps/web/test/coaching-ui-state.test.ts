@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canAmendFutureSession,
   canRecordPastSessionSkip,
+  calendarWindowRange,
   changeHistoryLabel,
   externalAutomationStatusLabel,
   formatAdjustmentCue,
@@ -19,6 +20,19 @@ import {
 
 test("calculates a stable Monday-to-Sunday calendar range", () => {
   assert.deepEqual(weekRange("2026-08-05"), { from: "2026-08-03", to: "2026-08-09" });
+});
+
+test("shows the selected week and three following weeks in the calendar window", () => {
+  assert.deepEqual(calendarWindowRange("2026-09-08"), {
+    from: "2026-09-07",
+    to: "2026-10-04",
+    weeks: [
+      { from: "2026-09-07", to: "2026-09-13" },
+      { from: "2026-09-14", to: "2026-09-20" },
+      { from: "2026-09-21", to: "2026-09-27" },
+      { from: "2026-09-28", to: "2026-10-04" },
+    ],
+  });
 });
 
 test("normalizes API sessions while preserving prescribed dates and revision", () => {

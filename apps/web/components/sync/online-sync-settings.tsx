@@ -1,9 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation.tsx";
 import "../dashboard/dashboard.css";
 import "../coaching/coaching-ui.css";
+import { safeRecoveryPath } from "../../lib/recovery-context";
 
 type Device = {
   id: string;
@@ -36,44 +38,110 @@ type StravaConnection = {
   updatedAt: string;
 };
 
+type SettingsGroupName = "connections" | "devices" | "privacy" | "operations";
+
+function SettingsGroup({
+  name,
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  name: SettingsGroupName;
+  title: string;
+  open: boolean;
+  onToggle: (name: SettingsGroupName) => void;
+  children: ReactNode;
+}) {
+  return <details className="settings-group" open={open} onToggle={(event) => { if (event.currentTarget.open) onToggle(name); }}>
+    <summary>{title}</summary>
+    <div className="settings-group-content">{children}</div>
+  </details>;
+}
+
 export function OnlineSyncSettings() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("Home computer");
-  const [state, setState] = useState<RequestState>("loading");
-  const [message, setMessage] = useState("Loading paired devices…");
+  const [deviceState, setDeviceState] = useState<RequestState>("loading");
+  const [deviceMessage, setDeviceMessage] = useState("Loading paired computers…");
   const [oneTimeToken, setOneTimeToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [operations, setOperations] = useState<OperationalStatus | null>(null);
   const [strava, setStrava] = useState<StravaConnection | null>(null);
   const [stravaBusy, setStravaBusy] = useState(false);
   const [stravaMessage, setStravaMessage] = useState("");
+  const [stravaReadFailed, setStravaReadFailed] = useState(false);
+  const [operationsReadFailed, setOperationsReadFailed] = useState(false);
+  const [deviceMutationBusy, setDeviceMutationBusy] = useState(false);
+  const deviceGeneration = useRef(0);
+  const providerGeneration = useRef(0);
+  const operationsGeneration = useRef(0);
+  const [returnTo, setReturnTo] = useState("/dashboard/settings");
+  const [settingsGroup, setSettingsGroup] = useState<SettingsGroupName>("connections");
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedReturn = params.get("returnTo");
+    setReturnTo(safeRecoveryPath(requestedReturn, "/dashboard/settings"));
+    const requestedSection = params.get("section");
+    if (requestedSection === "connections" || requestedSection === "devices" || requestedSection === "privacy" || requestedSection === "operations") setSettingsGroup(requestedSection);
+    void loadSessionAndDevices();
+    void loadStrava();
+    void loadOperations();
+  }, []);
 
-  async function load() {
-    setState("loading");
+  async function loadSessionAndDevices() {
+    const generation = ++deviceGeneration.current;
+    setDeviceState("loading");
     try {
-      const [session, deviceList, operationalStatus, stravaStatus] = await Promise.all([
-        request("/api/v1/auth/session"),
-        request("/api/v1/sync/devices"),
-        request("/api/v1/operations/status").catch(() => null),
-        request("/api/v1/providers/strava/status").catch(() => null),
-      ]);
+      const [session, deviceList] = await Promise.all([request("/api/v1/auth/session"), request("/api/v1/sync/devices")]);
       const activeAthleteId = asRecord(asRecord(session).actor).activeAthleteId;
       if (typeof activeAthleteId !== "string" || !activeAthleteId) throw new Error("Your athlete session is unavailable.");
+      if (generation !== deviceGeneration.current) return;
       setAthleteId(activeAthleteId);
       setDevices(Array.isArray(deviceList.devices) ? deviceList.devices as Device[] : []);
-      setOperations(operationalStatus as OperationalStatus | null);
-      setStrava(stravaStatus ? asRecord(stravaStatus).connection as StravaConnection : null);
-      if (new URLSearchParams(window.location.search).get("connection") === "connected") {
-        setStravaMessage("Strava is connected. Completed workouts will be imported automatically.");
-      }
-      setState("ready");
-      setMessage("");
+      setDeviceState("ready"); setDeviceMessage("");
     } catch (error) {
-      setState("error");
-      setMessage(error instanceof Error ? error.message : "Paired devices could not be loaded.");
+      if (generation === deviceGeneration.current) { setDeviceState("error"); setDeviceMessage(error instanceof Error ? error.message : "Paired computers could not be loaded."); }
+    }
+  }
+
+  async function loadStrava() {
+    const generation = ++providerGeneration.current;
+    setStravaReadFailed(false);
+    try {
+      const stravaStatus = await request("/api/v1/providers/strava/status");
+      if (generation !== providerGeneration.current) return;
+      const connection = asRecord(stravaStatus).connection;
+      if (!connection || typeof connection !== "object") throw new Error("Strava status was unsupported.");
+      setStrava(connection as StravaConnection);
+      const query = new URLSearchParams(window.location.search);
+      if (query.get("connection") === "connected") {
+        const backfill = query.get("backfill");
+        setStravaMessage(
+          backfill === "queued"
+            ? "Strava is connected and the initial 90-day import is queued. Refresh Training shortly to see imported workouts."
+            : backfill === "already_queued"
+              ? "Strava is connected and the initial 90-day import is already queued. Refresh Training shortly to see imported workouts."
+              : "Strava is connected, but the initial import could not be queued. Use Import last 90 days below to retry.",
+        );
+      }
+    } catch {
+      if (generation === providerGeneration.current) { setStravaReadFailed(true); setStravaMessage("Strava status could not be checked. This is not a disconnected account."); }
+    }
+  }
+
+  async function loadOperations() {
+    const generation = ++operationsGeneration.current;
+    setOperationsReadFailed(false);
+    try {
+      const value = await request("/api/v1/operations/status");
+      if (generation !== operationsGeneration.current) return;
+      if (!Array.isArray(value.signals) || typeof value.processingAllowed !== "boolean") throw new Error("Operations status was unsupported.");
+      setOperations(value as OperationalStatus);
+    } catch {
+      if (generation === operationsGeneration.current) { setOperationsReadFailed(true); setOperations(null); }
     }
   }
 
@@ -85,7 +153,7 @@ export function OnlineSyncSettings() {
       const result = await request("/api/v1/providers/strava/connect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ athleteId, returnTo: "/dashboard/settings" }),
+        body: JSON.stringify({ athleteId, returnTo }),
       });
       const authorizationUrl = String(result.authorizationUrl ?? "");
       if (!authorizationUrl) throw new Error("Strava authorization is unavailable.");
@@ -143,9 +211,9 @@ export function OnlineSyncSettings() {
 
   async function pair(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!athleteId || !displayName.trim()) return;
-    setState("loading");
-    setMessage("Creating a one-time device credential…");
+    if (!athleteId || !displayName.trim() || deviceMutationBusy || deviceState !== "ready") return;
+    setDeviceMutationBusy(true); setDeviceState("loading");
+    setDeviceMessage("Creating a one-time device credential…");
     setOneTimeToken(null);
     try {
       const result = await request("/api/v1/sync/devices", {
@@ -158,27 +226,23 @@ export function OnlineSyncSettings() {
       ))]);
       setOneTimeToken(String(result.deviceToken));
       setCopied(false);
-      setState("ready");
-      setMessage("Device created. Save the credential locally now; it will not be shown again.");
+      setDeviceState("ready"); setDeviceMessage("Device created. Save the credential locally now; it will not be shown again.");
     } catch (error) {
-      setState("error");
-      setMessage(error instanceof Error ? error.message : "The device could not be paired.");
-    }
+      setDeviceState("error"); setDeviceMessage(error instanceof Error ? error.message : "The device could not be paired. The name is still available to retry.");
+    } finally { setDeviceMutationBusy(false); }
   }
 
   async function revoke(device: Device) {
     if (!window.confirm(`Revoke ${device.displayName}? Local sync will stop immediately.`)) return;
-    setState("loading");
-    setMessage("Revoking the local device…");
+    if (deviceMutationBusy) return;
+    setDeviceMutationBusy(true); setDeviceState("loading"); setDeviceMessage("Revoking the local device…");
     try {
       const result = await request(`/api/v1/sync/devices/${encodeURIComponent(device.id)}`, { method: "DELETE" });
       setDevices((current) => current.map((item) => item.id === device.id ? result.device as Device : item));
-      setState("ready");
-      setMessage("Device revoked. Strava and your browser session are unchanged.");
+      setDeviceState("ready"); setDeviceMessage("Device revoked. Strava and your browser session are unchanged.");
     } catch (error) {
-      setState("error");
-      setMessage(error instanceof Error ? error.message : "The device could not be revoked.");
-    }
+      setDeviceState("error"); setDeviceMessage(error instanceof Error ? error.message : "The device could not be revoked. Check paired-computer status before retrying.");
+    } finally { setDeviceMutationBusy(false); }
   }
 
   async function copyToken() {
@@ -188,22 +252,24 @@ export function OnlineSyncSettings() {
       setCopied(true);
     } catch {
       setCopied(false);
-      setMessage("Copy is unavailable. Select the credential manually and continue immediately.");
+      setDeviceMessage("Copy is unavailable. Select the credential manually and continue immediately.");
     }
   }
 
   return (
     <div className="dashboard-layout coaching-layout coaching-layout--settings">
       <DashboardNavigation activePage="settings" />
-      <main className="dashboard-main" aria-labelledby="settings-page-title">
+      <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="settings-page-title">
         <header className="dashboard-toolbar coaching-toolbar">
           <div><p className="eyebrow">Training workspace</p><h1 id="settings-page-title">Settings</h1><p>Secure local sync and selected Second Brain context</p></div>
           <span className="toolbar-context">Online</span>
         </header>
+        {returnTo !== "/dashboard/settings" ? <div className="coach-actions"><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></div> : null}
         <section className="coaching-content coaching-content--settings">
+          <SettingsGroup name="connections" title="Connections" open={settingsGroup === "connections"} onToggle={setSettingsGroup}>
           <section className="coach-panel settings-panel settings-panel--connections" aria-labelledby="strava-heading">
             <div className="coach-panel-heading">
-              <div><p className="eyebrow">Workout source</p><h3 id="strava-heading">Automatic workouts from Strava</h3></div>
+              <div><p className="eyebrow">Workout source</p><h2 id="strava-heading">Automatic workouts from Strava</h2></div>
               <span className="status-chip">{strava ? stravaLabel(strava) : "Unavailable"}</span>
             </div>
             <p>Connect once and completed Strava workouts can arrive automatically. Importing a workout never changes or approves your training plan.</p>
@@ -211,7 +277,8 @@ export function OnlineSyncSettings() {
             {strava ? <dl className="sync-provider-facts">
               <div><dt>Connected</dt><dd>{strava.connectedAt ? formatDate(strava.connectedAt) : "Not connected"}</dd></div>
               <div><dt>Last provider contact</dt><dd>{strava.lastSuccessfulProviderContactAt ? formatDate(strava.lastSuccessfulProviderContactAt) : "Never"}</dd></div>
-            </dl> : <p className="quiet-copy">Strava status is temporarily unavailable. No connection action has been taken.</p>}
+            </dl> : <p className="quiet-copy">Strava status is temporarily unavailable. A failed status read is not a disconnected account, and no connection action has been taken.</p>}
+            {stravaReadFailed ? <button className="button button-secondary" type="button" onClick={() => void loadStrava()}>Retry Strava status</button> : null}
             <div className="coach-actions">
               {strava?.displayStatus === "connected"
                 ? <>
@@ -223,55 +290,44 @@ export function OnlineSyncSettings() {
             {stravaMessage ? <p className="coach-status" role="status">{stravaMessage}</p> : null}
           </section>
 
-          <section className="coach-panel settings-panel settings-panel--connections" aria-labelledby="local-sync-heading">
-            <div className="coach-panel-heading">
-              <div><p className="eyebrow">Local sync</p><h3 id="local-sync-heading">Paired computer</h3></div>
-              <span className="status-chip">{devices.some((device) => device.status === "active") ? "Active" : "Not paired"}</span>
-            </div>
-            <p>One computer can sync workouts, approved plans, calendar sessions, and selected structured context. Pairing never exposes your Obsidian vault.</p>
-            <form className="coach-form coach-form-grid sync-pair-form" onSubmit={pair}>
-              <label className="field-wide"><span>Computer name</span><input maxLength={100} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-              <button className="button button-primary field-wide" disabled={state === "loading" || !athleteId || !displayName.trim()} type="submit">
-                {devices.some((device) => device.status === "active") ? "Replace paired computer" : "Pair this computer"}
-              </button>
-            </form>
-            {message ? <p className={`coach-status coach-status--${state === "error" ? "error" : state === "loading" ? "loading" : "success"}`} role={state === "error" ? "alert" : "status"}>{message}</p> : null}
-          </section>
+          </SettingsGroup>
 
-          {oneTimeToken ? <section className="coach-panel settings-panel settings-panel--operations sync-credential-panel" aria-labelledby="credential-heading">
-            <div className="coach-panel-heading"><div><p className="eyebrow">Shown once</p><h3 id="credential-heading">Save the device credential</h3></div><span className="status-chip">One-time</span></div>
-            <p>Copy this credential, then run the command below on the paired Windows computer. It is protected with your Windows account and is not stored in Obsidian or the browser.</p>
-            <textarea aria-label="One-time device credential" readOnly rows={3} value={oneTimeToken} />
-            <div className="coach-actions"><button className="button button-primary" type="button" onClick={() => void copyToken()}>{copied ? "Copied" : "Copy credential"}</button></div>
-            <pre className="sync-command"><code>Get-Clipboard | npm run sync:local -- enroll</code></pre>
-            <p className="field-help">After enrolment, use <code>npm run sync:local -- sync</code>. Re-pairing revokes the previous computer immediately.</p>
-          </section> : null}
-
+          <SettingsGroup name="devices" title="Paired computer" open={settingsGroup === "devices"} onToggle={setSettingsGroup}>
           <section className="coach-panel settings-panel settings-panel--devices" aria-labelledby="device-history-heading">
-            <div className="coach-panel-heading"><div><p className="eyebrow">Status</p><h3 id="device-history-heading">Device history</h3></div><button className="button button-secondary" type="button" onClick={() => void load()}>Refresh</button></div>
-            {devices.length === 0 && state !== "loading" ? <p className="quiet-copy">No computer has been paired yet.</p> : <div className="sync-device-list">
+            <div className="coach-panel-heading"><div><p className="eyebrow">Local sync</p><h2 id="device-history-heading">Pair and manage a computer</h2></div><span className="status-chip">{deviceState === "error" ? "Unknown" : devices.some((device) => device.status === "active") ? "Active" : "Not paired"}</span></div>
+            <p>One computer can sync workouts, approved plans, calendar sessions, and selected structured context. Pairing never exposes your Obsidian vault.</p>
+            {deviceState === "error" ? <><p className="quiet-copy">Paired-computer status could not be checked. This is not the same as having no paired computer.</p><button className="button button-secondary" type="button" onClick={() => void loadSessionAndDevices()}>Retry paired-computer status</button></> : <form className="coach-form coach-form-grid sync-pair-form" onSubmit={pair}><label className="field-wide"><span>Computer name</span><input maxLength={100} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><button className="button button-primary field-wide" disabled={deviceMutationBusy || deviceState !== "ready" || !athleteId || !displayName.trim()} type="submit">{devices.some((device) => device.status === "active") ? "Replace paired computer" : "Pair this computer"}</button></form>}
+            {deviceMessage ? <p className={`coach-status coach-status--${deviceState === "error" ? "error" : deviceState === "loading" ? "loading" : "success"}`} role={deviceState === "error" ? "alert" : "status"}>{deviceMessage}</p> : null}
+            {oneTimeToken ? <section className="sync-credential-panel" aria-labelledby="credential-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Shown once</p><h3 id="credential-heading">Save the device credential</h3></div><span className="status-chip">One-time</span></div><p>Copy this credential, then run the command below on the paired Windows computer. It is not stored in the browser.</p><textarea aria-label="One-time device credential" readOnly rows={3} value={oneTimeToken} /><div className="coach-actions"><button className="button button-primary" type="button" onClick={() => void copyToken()}>{copied ? "Copied" : "Copy credential"}</button></div><pre className="sync-command"><code>Get-Clipboard | npm run sync:local -- enroll</code></pre></section> : null}
+            <h3>Device history</h3>
+            {devices.length === 0 && deviceState === "ready" ? <p className="quiet-copy">No computer has been paired yet.</p> : <div className="sync-device-list">
               {devices.map((device) => <article className="sync-device-card" key={device.id}>
                 <div><h4>{device.displayName}</h4><p>{device.status === "active" ? stateLabel(device) : "Revoked"}</p></div>
                 <dl><div><dt>Paired</dt><dd>{formatDate(device.createdAt)}</dd></div><div><dt>Last sync</dt><dd>{device.lastSeenAt ? formatDate(device.lastSeenAt) : "Never"}</dd></div><div><dt>Cursor</dt><dd>{device.lastAcknowledgedCursor ?? "Not started"}</dd></div></dl>
-                {device.status === "active" ? <button className="button button-secondary" type="button" onClick={() => void revoke(device)}>Revoke device</button> : null}
+                {device.status === "active" ? <button className="button button-secondary" disabled={deviceMutationBusy} type="button" onClick={() => void revoke(device)}>Revoke device</button> : null}
               </article>)}
             </div>}
           </section>
+          </SettingsGroup>
 
+          <SettingsGroup name="privacy" title="Privacy" open={settingsGroup === "privacy"} onToggle={setSettingsGroup}>
           <section className="coach-panel settings-panel settings-panel--privacy" aria-labelledby="privacy-boundary-heading">
-            <div className="coach-panel-heading"><div><p className="eyebrow">Privacy boundary</p><h3 id="privacy-boundary-heading">Only selected structured context leaves your computer</h3></div></div>
+            <div className="coach-panel-heading"><div><p className="eyebrow">Privacy boundary</p><h2 id="privacy-boundary-heading">Only selected structured context leaves your computer</h2></div></div>
             <p>The local publisher accepts one explicit structured JSON input. It never scans the vault. Supported sections are availability, training preferences, dated constraints, wellbeing check-ins, and activity reflections.</p>
             <p className="field-help">Notes, attachments, paths, credentials, raw provider files, code, and Codex history are rejected. Published context cannot edit a training plan.</p>
           </section>
+          </SettingsGroup>
 
+          <SettingsGroup name="operations" title="Operations" open={settingsGroup === "operations"} onToggle={setSettingsGroup}>
           <section className="coach-panel settings-panel settings-panel--operations" aria-labelledby="operations-heading">
-            <div className="coach-panel-heading"><div><p className="eyebrow">Free-tier safety</p><h3 id="operations-heading">Operations guardrails</h3></div><span className="status-chip">{operations ? operations.state.replace("_", " ") : "Unavailable"}</span></div>
-            {!operations ? <p className="quiet-copy">Usage status is temporarily unavailable. Automatic processing remains fail-closed when its recovery configuration is unavailable.</p> : <>
+            <div className="coach-panel-heading"><div><p className="eyebrow">Free-tier safety</p><h2 id="operations-heading">Operations guardrails</h2></div><span className="status-chip">{operations ? operations.state.replace("_", " ") : "Unavailable"}</span></div>
+            {!operations ? <><p className="quiet-copy">Usage status is temporarily unavailable. Automatic processing remains fail-closed when its recovery configuration is unavailable.</p>{operationsReadFailed ? <button className="button button-secondary" type="button" onClick={() => void loadOperations()}>Retry operations status</button> : null}</> : <>
               <p>{operations.processingAllowed ? "Automatic recovery is within the configured planning ceilings." : "New automatic processing is paused. Already accepted workouts and raw records are preserved."}</p>
-              <div className="sync-device-list">{operations.signals.filter((signal) => signal.state !== "healthy").map((signal) => <article className="sync-device-card" key={signal.metric}><div><h4>{signal.label}</h4><p>{signal.state.replace("_", " ")}</p></div><dl><div><dt>Measured</dt><dd>{signal.value.toLocaleString()}</dd></div><div><dt>Warning</dt><dd>{signal.warningAt.toLocaleString()}</dd></div><div><dt>Hard stop</dt><dd>{signal.hardStopAt.toLocaleString()}</dd></div></dl><p>{signal.ownerAction}</p></article>)}</div>
+              <div className="sync-device-list">{operations.signals.filter((signal) => signal.state !== "healthy").map((signal) => <article className="sync-device-card" key={signal.metric}><div><h3>{signal.label}</h3><p>{signal.state.replace("_", " ")}</p></div><dl><div><dt>Measured</dt><dd>{signal.value.toLocaleString()}</dd></div><div><dt>Warning</dt><dd>{signal.warningAt.toLocaleString()}</dd></div><div><dt>Hard stop</dt><dd>{signal.hardStopAt.toLocaleString()}</dd></div></dl><p>{signal.ownerAction}</p></article>)}</div>
               <p className="field-help">{operations.disclaimer}</p>
             </>}
           </section>
+          </SettingsGroup>
         </section>
       </main>
     </div>

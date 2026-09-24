@@ -47,7 +47,9 @@ export function isDeviceAuthenticatedApiPath(pathname: string) {
     || pathname === "/api/v1/sync/device/acknowledge"
     || pathname === "/api/v1/sync/device/plans"
     || pathname === "/api/v1/sync/device/failure"
-    || pathname === "/api/v1/second-brain-context/snapshots";
+    || pathname === "/api/v1/second-brain-context/snapshots"
+    || pathname === "/api/v1/sync/device/activity-reviews"
+    || pathname === "/api/v1/sync/device/activity-reviews/publish";
 }
 
 export function isInternalAuthenticatedApiPath(pathname: string) {

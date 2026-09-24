@@ -8,17 +8,17 @@ import type {
 
 export type PredictionSummaryView = Pick<
   PredictionSummary,
-  "targetDistanceM" | "predictedTimeS" | "predictedPaceSecPerKm" | "bandLowS" | "bandHighS" | "modelVersion"
+  "targetDistanceM" | "predictedTimeS" | "predictedPaceSecPerKm" | "bandLowS" | "bandHighS" | "modelVersion" | "generatedAt"
 >;
 
 export type DriverContributionView = Pick<
   DriverContribution,
-  "key" | "label" | "contributionPct"
+  "key" | "label" | "contributionPct" | "direction" | "confidence"
 >;
 
 export type FeatureTrendPointView = Pick<
   FeatureTrendPoint,
-  "weekStart" | "featureKey" | "value" | "unit"
+  "weekStart" | "featureKey" | "featureLabel" | "value" | "unit"
 >;
 
 export type ImportProgressView = {
@@ -62,7 +62,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 const readNumber = (value: unknown, fieldName: string): number => {
-  if (typeof value !== "number") {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`Expected number for ${fieldName}`);
   }
   return value;
@@ -80,6 +80,14 @@ const readBoolean = (value: unknown, fieldName: string): boolean => {
     throw new Error(`Expected boolean for ${fieldName}`);
   }
   return value;
+};
+
+const readDateOnly = (value: unknown, fieldName: string): string => {
+  const date = readString(value, fieldName);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) {
+    throw new Error(`Expected ISO date for ${fieldName}`);
+  }
+  return date;
 };
 
 const formatDuration = (seconds: number) => {
@@ -159,6 +167,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     bandLowS: 0,
     bandHighS: 0,
     modelVersion: "Unavailable",
+    generatedAt: new Date(0).toISOString(),
   };
 
   const fallbackImportProgress: ImportProgressView = {
@@ -219,6 +228,14 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
       key: readString(item.key, "driverContributions.key"),
       label: readString(item.label, "driverContributions.label"),
       contributionPct: readNumber(item.contributionPct, "driverContributions.contributionPct"),
+      direction: (() => {
+        const direction = readString(item.direction, "driverContributions.direction");
+        if (direction !== "positive" && direction !== "negative" && direction !== "neutral") {
+          throw new Error("Invalid driver contribution direction");
+        }
+        return direction;
+      })(),
+      confidence: readNumber(item.confidence, "driverContributions.confidence"),
     };
   });
 
@@ -228,8 +245,9 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     }
 
     return {
-      weekStart: readString(item.weekStart, "featureTrendPoints.weekStart"),
+      weekStart: readDateOnly(item.weekStart, "featureTrendPoints.weekStart"),
       featureKey: readString(item.featureKey, "featureTrendPoints.featureKey"),
+      featureLabel: readString(item.featureLabel, "featureTrendPoints.featureLabel"),
       value: readNumber(item.value, "featureTrendPoints.value"),
       unit: readString(item.unit, "featureTrendPoints.unit"),
     };
@@ -249,6 +267,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     bandLowS: readNumber(predictionSummary.bandLowS, "predictionSummary.bandLowS"),
     bandHighS: readNumber(predictionSummary.bandHighS, "predictionSummary.bandHighS"),
     modelVersion: readString(predictionSummary.modelVersion, "predictionSummary.modelVersion"),
+    generatedAt: readString(predictionSummary.generatedAt, "predictionSummary.generatedAt"),
   };
   const normalizedPredictionOptions = Array.isArray(predictionOptions)
     ? predictionOptions.map((candidate, index) => {
@@ -262,6 +281,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
           bandLowS: readNumber(candidate.bandLowS, `predictionOptions[${index}].bandLowS`),
           bandHighS: readNumber(candidate.bandHighS, `predictionOptions[${index}].bandHighS`),
           modelVersion: readString(candidate.modelVersion, `predictionOptions[${index}].modelVersion`),
+          generatedAt: readString(candidate.generatedAt, `predictionOptions[${index}].generatedAt`),
         };
       })
     : [normalizedPredictionSummary];

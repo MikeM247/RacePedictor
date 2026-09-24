@@ -7,7 +7,7 @@ import test from "node:test";
 import { InMemoryDeviceCredentialStore, WindowsDpapiCredentialStore } from "../src/device-credential-store.js";
 import { LocalCloudSyncAgent } from "../src/local-sync-agent.js";
 import { createLocalCoachingRepository } from "../src/local-coaching-repository.js";
-import { CLOUD_SYNC_END, CLOUD_SYNC_START, updateCloudSyncNote } from "../src/local-sync-note.js";
+import { CLOUD_SYNC_END, CLOUD_SYNC_START, renderCloudSyncSummary, updateCloudSyncNote } from "../src/local-sync-note.js";
 import { LocalSyncProjectionRepository } from "../src/local-sync-projection.js";
 
 const athleteId = "athlete-a";
@@ -152,6 +152,16 @@ test("approved cloud plan selection updates the local active plan and settled go
   assert.equal(activePlan.id, firstPlan.id);
   assert.equal(activePlan.revision, 4);
   assert.equal(settledGoal.id, firstGoal.id);
+
+  fixture.projection.applyChanges(athleteId, [
+    change("3", "calendar_session", firstPlan.workouts[0].id, 4, structuredPlan(firstPlan, "active", selectedAt).workouts[0]),
+  ]);
+  const rendered = renderCloudSyncSummary({
+    cursor: "3",
+    entities: fixture.projection.getCloudSyncNoteProjection(athleteId),
+  });
+  assert.match(rendered, new RegExp(`Plan: ${firstPlan.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`, "u"));
+  assert.match(rendered, /Calendar sessions[\s\S]*First run \(upcoming\)/u);
 });
 
 test("selected Second Brain publication sends only allow-listed structured fields while source references remain local", async () => {
@@ -178,12 +188,186 @@ test("selected Second Brain publication sends only allow-listed structured field
   const local = database.prepare("SELECT logical_source_refs_json AS refs FROM local_second_brain_publications").get();
   database.close();
   assert.deepEqual(JSON.parse(local.refs), ["weekly-availability", "morning-check-in"]);
+  const unchanged = await agent.publishSelectedSecondBrain({
+    selectedFields: ["availability", "wellbeingCheckIns"],
+    sourceContext: {
+      availability: { weeklyMinutesBudget: 300 },
+      wellbeingCheckIns: [{ recordedOn: "2026-08-10", energy: 4, fatigue: 2, soreness: 1, sleepQuality: 4, stress: 2 }],
+    },
+    logicalSourceRefs: ["weekly-availability", "morning-check-in"],
+  });
+  assert.equal(unchanged.skipped, true);
+  assert.equal(publishCalls, 1, "unchanged content does not create another immutable revision");
   await assert.rejects(() => agent.publishSelectedSecondBrain({
     selectedFields: ["availability"],
     sourceContext: { availability: { weeklyMinutesBudget: 300 } },
     logicalSourceRefs: ["Vault/Private.md"],
   }), /must not contain paths/u);
   assert.equal(publishCalls, 1, "invalid local source metadata is rejected before a cloud write");
+});
+
+test("scheduled sync runner invokes the combined pull-and-publish command", async () => {
+  const runnerPath = path.resolve(import.meta.dirname, "..", "scripts", "run-local-sync-task.ps1");
+  const runner = await readFile(runnerPath, "utf8");
+  assert.match(runner, /npm\.cmd run sync:local -- sync-and-publish/u);
+});
+
+test("selected Second Brain publication persists an exact immutable retry payload before the API call", async () => {
+  const fixture = await localFixture();
+  const accepted = [];
+  let firstAttempt = true;
+  const client = {
+    getChanges: async () => response([], false), acknowledge: async () => {},
+    publishSecondBrain: async (_token, snapshot) => {
+      accepted.push(snapshot);
+      if (firstAttempt) {
+        firstAttempt = false;
+        throw new Error("connection dropped after cloud acceptance");
+      }
+      return { data: { snapshot, reused: true } };
+    },
+  };
+  const agent = await agentFor(fixture, client);
+  const input = {
+    selectedFields: ["availability"],
+    sourceContext: { availability: { weeklyMinutesBudget: 300 } },
+    logicalSourceRefs: ["running-context"],
+  };
+  await assert.rejects(() => agent.publishSelectedSecondBrain(input), /connection dropped/u);
+
+  let database = new DatabaseSync(fixture.databasePath, { readOnly: true });
+  const pending = database.prepare(`
+    SELECT snapshot_json AS snapshotJson, attempt_count AS attempts
+    FROM local_second_brain_publication_outbox
+  `).get();
+  database.close();
+  assert.equal(pending.attempts, 1);
+  assert.deepEqual(JSON.parse(pending.snapshotJson), accepted[0]);
+
+  const recovered = await agent.publishSelectedSecondBrain(input);
+  assert.equal(recovered.snapshot.revision, 1);
+  assert.equal(recovered.reused, true);
+  assert.equal(accepted.length, 2);
+  assert.deepEqual(accepted[1], accepted[0], "a retry sends the original immutable snapshot exactly");
+  database = new DatabaseSync(fixture.databasePath, { readOnly: true });
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM local_second_brain_publication_outbox").get().count, 0);
+  assert.equal(database.prepare("SELECT second_brain_revision AS revision FROM local_sync_state WHERE athlete_id = ?").get(athleteId).revision, 1);
+  database.close();
+});
+
+test("selected Second Brain context can return to earlier content after an intervening revision", async () => {
+  const fixture = await localFixture();
+  const published = [];
+  const agent = await agentFor(fixture, {
+    getChanges: async () => response([], false), acknowledge: async () => {},
+    publishSecondBrain: async (_token, snapshot) => {
+      published.push(snapshot);
+      return { data: { snapshot, reused: false } };
+    },
+  });
+  const source = (weeklyMinutesBudget) => ({
+    selectedFields: ["availability"],
+    sourceContext: { availability: { weeklyMinutesBudget } },
+    logicalSourceRefs: ["running-context"],
+  });
+
+  await agent.publishSelectedSecondBrain(source(240));
+  await agent.publishSelectedSecondBrain(source(300));
+  const restored = await agent.publishSelectedSecondBrain(source(240));
+
+  assert.equal(restored.snapshot.revision, 3);
+  assert.deepEqual(published.map((snapshot) => snapshot.revision), [1, 2, 3]);
+  assert.equal(published[0].contentHash, published[2].contentHash);
+  const database = new DatabaseSync(fixture.databasePath, { readOnly: true });
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM local_second_brain_publications WHERE athlete_id = ?").get(athleteId).count, 3);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM local_second_brain_publications WHERE athlete_id = ? AND content_hash = ?").get(athleteId, published[0].contentHash).count, 2);
+  database.close();
+});
+
+test("local schema migration removes historical content-hash uniqueness without losing v3 publication rows", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "racepredictor-local-sync-v3-"));
+  const databasePath = path.join(directory, "state", "racepredictor.sqlite");
+  await mkdir(path.dirname(databasePath), { recursive: true });
+  const legacy = new DatabaseSync(databasePath);
+  legacy.exec(`
+    CREATE TABLE local_schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, applied_at TEXT NOT NULL);
+    INSERT INTO local_schema_migrations VALUES (1, 'coaching_foundation', '${NOW}');
+    INSERT INTO local_schema_migrations VALUES (2, 'cloud_sync_projection', '${NOW}');
+    INSERT INTO local_schema_migrations VALUES (3, 'second_brain_publication_outbox', '${NOW}');
+    CREATE TABLE local_second_brain_publications (
+      athlete_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL,
+      selected_fields_json TEXT NOT NULL, logical_source_refs_json TEXT NOT NULL, published_at TEXT NOT NULL,
+      PRIMARY KEY (athlete_id, revision), UNIQUE (athlete_id, content_hash)
+    );
+    INSERT INTO local_second_brain_publications VALUES ('${athleteId}', 1, '${"a".repeat(64)}', '["availability"]', '["running-context"]', '${NOW}');
+    CREATE TABLE local_second_brain_publication_outbox (
+      athlete_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL, logical_source_refs_json TEXT NOT NULL, created_at TEXT NOT NULL,
+      last_attempted_at TEXT, attempt_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (athlete_id, revision), UNIQUE (athlete_id, content_hash)
+    );
+  `);
+  legacy.close();
+
+  new LocalSyncProjectionRepository({ databasePath, now: () => new Date(NOW) });
+  const migrated = new DatabaseSync(databasePath);
+  assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM local_second_brain_publications").get().count, 1);
+  migrated.prepare(`
+    INSERT INTO local_second_brain_publications (
+      athlete_id, revision, content_hash, selected_fields_json, logical_source_refs_json, published_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `).run(athleteId, 2, "a".repeat(64), '["availability"]', '["running-context"]', NOW);
+  migrated.close();
+});
+
+test("sync-and-publish attempts the selected-context publication after a failed cloud pull", async () => {
+  const fixture = await localFixture();
+  let published = false;
+  const agent = await agentFor(fixture, {
+    getChanges: async () => { throw new Error("cloud pull unavailable"); },
+    acknowledge: async () => {},
+    publishSecondBrain: async (_token, snapshot) => {
+      published = true;
+      return { data: { snapshot, reused: false } };
+    },
+  });
+  const result = await agent.syncAndPublish(async () => ({
+    selectedFields: ["availability"],
+    sourceContext: { availability: { weeklyMinutesBudget: 300 } },
+    logicalSourceRefs: ["running-context"],
+  }));
+  assert.equal(result.sync.status, "rejected");
+  assert.equal(result.publication.status, "fulfilled");
+  assert.equal(published, true);
+  assert.equal(result.publication.value.snapshot.revision, 1);
+});
+
+test("sync-and-publish drains a valid pending outbox even when the current source is malformed", async () => {
+  const fixture = await localFixture();
+  let failFirstAttempt = true;
+  const agent = await agentFor(fixture, {
+    getChanges: async () => response([], false), acknowledge: async () => {},
+    publishSecondBrain: async (_token, snapshot) => {
+      if (failFirstAttempt) {
+        failFirstAttempt = false;
+        throw new Error("offline");
+      }
+      return { data: { snapshot, reused: true } };
+    },
+  });
+  await assert.rejects(() => agent.publishSelectedSecondBrain({
+    selectedFields: ["availability"],
+    sourceContext: { availability: { weeklyMinutesBudget: 300 } },
+    logicalSourceRefs: ["running-context"],
+  }), /offline/u);
+
+  const result = await agent.syncAndPublish(async () => { throw new Error("source JSON is malformed"); });
+  assert.equal(result.source.status, "rejected");
+  assert.equal(result.publication.status, "fulfilled");
+  assert.equal(result.publication.value.snapshot.revision, 1);
+  const database = new DatabaseSync(fixture.databasePath, { readOnly: true });
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM local_second_brain_publication_outbox").get().count, 0);
+  database.close();
 });
 
 test("DPAPI store passes the token only through the protection input and never embeds it in the fixed script", async () => {

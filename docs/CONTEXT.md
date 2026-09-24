@@ -79,8 +79,9 @@ The analytics dashboard and ingestion pipeline above are the data foundation for
 - History enters through manual bounded CSV or single-activity GPX upload with validation and dedupe.
 - Calendar changes require a reason and preserve the approved prescription plus revision/audit history. Future sessions may be amended, rescheduled, skipped, or restored; a past session may only be recorded as skipped. This does not imply a reviewed or completed workout.
 - Today works in-app. Daily reminder preference defaults to 06:30 `Africa/Johannesburg`, is configurable, and is handed off separately to a recurring Codex automation.
+- Approved-plan freshness compares the history through the recorded approval timestamp. New activities performed after approval do not invalidate the plan; edits, removals, or late imports in its source period still require review. Proposal approval and context publication continue to use complete history. Past rest entries are not missed workouts.
 
-Phase 2 defers automatic Garmin sync, automatic post-run review/adaptation, autonomous plan/calendar changes, and app-owned push/email/SMS delivery. See `docs/adr/0002-digital-coach-control-boundaries.md`.
+Phase 2 defers automatic Garmin sync, autonomous plan/calendar changes, and app-owned push/email/SMS delivery. Evidence-bounded asynchronous activity reviews now run through the paired local device and OpenAI boundary; they cannot infer completion, alter a plan, or adapt training automatically. See `docs/adr/0002-digital-coach-control-boundaries.md` and `docs/adr/0007-async-activity-coach-reviews.md`.
 
 ## Approved Cloud Strava and Second Brain Sync Scope (2026-08-10)
 

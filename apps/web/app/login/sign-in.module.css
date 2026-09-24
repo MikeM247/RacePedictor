@@ -37,34 +37,24 @@
 }
 
 .brand {
-  display: flex;
-  gap: .75rem;
-  align-items: center;
-  margin-bottom: 1.5rem;
+  display: grid;
+  justify-items: center;
+  margin: -1rem 0 1.25rem;
 }
 
-.mark {
-  display: grid;
-  flex: 0 0 2.25rem;
-  width: 2.25rem;
-  height: 2.25rem;
-  place-items: center;
-  border: 1px solid var(--rp-cyan);
-  border-radius: var(--rp-radius-sm);
-  color: var(--rp-cyan-strong);
-  font-size: .7rem;
-  font-weight: 800;
-  letter-spacing: .1em;
+.logo {
+  display: block;
+  width: min(100%, 11.5rem);
+  height: auto;
+  filter: drop-shadow(0 .5rem 1rem color-mix(in srgb, var(--rp-bg) 70%, transparent));
 }
 
 .eyebrow {
-  display: grid;
-  gap: .18rem;
-  margin: 0;
+  margin: -1.35rem 0 0;
   line-height: 1.15;
+  text-align: center;
 }
 
-.eyebrow strong { color: var(--rp-text); font-size: .92rem; letter-spacing: -.01em; }
 .eyebrow span { color: var(--rp-cyan); font-size: .66rem; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
 
 .card h1 {
@@ -112,7 +102,7 @@
 
 @media (forced-colors: active) {
   .card,
-  .mark { border: 2px solid Highlight; }
+  .logo { border: 2px solid Highlight; }
 }
 
 @media (prefers-reduced-motion: reduce) {

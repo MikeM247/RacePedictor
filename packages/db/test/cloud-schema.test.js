@@ -142,6 +142,8 @@ test("cloud tables contain pointers and selected structures, not raw provider bo
   assert.match(secondBrain, /\bselectedFields\s+Json\b/);
   assert.match(secondBrain, /\bcontext\s+Json\b/);
   assert.match(secondBrain, /\bpublishedAt\s+DateTime\b/);
+  assert.match(secondBrain, /@@index\(\[athleteId, contentHash\]\)/);
+  assert.doesNotMatch(secondBrain, /@@unique\(\[athleteId, contentHash\]\)/);
   assert.doesNotMatch(secondBrain, /\b(vault|markdown|fileContents)\s+/);
 
   const syncChange = modelBlock("SyncChange");

@@ -65,15 +65,15 @@ export function ActivePlanOverview({ plan, today }: { plan: JsonRecord; today: s
 
   return <div className="active-plan-overview">
     {progress ? <section className="plan-progress" aria-labelledby="plan-progress-heading">
-      <div className="plan-progress-copy"><div><p className="eyebrow">Date progress</p><h4 id="plan-progress-heading">{progress.percent}% through the approved range</h4></div><span>{progress.remainingDays} day{progress.remainingDays === 1 ? "" : "s"} remaining</span></div>
+      <div className="plan-progress-copy"><div><p className="eyebrow">Date progress</p><h3 id="plan-progress-heading">{progress.percent}% through the approved range</h3></div><span>{progress.remainingDays} day{progress.remainingDays === 1 ? "" : "s"} remaining</span></div>
       <div className="plan-progress-track" role="progressbar" aria-label="Approved plan date progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}><span style={{ width: `${progress.percent}%` }} /></div>
       <p>{progress.elapsedDays} approved calendar day{progress.elapsedDays === 1 ? "" : "s"} elapsed. This is date progress, not workout completion.</p>
     </section> : null}
 
-    {goalTitle ? <section className="plan-fact-block"><p className="eyebrow">Approved goal</p><h4>{goalTitle}</h4></section> : null}
+    {goalTitle ? <section className="plan-fact-block"><p className="eyebrow">Approved goal</p><h3>{goalTitle}</h3></section> : null}
 
     <section className="plan-week-browser" aria-labelledby="plan-weeks-heading">
-      <div className="plan-section-heading"><div><p className="eyebrow">Weekly rhythm</p><h4 id="plan-weeks-heading">Sessions by explicit calendar week</h4></div><span className="status-chip">{weeks.length} week{weeks.length === 1 ? "" : "s"}</span></div>
+      <div className="plan-section-heading"><div><p className="eyebrow">Weekly rhythm</p><h3 id="plan-weeks-heading">Sessions by explicit calendar week</h3></div><span className="status-chip">{weeks.length} week{weeks.length === 1 ? "" : "s"}</span></div>
       {weeks.length > 0 ? <>
         <div className="plan-week-tabs" aria-label="Approved calendar weeks">
           {weeks.map((week, index) => {
@@ -85,7 +85,7 @@ export function ActivePlanOverview({ plan, today }: { plan: JsonRecord; today: s
           })}
         </div>
         {activeWeek ? <div className="plan-week-detail" role="region" aria-live="polite" aria-label={`Week of ${String(activeWeek.weekStartsOn ?? "date not supplied")}`}>
-          <div><p className="eyebrow">Week of {String(activeWeek.weekStartsOn ?? "date not supplied")}</p><h4>{String(activeWeek.focus ?? "No weekly focus supplied")}</h4></div>
+          <div><p className="eyebrow">Week of {String(activeWeek.weekStartsOn ?? "date not supplied")}</p><h3>{String(activeWeek.focus ?? "No weekly focus supplied")}</h3></div>
           {activeWeekSessions.length > 0 ? <div className="plan-week-sessions">{activeWeekSessions.map((workout, index) => <article key={String(workout.id ?? index)}>
             <div><p className="eyebrow">{String(workout.kind ?? "session")} · {String(workout.scheduledDate ?? "date not supplied")}</p><strong>{String(workout.title ?? "Approved session")}</strong></div>
             <span>{targetLabel(workout)}</span>
@@ -98,11 +98,11 @@ export function ActivePlanOverview({ plan, today }: { plan: JsonRecord; today: s
     </section>
 
     <section className="plan-review-notes" aria-labelledby="plan-notes-heading">
-      <div className="plan-section-heading"><div><p className="eyebrow">Approval context</p><h4 id="plan-notes-heading">Rationale, assumptions and cautions</h4></div></div>
+      <div className="plan-section-heading"><div><p className="eyebrow">Approval context</p><h3 id="plan-notes-heading">Rationale, assumptions and cautions</h3></div></div>
       <p><strong>Approved rationale:</strong> {rationale}</p>
       <div className="plan-note-columns">
-        <div><h5>Assumptions</h5>{assumptions.length > 0 ? <ul>{assumptions.map((item, index) => <li key={`assumption-${index}`}>{item}</li>)}</ul> : <p className="quiet-copy">None supplied.</p>}</div>
-        <div><h5>Cautions</h5>{cautions.length > 0 ? <ul>{cautions.map((item, index) => <li key={`caution-${index}`}>{item}</li>)}</ul> : <p className="quiet-copy">None supplied.</p>}</div>
+        <div><h4>Assumptions</h4>{assumptions.length > 0 ? <ul>{assumptions.map((item, index) => <li key={`assumption-${index}`}>{item}</li>)}</ul> : <p className="quiet-copy">None supplied.</p>}</div>
+        <div><h4>Cautions</h4>{cautions.length > 0 ? <ul>{cautions.map((item, index) => <li key={`caution-${index}`}>{item}</li>)}</ul> : <p className="quiet-copy">None supplied.</p>}</div>
       </div>
     </section>
   </div>;

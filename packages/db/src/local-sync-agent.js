@@ -40,7 +40,7 @@ export class LocalCloudSyncAgent {
         if (!nextCursor) throw new Error("Cloud sync page did not produce a cursor");
         await this.#noteWriter(this.#notePath, renderCloudSyncSummary({
           cursor: nextCursor,
-          entities: this.#projection.listEntities(this.#athleteId),
+          entities: this.#projection.getCloudSyncNoteProjection(this.#athleteId),
         }));
         this.#projection.commitCursor(this.#athleteId, nextCursor);
         await this.#client.acknowledge(token, nextCursor);
@@ -59,28 +59,57 @@ export class LocalCloudSyncAgent {
   }
 
   async publishSelectedSecondBrain({ selectedFields, sourceContext, logicalSourceRefs = [] }) {
-    if (!Array.isArray(logicalSourceRefs) || logicalSourceRefs.some((item) => typeof item !== "string" || !item || /[\\/]/u.test(item))) {
-      throw new Error("Second Brain logical source references must not contain paths");
-    }
-    const token = await this.#credentialStore.load();
-    if (!token) throw new Error("No paired device credential is stored");
     const snapshot = buildSelectedSecondBrainSnapshot({
       athleteId: this.#athleteId,
-      revision: this.#projection.getSecondBrainRevision(this.#athleteId) + 1,
+      revision: this.#projection.getNextSecondBrainRevision(this.#athleteId),
       publishedAt: this.#now().toISOString(),
       selectedFields,
       sourceContext,
     });
+    const queued = this.#projection.queueSecondBrainPublication(this.#athleteId, snapshot, logicalSourceRefs);
+    if (queued.status === "already_published") {
+      return { snapshot: null, reused: true, skipped: true };
+    }
+    return this.drainSelectedSecondBrainOutbox();
+  }
+
+  async drainSelectedSecondBrainOutbox() {
+    const pending = this.#projection.listPendingSecondBrainPublications(this.#athleteId);
+    if (pending.length === 0) return { snapshot: null, reused: true, skipped: true };
+    const token = await this.#credentialStore.load();
+    if (!token) throw new Error("No paired device credential is stored");
+    let result = null;
     try {
-      const response = await this.#client.publishSecondBrain(token, snapshot);
-      this.#projection.recordSecondBrainPublication(this.#athleteId, response.data.snapshot, logicalSourceRefs);
-      return response.data;
+      for (const publication of pending) {
+        this.#projection.markSecondBrainPublicationAttempt(this.#athleteId, publication.snapshot);
+        const response = await this.#client.publishSecondBrain(token, publication.snapshot);
+        if (!sameSnapshot(response.data.snapshot, publication.snapshot)) {
+          throw new Error("Cloud Second Brain publication response does not match the queued snapshot");
+        }
+        this.#projection.recordSecondBrainPublication(
+          this.#athleteId,
+          response.data.snapshot,
+          publication.logicalSourceRefs,
+        );
+        result = response.data;
+      }
+      return result;
     } catch (error) {
       const code = diagnosticCode(error) === "LOCAL_SYNC_FAILED" ? "SNAPSHOT_PUBLICATION_FAILED" : diagnosticCode(error);
       this.#projection.recordFailure(this.#athleteId, code);
       await this.#client.reportFailure?.(token, code).catch(() => undefined);
       throw error;
     }
+  }
+
+  async syncAndPublish(loadSelectedContext, syncOptions) {
+    if (typeof loadSelectedContext !== "function") throw new Error("A selected Second Brain context loader is required");
+    const sync = await outcome(() => this.sync(syncOptions));
+    const source = await outcome(loadSelectedContext);
+    const publication = source.status === "fulfilled"
+      ? await outcome(() => this.publishSelectedSecondBrain(source.value))
+      : await outcome(() => this.drainSelectedSecondBrainOutbox());
+    return { sync, source, publication };
   }
 
   async publishApprovedPlan(plan) {
@@ -95,4 +124,20 @@ function diagnosticCode(error) {
     return error.code.slice(0, 80);
   }
   return "LOCAL_SYNC_FAILED";
+}
+
+function sameSnapshot(left, right) {
+  return left.athleteId === right.athleteId
+    && left.revision === right.revision
+    && left.contentHash === right.contentHash
+    && left.publishedAt === right.publishedAt
+    && JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function outcome(operation) {
+  try {
+    return { status: "fulfilled", value: await operation() };
+  } catch (error) {
+    return { status: "rejected", error };
+  }
 }

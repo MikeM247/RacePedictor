@@ -118,9 +118,9 @@ function CurrentWeek({
       </header>
       {state === "loading" ? <p className="today-week-state" role="status" aria-live="polite">Loading this week&apos;s effective schedule…</p> : null}
       {state === "error" ? (
-        <div className="today-week-state today-week-state--error" role="status" aria-live="polite">
+        <div className="today-week-state today-week-state--error" role="alert">
           <p><strong>Current week unavailable.</strong> {errorMessage}</p>
-          <button className="button button-secondary" type="button" onClick={onRetry}>Retry current week</button>
+          <button className="button button-secondary" type="button" onClick={onRetry}>Retry this week</button>
         </div>
       ) : null}
       {state === "success" && sessions.length === 0 ? <p className="today-week-state">No approved sessions fall within this week.</p> : null}
@@ -153,7 +153,7 @@ function CurrentWeek({
   );
 }
 
-export function TodayCoachingCard() {
+export function TodayCoachingCard({ compact = false }: { compact?: boolean }) {
   const [requestState, setRequestState] = useState<RequestState>("loading");
   const [payload, setPayload] = useState<JsonRecord | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -211,7 +211,7 @@ export function TodayCoachingCard() {
 
   if (requestState === "error" || !payload) return <section className="today-coach-card today-coach-card--error" role="alert">
     <div className="today-coach-main"><p className="eyebrow">Approved coaching</p><h2>Today&apos;s coaching context is unavailable</h2><p>{errorMessage || "Refresh the approved coaching context and try again."}</p><p className="today-local-cue">No plan or session has been changed.</p></div>
-    <div className="today-actions"><button className="button button-primary" type="button" onClick={() => setRequestVersion((value) => value + 1)}>Retry Today</button><Link className="text-link" href="/dashboard/plan">Open Plan</Link></div>
+    <div className="today-actions"><button className="button button-primary" type="button" onClick={() => setRequestVersion((value) => value + 1)}>Retry today</button><Link className="text-link" href="/dashboard/plan">Open Plan</Link></div>
   </section>;
 
   const state = asTodayState(payload.state ?? payload.status);
@@ -260,23 +260,23 @@ export function TodayCoachingCard() {
         {hasPrescribedSession ? <p><strong>Purpose and target:</strong> {String(session.purpose ?? "Follow the approved plan")} · {String(session.durationMinutes ?? "—")} min</p> : null}
         {amendments.length > 0 ? <details className="today-change-history"><summary>Why this session changed ({amendments.length})</summary><p><strong>Approved source:</strong> {String(originalSession.prescription ?? "The original approved prescription remains preserved in Calendar.")}</p>{latestAmendment ? <p><strong>Latest reason:</strong> {String(latestAmendment.reason)}</p> : null}<p>No AI review is claimed. Open the session to inspect its complete change history.</p></details> : null}
         <p className="today-local-cue"><strong>Training cue:</strong> {String(payload.localCue ?? "Follow the approved plan as written.")}</p>
-        <GoalSummary goal={goal} />
-        <PlanContext plan={plan} timezone={timezone} />
-        {warnings.length > 0 ? <div className="today-warnings"><p className="eyebrow">Schedule warnings</p><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
+        {!compact ? <GoalSummary goal={goal} /> : null}
+        {!compact ? <PlanContext plan={plan} timezone={timezone} /> : null}
+        {!compact && warnings.length > 0 ? <div className="today-warnings"><p className="eyebrow">Schedule warnings</p><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
       </div>
       <div className="today-meta">
         <span className={`status-chip${state === "stale" || state === "missed" ? " status-chip--warning" : state === "skipped" ? " status-chip--muted" : " status-chip--current"}`}>{stateLabels[state]}</span>
-        {session.id && links.session ? <Link className="button button-primary" href={String(links.session)}>Open this session</Link> : <Link className="button button-secondary" href={String(links.calendar ?? "/dashboard/calendar")}>Open calendar</Link>}
+        {session.id && links.session ? <Link className="button button-primary" href={String(links.session)}>View session</Link> : <Link className="button button-secondary" href={String(links.calendar ?? "/dashboard/calendar")}>View calendar</Link>}
         <Link className="text-link" href={String(links.plan ?? "/dashboard/plan")}>Open active plan</Link>
       </div>
     </div>
-    <CurrentWeek
+    {!compact ? <CurrentWeek
       date={date}
       timezone={timezone}
       state={weekState}
       sessions={weekSessions}
       errorMessage={weekError}
       onRetry={() => setWeekRequestVersion((value) => value + 1)}
-    />
+    /> : null}
   </section>;
 }

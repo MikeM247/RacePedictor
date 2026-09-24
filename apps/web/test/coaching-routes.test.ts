@@ -62,7 +62,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
         timezone: "Africa/Johannesburg",
         units: "metric",
       },
-      goalDraft: { title: "Strong half marathon", targetDate: "2099-09-06", distanceMeters: 21097.5 },
+      goalDraft: { title: "Strong half marathon", targetDate: "2099-09-06", distanceMeters: 21097.5, targetTimeSeconds: 7200 },
       weeklyRoutine: {
         timezone: "Africa/Johannesburg",
         availableDays: ["tuesday", "thursday", "saturday"],
@@ -76,6 +76,7 @@ test("coaching routes publish, import, approve, schedule, brief, and hand off wi
     const published = publishedEnvelope.data;
     assert.equal(published.artifact.activityCount, 1);
     assert.equal(published.goal.status, "draft", "publishing context must not settle a planning goal");
+    assert.equal(published.goal.target.targetTimeSeconds, 7200, "supported target time must be retained in the draft goal");
     const firstReloadedContextEnvelope = await body(await getCurrentContext(getRequest("/api/v1/coaching/context/current")));
     assert.equal(currentContextApiResponseSchema.safeParse(firstReloadedContextEnvelope).success, true);
     const firstReloadedContext = firstReloadedContextEnvelope.data.context;

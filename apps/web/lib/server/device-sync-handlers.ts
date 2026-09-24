@@ -6,6 +6,7 @@ import {
   syncFailureRequestSchema,
 } from "../../../../packages/core/src/contracts/sync.ts";
 import { secondBrainContextSnapshotSchema } from "../../../../packages/core/src/contracts/second-brain-context.ts";
+import { activityCoachReviewArtifactSchema } from "../../../../packages/core/src/contracts/activity-review.ts";
 import { trainingPlanSchema } from "../../../../packages/core/src/contracts/coaching.ts";
 import { PairedDeviceError, type AuthenticatedDevice } from "../../../../packages/core/src/use-cases/paired-device.ts";
 import {
@@ -159,6 +160,31 @@ export async function handlePublishApprovedPlan(
     if (error instanceof TrainingPlanProjectionConflictError) {
       throw new ApiHttpError(409, "CONFLICT", "The approved plan conflicts with its immutable projection");
     }
+    throw error;
+  }
+}
+
+export async function handleClaimActivityReviews(
+  security: AuthenticatedDevice,
+  request: Request,
+  getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
+) {
+  const limit = Number(new URL(request.url).searchParams.get("limit") ?? 5);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new ApiHttpError(400, "VALIDATION_ERROR", "Review claim limit is invalid");
+  return success(await getComposition().activityReviews.claim(athleteScopeFor(security.actor), security.device.id, limit));
+}
+
+export async function handlePublishActivityReview(
+  security: AuthenticatedDevice,
+  request: Request,
+  getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
+) {
+  const parsed = activityCoachReviewArtifactSchema.safeParse(await readJson(request));
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Activity review artifact is invalid");
+  try {
+    return success({ review: await getComposition().activityReviews.publish(athleteScopeFor(security.actor), parsed.data, security.device.id) }, 201);
+  } catch (error) {
+    if (error instanceof Error && /lease/i.test(error.message)) throw new ApiHttpError(409, "CONFLICT", "The activity review lease is no longer valid");
     throw error;
   }
 }

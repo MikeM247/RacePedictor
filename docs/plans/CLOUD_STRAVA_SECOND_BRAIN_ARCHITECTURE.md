@@ -12,7 +12,7 @@ RacePredictor is available online even when the local computer is off. Completed
 | Neon | Normalized activities, revisions, approved plans/calendars, connection/sync status, immutable selected-field snapshots | Raw provider bodies, Obsidian notes, secrets in plaintext |
 | R2 | Private raw provider payload/file bytes | Query model, public browsing/listing |
 | Local Obsidian | Qualitative source material and user-authored notes | Cloud workout authority, provider tokens |
-| Local SQLite | Offline projection, sync cursor, controlled generated output | Independent cloud truth |
+| Local SQLite | Offline projection, sync cursor, durable selected-context outbox, controlled generated output | Independent cloud truth |
 
 ## Runtime topology
 
@@ -28,7 +28,9 @@ flowchart TB
   I --> R["R2 private object store"]
   ST --> WH["Strava webhook"] --> A
   N --> CF["Cursor change feed"] --> LA["Local sync agent"] --> LS["SQLite projection"]
-  OB["Obsidian vault"] --> PUB["strict selected-field publisher"] --> API
+  OB["Obsidian vault"] --> SRC["RacePredictor/second-brain-context.v1.json"] --> LA
+  LA --> OUT["SQLite immutable publication outbox"] --> API
+  LS --> NOTE["Managed Cloud Sync note span"]
 ```
 
 ## Clean architecture responsibilities
@@ -132,10 +134,12 @@ Webhook handling does not perform full ingestion in the request. Jobs are idempo
 ## Local sync and conflict rules
 
 1. Local agent authenticates as a paired device for one authorized athlete.
-2. It requests changes after its stored cursor and applies a batch transactionally to SQLite.
+2. On each bounded schedule/manual cycle, it requests changes after its stored cursor and applies a batch transactionally to SQLite before attempting publication.
 3. It advances its cursor only after a successful local commit; replay is safe.
-4. It writes only generated, owned file spans atomically and preserves user-authored text outside them.
-5. It validates and publishes the selected-field snapshot. Cloud validation repeats every local check.
+4. It writes cloud projections only to generated, owned file spans atomically and preserves user-authored text outside them. A missing or malformed marker pair fails closed; it is never repaired by overwriting an ambiguous note.
+5. It reads only the fixed vault-relative `RacePredictor/second-brain-context.v1.json` source. It never scans the vault or parses Markdown prose.
+6. It validates and canonicalizes the selected-field snapshot, saves the exact immutable revision to a durable SQLite outbox, then drains that outbox in order. A retry reuses the stored revision and hash rather than rebuilding a different request.
+7. Pull and publication failures are independently recorded. A cloud pull failure does not discard a local outbox record, and a publication failure does not roll back an already committed cloud projection.
 
 Cloud changes are authoritative for workouts/plans/calendars. Local Obsidian source material is authoritative only until published as a newer immutable selected-field snapshot. A snapshot cannot conflict with or mutate approved plans.
 

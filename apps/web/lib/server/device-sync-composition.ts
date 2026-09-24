@@ -6,6 +6,7 @@ import {
   PrismaSyncChangeRepository,
   PrismaTrainingPlanProjectionPublisher,
   PrismaOperationalUsageRepository,
+  PrismaActivityReviewRepository,
 } from "../../../../packages/db/src/cloud/index.js";
 import { assertServerRuntime } from "./server-runtime.ts";
 
@@ -23,6 +24,7 @@ function buildComposition() {
     snapshots: new PrismaSecondBrainSnapshotRepository({ prisma }),
     plans: new PrismaTrainingPlanProjectionPublisher({ prisma }),
     usage: new PrismaOperationalUsageRepository({ prisma }),
+    activityReviews: new PrismaActivityReviewRepository({ prisma }),
   });
 }
 

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   canonicalSecondBrainHashInput,
+  isImmediateSecondBrainContentRepeat,
   secondBrainContextSnapshotSchema,
 } from "../../../core/src/contracts/second-brain-context.ts";
 import { assertAthleteOwnership, assertAthleteScope } from "./athlete-scope.js";
@@ -34,12 +35,9 @@ export class PrismaSecondBrainSnapshotRepository {
         where: { id_athleteId: { id: pairedDeviceId, athleteId } },
       });
       if (!device || device.status !== "active") throw new Error("Paired device is unavailable");
-      const [atRevision, byHash, latest] = await Promise.all([
+      const [atRevision, latest] = await Promise.all([
         transaction.secondBrainSnapshot.findUnique({
           where: { athleteId_sourceRevision: { athleteId, sourceRevision: parsed.revision } },
-        }),
-        transaction.secondBrainSnapshot.findUnique({
-          where: { athleteId_contentHash: { athleteId, contentHash: parsed.contentHash } },
         }),
         transaction.secondBrainSnapshot.findFirst({
           where: { athleteId },
@@ -51,10 +49,12 @@ export class PrismaSecondBrainSnapshotRepository {
         if (JSON.stringify(existing) === JSON.stringify(parsed)) return { snapshot: existing, reused: true };
         throw new SecondBrainSnapshotConflictError("REVISION_CONFLICT");
       }
-      if (byHash) throw new SecondBrainSnapshotConflictError("DUPLICATE_CONTENT");
       const expected = latest ? latest.sourceRevision + 1 : 1;
       if (parsed.revision < expected) throw new SecondBrainSnapshotConflictError("STALE_REVISION");
       if (parsed.revision > expected) throw new SecondBrainSnapshotConflictError("REVISION_GAP");
+      if (isImmediateSecondBrainContentRepeat(latest, parsed)) {
+        throw new SecondBrainSnapshotConflictError("DUPLICATE_CONTENT");
+      }
       const row = await transaction.secondBrainSnapshot.create({
         data: {
           id: `snapshot_${randomUUID().replaceAll("-", "")}`,

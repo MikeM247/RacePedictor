@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   readActivitiesListResponse,
   readActivityDetailResponse,
+  readActivityCoachReviewResponse,
+  readActivityCoachReviewForActivityResponse,
 } from "../lib/activities-api-client.ts";
 
 const summary = {
@@ -66,6 +68,32 @@ test("activity API client preserves the public API error message", async () => {
       error: { code: "UNAVAILABLE", message: "Activities are temporarily unavailable", details: [] },
     }, 503)),
     /Activities are temporarily unavailable/u,
+  );
+});
+
+test("activity API client reads queued and ready coach review envelopes", async () => {
+  const queued = await readActivityCoachReviewResponse(jsonResponse({ data: {
+    activityId: "activity-a", status: "queued", review: null, requestId: "request-a", updatedAt: "2026-09-08T06:00:00.000Z", readRevision: null,
+  }}));
+  assert.equal(queued.status, "queued");
+  const ready = await readActivityCoachReviewResponse(jsonResponse({ data: {
+    activityId: "activity-a", status: "ready", requestId: "request-a", updatedAt: "2026-09-08T06:00:00.000Z", readRevision: null,
+    review: {
+      id: "review-a", athleteId: "athlete-a", activityId: "activity-a", revision: 1, inputFingerprint: "a".repeat(64),
+      headline: "A controlled run", assessment: "Useful aerobic work.", nextStep: "Keep the next run easy.",
+      comparison: { matchState: "none", planId: null, sessionId: null, planVersion: null, sessionTitle: null, plannedDurationMinutes: null, actualDurationMinutes: 48, plannedDistanceMeters: null, actualDistanceMeters: 8200, plannedIntensityRpe: null, actualPerceivedEffort: null, interpretation: "No plan comparison." },
+      evidence: [], limitations: [], generatedAt: "2026-09-08T06:00:00.000Z", publishedAt: "2026-09-08T06:00:00.000Z", model: "test", promptVersion: "v1",
+    },
+  }}));
+  assert.equal(ready.review?.headline, "A controlled run");
+});
+
+test("activity API client rejects a review response for a different activity", async () => {
+  await assert.rejects(
+    () => readActivityCoachReviewForActivityResponse(jsonResponse({ data: {
+      activityId: "activity-b", status: "queued", review: null, requestId: "request-a", updatedAt: "2026-09-08T06:00:00.000Z", readRevision: null,
+    }}), "activity-a"),
+    /different activity/u,
   );
 });
 

@@ -236,6 +236,16 @@ Neon remains the structured authority. Add these athlete-scoped concepts without
 
 The local SQLite schema adds `local_sync_state`, `cloud_sync_entities`, `cloud_activity_mappings`, and `local_second_brain_publications`. They hold a replayable structured projection, its cursor/failure state, cloud-to-local activity identity, and local-only logical source references. Obsidian paths and device credentials are not stored in these tables.
 
+## Activity Coach Review Extension
+
+Cloud persistence adds `ActivityReviewRequest` and `ActivityCoachReview`, both scoped by `athleteId` and `activityId`.
+
+- `ActivityReviewRequest` is the durable queue and lease boundary. It records `queued`, `processing`, `ready`, `retry_wait`, or `attention`, bounded attempts, availability, device lease fields, and a safe last-error code.
+- `ActivityCoachReview` stores the versioned validated review, input fingerprint, comparison JSON, evidence labels, limitations, model, prompt version, and publication timestamps.
+- Requests are unique per athlete/activity. Reviews are unique per athlete/activity/revision and never mutate activities, plans, or completion state.
+- The Windows local job reads the local activity/plan/selected-context projection, sends only that bounded context to the OpenAI Responses API, validates the structured result, and publishes it through the paired-device route.
+- Missing heart-rate data, missing or ambiguous plan matches, and missing selected context are persisted as explicit limitations rather than inferred facts.
+
 Every owned uniqueness/index rule includes athlete scope where the identifier is not globally safe. Provider activity identity is unique by athlete/provider/provider activity ID; snapshot revision and content hash are idempotency boundaries; sync sequence is monotonic per athlete. Raw bytes live privately in R2. Database migrations are explicit release operations and are not run automatically at application startup.
 
 Future-session projection updates and amendment-history inserts share one serializable transaction. A stale revision updates no row; Prisma `P2034` serialization/deadlock conflicts and competing unique writes are surfaced as an application revision conflict. They are not automatically retried because the owner must reload and review the effective values before deciding whether the stated reason still applies.

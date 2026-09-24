@@ -33,10 +33,38 @@ import "../dashboard/dashboard.css";
 import "../activities/activities.css";
 import "./coaching-ui.css";
 import { ActivePlanOverview } from "./active-plan-overview";
+import {
+  activePlanApiResponseSchema,
+  currentContextApiResponseSchema,
+  latestProposalApiResponseSchema,
+  planHistoryApiResponseSchema,
+  planActivationApiResponseSchema,
+  proposalDecisionApiResponseSchema,
+  proposalImportApiResponseSchema,
+  contextPublishApiResponseSchema,
+  reminderPreferencesApiResponseSchema,
+} from "../../../../packages/core/src/contracts/coaching";
+import { isActionableProposal, isDocumentedActivePlanAbsence, isPrivacyReadFailure, restorationValues, shouldApplyRead } from "../../lib/plan-workflow-state";
+import {
+  activationRequestBody,
+  canSubmitConfirmation,
+  conflictMessage,
+  decisionRequestBody,
+  isPlanConflict,
+  uncertainMessage,
+  type PlanConfirmation,
+  type PlanConfirmationKind,
+  type PlanConfirmationSnapshot,
+} from "../../lib/plan-confirmation-state";
+import { importUploadResponseSchema, type ImportUploadResponse } from "../../../../packages/core/src/contracts/imports";
+import { canStartImport, fileImportPresentation } from "../../lib/import-ui-state";
+import { readRecoveryContext, recoveryReturnHref, safeRecoveryPath } from "../../lib/recovery-context";
+import { externalTaskReference, hasUnsavedReminderChanges, reminderStage, settingsReadError, shouldRecoverBeforeRetry, type ReminderDraft, type SettingsReadState } from "../../lib/settings-workflow-state";
 
 type Page = "plan" | "calendar" | "data-quality" | "settings";
 type JsonRecord = Record<string, unknown>;
 type RequestState = "idle" | "loading" | "success" | "error";
+type PlanWorkflowStage = "setup" | "continue" | "import" | "review";
 type CalendarDetail =
   | { kind: "session"; id: string; date: string }
   | { kind: "day"; date: string };
@@ -79,8 +107,9 @@ async function apiRequest(url: string, init?: RequestInit): Promise<JsonRecord> 
     const error = asRecord(asRecord(body).error);
     const message = typeof error.message === "string" ? error.message : "The request could not be completed.";
     const details = formatApiErrorDetails(error.details);
-    const requestError = new Error(details.length > 0 ? `${message}: ${details.join("; ")}` : message) as Error & { code?: string };
+    const requestError = new Error(details.length > 0 ? `${message}: ${details.join("; ")}` : message) as Error & { code?: string; status?: number };
     requestError.code = typeof error.code === "string" ? error.code : undefined;
+    requestError.status = response.status;
     throw requestError;
   }
   return unwrap(body);
@@ -97,7 +126,7 @@ function CoachShell({ page, title, subtitle, meta, children }: {
   return (
     <div className={`dashboard-layout coaching-layout coaching-layout--${page}`}>
       <DashboardNavigation activePage={page} />
-      <main className="dashboard-main" aria-labelledby={titleId}>
+      <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby={titleId}>
         <header className="dashboard-toolbar coaching-toolbar">
           <div><p className="eyebrow">Training workspace</p><h1 id={titleId}>{title}</h1><p>{subtitle}</p></div>
           {meta ? <span className="toolbar-context">{meta}</span> : null}
@@ -106,6 +135,28 @@ function CoachShell({ page, title, subtitle, meta, children }: {
       </main>
     </div>
   );
+}
+
+async function planApiRequest<T extends JsonRecord>(url: string, schema: { safeParse(value: unknown): { success: true; data: { data: T } } | { success: false } }, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const body: unknown = await response.json().catch(() => undefined);
+  if (!response.ok) {
+    const error = asRecord(asRecord(body).error);
+    const message = typeof error.message === "string" ? error.message : "The request could not be completed.";
+    const details = formatApiErrorDetails(error.details);
+    const requestError = new Error(details.length > 0 ? `${message}: ${details.join("; ")}` : message) as Error & { code?: string; status?: number };
+    requestError.code = typeof error.code === "string" ? error.code : undefined;
+    requestError.status = response.status;
+    throw requestError;
+  }
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const error = new Error("Plan data was received in an unsupported format. Retry this read; no empty plan state was assumed.") as Error & { code?: string; status?: number };
+    error.code = "MALFORMED_RESPONSE";
+    error.status = response.status;
+    throw error;
+  }
+  return parsed.data.data;
 }
 
 function StatusLine({ state, message }: { state: RequestState; message?: string }) {
@@ -120,31 +171,53 @@ const dialogFocusableSelector = [
   "input:not([disabled])",
   "textarea:not([disabled])",
   "select:not([disabled])",
+  "summary",
   "a[href]",
+  "[contenteditable='true']",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
+
+function dialogFocusableElements(container: HTMLElement | null) {
+  return Array.from(container?.querySelectorAll<HTMLElement>(dialogFocusableSelector) ?? []).filter((element) => {
+    if (!element.isConnected || element.closest("[inert]") || element.matches(":disabled")) return false;
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
+  });
+}
 
 function useModalKeyboard<T extends HTMLElement>(
   open: boolean,
   close: () => void,
   returnFocusRef?: { current: HTMLElement | null },
+  fallbackFocus?: () => HTMLElement | null,
 ) {
   const dialogRef = useRef<T>(null);
   const closeRef = useRef(close);
+  const requestedCloseFocus = useRef<(() => HTMLElement | null) | null>(null);
   closeRef.current = close;
 
   useEffect(() => {
     if (!open) return;
+    requestedCloseFocus.current = null;
     const returnTarget = returnFocusRef?.current
       ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const frame = window.requestAnimationFrame(() => {
       const target = dialogRef.current?.querySelector<HTMLElement>("[autofocus]")
-        ?? dialogRef.current?.querySelector<HTMLElement>(dialogFocusableSelector);
+        ?? dialogFocusableElements(dialogRef.current)[0]
+        ?? dialogRef.current;
       target?.focus();
     });
     return () => {
       window.cancelAnimationFrame(frame);
-      window.requestAnimationFrame(() => returnTarget?.focus());
+      window.requestAnimationFrame(() => {
+        // The closing route may mount its destination in the same commit that
+        // removes this dialog. Resolve here, after inertness is removed.
+        const requestedTarget = requestedCloseFocus.current?.();
+        requestedCloseFocus.current = null;
+        const target = requestedTarget ?? returnTarget;
+        if (target?.isConnected && !target.closest("[inert]")) target.focus();
+        else fallbackFocus?.()?.focus();
+      });
     };
   }, [open]);
 
@@ -155,8 +228,8 @@ function useModalKeyboard<T extends HTMLElement>(
       return;
     }
     if (event.key !== "Tab") return;
-    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(dialogFocusableSelector) ?? []);
-    if (focusable.length === 0) { event.preventDefault(); return; }
+    const focusable = dialogFocusableElements(dialogRef.current);
+    if (focusable.length === 0) { event.preventDefault(); dialogRef.current?.focus(); return; }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) {
@@ -166,52 +239,148 @@ function useModalKeyboard<T extends HTMLElement>(
     }
   }
 
-  return { dialogRef, onKeyDown };
+  return {
+    dialogRef,
+    onKeyDown,
+    requestCloseFocus: (target: () => HTMLElement | null) => { requestedCloseFocus.current = target; },
+  };
 }
 
 export function DataQualityPage() {
+  const [returnTo, setReturnTo] = useState("/dashboard/activities");
+  const [source, setSource] = useState<"file" | "strava">("file");
   const [file, setFile] = useState<File | null>(null);
-  const [state, setState] = useState<RequestState>("idle");
-  const [message, setMessage] = useState<string>();
-  const [result, setResult] = useState<JsonRecord | null>(null);
+  const [fileState, setFileState] = useState<RequestState>("idle");
+  const [fileMessage, setFileMessage] = useState<string>();
+  const [fileResult, setFileResult] = useState<ImportUploadResponse | null>(null);
+  const [replacingFile, setReplacingFile] = useState(false);
+  const [strava, setStrava] = useState<JsonRecord | null>(null);
+  const [stravaState, setStravaState] = useState<RequestState>("loading");
+  const [stravaMessage, setStravaMessage] = useState<string>();
+  const [backfillAcknowledgement, setBackfillAcknowledgement] = useState<{ reused: boolean; jobId?: string } | null>(null);
+  const [athleteId, setAthleteId] = useState<string>();
+  const fileSubmitGuard = useRef(false);
+  const [recovery, setRecovery] = useState<ReturnType<typeof readRecoveryContext>>(null);
 
-  async function upload(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!file) { setState("error"); setMessage("Choose one CSV or GPX file first."); return; }
-    setState("loading"); setMessage("Validating and importing the selected file…"); setResult(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("source") === "strava") setSource("strava");
+    const context = readRecoveryContext(params.get("recovery"));
+    setRecovery(context);
+    setReturnTo(recoveryReturnHref(context, safeRecoveryPath(params.get("returnTo"), "/dashboard/activities")));
+    void loadStrava();
+  }, []);
+
+  async function loadStrava() {
+    setStravaState("loading");
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const imported = await apiRequest("/api/v1/imports/upload", { method: "POST", body: form });
-      setResult(imported); setState("success");
-      setMessage(imported.reused ? "This file was already imported; no duplicate activities were added." : "Import finished. Your coaching history is updated; your active plan was not changed.");
+      const [session, status] = await Promise.all([
+        apiRequest("/api/v1/auth/session"),
+        apiRequest("/api/v1/providers/strava/status"),
+      ]);
+      const activeAthleteId = asRecord(asRecord(session).actor).activeAthleteId;
+      if (typeof activeAthleteId !== "string" || !activeAthleteId) throw new Error("Your athlete session is unavailable.");
+      setAthleteId(activeAthleteId);
+      setStrava(asRecord(status.connection));
+      setStravaState("success");
     } catch (error) {
-      setState("error"); setMessage(error instanceof Error ? error.message : "The file could not be imported.");
+      setStravaState("error");
+      setStravaMessage(error instanceof Error ? error.message : "Strava import is unavailable right now.");
     }
   }
 
-  const counts = result ? [
-    ["Accepted", Number(result.normalizedCount ?? result.stagedCount ?? 0)],
-    ["Duplicates", Number(result.duplicateCount ?? 0)],
-    ["Rejected", Number(result.rejectedCount ?? 0)],
-    ["Warnings", Array.isArray(result.parseWarnings) ? result.parseWarnings.length : 0],
-  ] : [];
+  async function upload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!file) { setFileState("error"); setFileMessage("Choose one CSV or GPX file first."); return; }
+    if (fileSubmitGuard.current || !canStartImport(fileState === "loading", Boolean(file))) return;
+    const filename = file.name.toLowerCase();
+    if (!filename.endsWith(".gpx") && !filename.endsWith(".csv")) {
+      setFileState("error"); setFileMessage("This file type is not supported. Choose a CSV export or one GPX activity."); return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setFileState("error"); setFileMessage("This file is larger than the 15 MiB import limit. Choose a smaller CSV batch or one GPX activity."); return;
+    }
+    fileSubmitGuard.current = true;
+    setFileState("loading"); setFileMessage("Validating and importing the selected file…");
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      const imported = importUploadResponseSchema.parse(await apiRequest("/api/v1/imports/upload", { method: "POST", body: form }));
+      setFileResult(imported); setReplacingFile(false); setFileState("success");
+      setFileMessage(imported.reused ? "Existing import outcome retained. No duplicate activities were added by this request." : "The server recorded this import outcome. Your approved plan was not changed.");
+    } catch (error) {
+      setFileState("error"); setFileMessage(error instanceof Error ? error.message : "The file could not be imported.");
+    } finally { fileSubmitGuard.current = false; }
+  }
 
-  return <CoachShell page="data-quality" title="Data Quality" subtitle="Import and verify your running history" meta="Manual CSV or GPX">
+  async function connectStrava() {
+    if (!athleteId) return;
+    setStravaState("loading"); setStravaMessage("Preparing a secure Strava connection…");
+    try {
+      const connected = await apiRequest("/api/v1/providers/strava/connect", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ athleteId, returnTo: "/dashboard/data-quality?source=strava" }),
+      });
+      const authorizationUrl = String(connected.authorizationUrl ?? "");
+      if (!authorizationUrl) throw new Error("Strava authorization is unavailable.");
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      setStravaState("error"); setStravaMessage(error instanceof Error ? error.message : "Strava could not be connected.");
+    }
+  }
+
+  async function importStrava() {
+    if (stravaState === "loading" || strava?.displayStatus !== "connected") return;
+    const now = new Date();
+    setStravaState("loading"); setStravaMessage("Queueing the last 90 days of Strava workouts…");
+    try {
+      const queued = await apiRequest("/api/v1/providers/strava/backfill", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ after: new Date(now.getTime() - 90 * 24 * 60 * 60 * 1_000).toISOString(), before: now.toISOString(), pageSize: 30, maxPages: 5, maxActivities: 150 }),
+      });
+      setBackfillAcknowledgement({ reused: queued.reused === true, jobId: typeof queued.jobId === "string" ? queued.jobId : undefined });
+      setStravaState("success");
+      setStravaMessage(queued.reused === true ? "An existing Strava backfill is already queued. Connection and queue acknowledgement do not confirm imported activities, review, or readiness." : "Recent Strava history is queued. Check Training when records become available; readiness has not been recomputed by this acknowledgement.");
+    } catch (error) {
+      setStravaState("error"); setStravaMessage(error instanceof Error ? error.message : "Strava history could not be queued.");
+    }
+  }
+
+  const presentation = fileResult ? fileImportPresentation(fileResult) : null;
+  const stravaConnected = strava?.displayStatus === "connected";
+  const returnLabel = recovery?.kind === "home" ? "Return to readiness" : recovery?.activityId ? "Return to session" : returnTo === "/dashboard" ? "Return to Home" : "Return to Training";
+  const startFileReplacement = () => { setFile(null); setFileMessage(undefined); setFileState("idle"); setReplacingFile(true); };
+
+  return <CoachShell page="data-quality" title="Data Quality" subtitle="Add training and verify your running history" meta="File or Strava">
     <section className="coach-panel data-quality-panel data-quality-panel--import" aria-labelledby="activity-import-heading">
-      <div className="coach-panel-heading"><div><p className="eyebrow">History import</p><h3 id="activity-import-heading">Upload activities</h3></div></div>
-      <form className="coach-form" onSubmit={upload}>
-        <label className="file-field"><span>CSV or GPX file</span><input type="file" accept=".csv,.gpx,text/csv,application/gpx+xml" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
-        <p className="field-help">Choose a bounded CSV export or one GPX activity. Re-importing the same data is safe.</p>
-        <button className="button button-primary" disabled={state === "loading" || !file} type="submit">{state === "loading" ? "Importing…" : "Import selected file"}</button>
-      </form>
-      <StatusLine state={state} message={message} />
+      <div className="coach-panel-heading"><div><p className="eyebrow">Add training</p><h2 id="activity-import-heading">Choose one source</h2></div></div>
+      <fieldset className="source-choice" disabled={fileState === "loading" || (source === "strava" && stravaState === "loading")}><legend className="sr-only">Training source</legend>
+        <label><input type="radio" name="activity-source" checked={source === "file"} onChange={() => setSource("file")} /> <span>Upload a file</span></label>
+        <label><input type="radio" name="activity-source" checked={source === "strava"} onChange={() => setSource("strava")} /> <span>Import from Strava</span></label>
+      </fieldset>
+      {source === "file" ? <section className="coach-form" aria-label="File import">
+        {!fileResult || replacingFile ? <form className="coach-form" onSubmit={upload}>
+        <label className="file-field"><span>CSV or GPX file</span><input disabled={fileState === "loading"} type="file" accept=".csv,.gpx,text/csv,application/gpx+xml" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setFileState("idle"); setFileMessage(undefined); }} /></label>
+        <p className="field-help">CSV uploads are limited to 15 MiB. GPX accepts one activity per file. Re-importing the same data is safe and is reported as a duplicate.</p>
+        <button className="button button-primary" disabled={!canStartImport(fileState === "loading", Boolean(file))} type="submit">{fileState === "loading" ? "Validating and importing…" : "Import selected file"}</button>
+        <StatusLine state={fileState} message={fileMessage} />
+        </form> : <div className="coach-form"><p className="quiet-copy">The File source remains selected. Its result is retained while you decide what to do next.</p><button className="button button-secondary" type="button" onClick={startFileReplacement}>Import another file</button></div>}
+      </section> : <div className="coach-form" aria-label="Strava import">
+        <p className="field-help">Authorization and history import are separate. Connecting does not import or change your plan. Recent history is queued only after you request it.</p>
+        {stravaState === "loading" ? <StatusLine state="loading" message="Checking Strava connection…" /> : null}
+        {stravaState === "error" ? <><StatusLine state="error" message={stravaMessage} /><button className="button button-secondary" type="button" onClick={() => void loadStrava()}>Try Strava again</button></> : null}
+        {stravaState === "success" && stravaConnected ? <><p className="quiet-copy">Strava is connected. Importing the last 90 days can queue up to 150 completed workouts.</p><button className="button button-primary" type="button" onClick={() => void importStrava()}>Import last 90 days</button></> : null}
+        {stravaState === "success" && !stravaConnected ? <><p className="quiet-copy">Strava is not connected. Existing activities are not changed when you connect.</p><Link className="button button-primary" href={`/dashboard/settings?section=connections&returnTo=${encodeURIComponent(`/dashboard/data-quality?source=strava&returnTo=${encodeURIComponent(returnTo)}${recovery ? `&recovery=${encodeURIComponent(recovery.id)}` : ""}`)}`}>Connect Strava in Settings</Link></> : null}
+        {stravaMessage && stravaState === "success" ? <StatusLine state="success" message={stravaMessage} /> : null}
+      </div>}
     </section>
-    {result ? <section className="coach-panel data-quality-panel data-quality-panel--result" aria-labelledby="import-result-heading">
-      <div className="coach-panel-heading"><div><p className="eyebrow">Import result</p><h3 id="import-result-heading">Validation summary</h3></div><span className="status-chip">{String(result.status ?? "completed")}</span></div>
-      <dl className="result-grid">{counts.map(([label, value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-      {Array.isArray(result.parseWarnings) && result.parseWarnings.length > 0 ? <div className="issue-list"><h4>Warnings and next steps</h4><ul>{result.parseWarnings.map((warning, index) => <li key={index}>{String(warning)}</li>)}</ul><p>Correct the source and upload it again if a warning affects your history.</p></div> : <p className="quiet-copy">No corrective action is needed.</p>}
-    </section> : <section className="coach-panel coach-empty"><h3>No import result yet</h3><p>Select a file above to see accepted, duplicate, rejected, and warning counts.</p></section>}
+    {source === "file" && presentation ? <section className="coach-panel data-quality-panel data-quality-panel--result" aria-labelledby="import-result-heading">
+      <div className="coach-panel-heading"><div><p className="eyebrow">File import result</p><h2 id="import-result-heading">Validation summary</h2></div><span className="status-chip">{presentation.statusLabel}</span></div>
+      <dl className="result-grid">{presentation.counts.map(({ label, value }) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      <p><strong>Practical consequence:</strong> {presentation.consequence}</p>
+      {presentation.warnings.length > 0 ? <div className="issue-list"><h3>Recorded limitation</h3><ul>{presentation.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div> : null}
+      <div className="coach-actions"><Link className="button button-primary" href={returnTo}>{presentation.action === "check" ? "Check Training" : returnLabel}</Link>{presentation.action === "correct" ? <button className="button button-secondary" type="button" onClick={startFileReplacement}>Correct file</button> : null}</div>
+    </section> : source === "strava" && backfillAcknowledgement ? <section className="coach-panel data-quality-panel data-quality-panel--result" aria-labelledby="backfill-result-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Strava recovery</p><h2 id="backfill-result-heading">Backfill acknowledged</h2></div><span className="status-chip">Queued</span></div><p><strong>Practical consequence:</strong> {backfillAcknowledgement.reused ? "An existing backfill remains queued." : "The requested history was queued."} This does not confirm imported activities, a completed review, or a recomputed readiness assessment.</p><div className="coach-actions"><Link className="button button-primary" href={returnTo}>{returnLabel}</Link></div></section> : <section className="coach-panel coach-empty"><h2>No {source === "file" ? "file import" : "Strava queue"} result yet</h2><p>Select the active source above to see its validation, queued status, and any data-quality limitations.</p></section>}
   </CoachShell>;
 }
 
@@ -221,110 +390,294 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   const [goalTitle, setGoalTitle] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [distanceKm, setDistanceKm] = useState("21.1");
+  const [targetTime, setTargetTime] = useState("");
+  const [timezone, setTimezone] = useState(timezoneDefault);
+  const [units, setUnits] = useState<"metric" | "imperial">("metric");
+  const [preferredLongRunDay, setPreferredLongRunDay] = useState("sunday");
+  const [desiredSessionsPerWeek, setDesiredSessionsPerWeek] = useState("3");
   const [availableDays, setAvailableDays] = useState(() => new Set(["Tuesday", "Thursday", "Sunday"]));
   const [creationOpen, setCreationOpen] = useState(false);
   const [contextState, setContextState] = useState<RequestState>("idle");
   const [contextMessage, setContextMessage] = useState<string>();
+  const [publishedContext, setPublishedContext] = useState<JsonRecord | null>(null);
+  const [publicationMetadata, setPublicationMetadata] = useState<JsonRecord | null>(null);
+  const [contextReadState, setContextReadState] = useState<RequestState>("loading");
+  const [contextReadMessage, setContextReadMessage] = useState<string>();
   const [proposal, setProposal] = useState<JsonRecord | null>(null);
   const [proposalState, setProposalState] = useState<RequestState>("idle");
   const [proposalMessage, setProposalMessage] = useState<string>();
-  const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
-  const [acknowledgeStale, setAcknowledgeStale] = useState(false);
+  const [proposalReadState, setProposalReadState] = useState<RequestState>("loading");
+  const [proposalReadMessage, setProposalReadMessage] = useState<string>();
   const [activePlan, setActivePlan] = useState<JsonRecord | null>(null);
   const [planHistory, setPlanHistory] = useState<JsonRecord[]>([]);
   const [historyState, setHistoryState] = useState<RequestState>("loading");
   const [historyMessage, setHistoryMessage] = useState<string>();
-  const [activationCandidate, setActivationCandidate] = useState<JsonRecord | null>(null);
-  const [activationState, setActivationState] = useState<RequestState>("idle");
-  const [activationMessage, setActivationMessage] = useState<string>();
-  const creationHeadingRef = useRef<HTMLHeadingElement>(null);
-  const proposalHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [confirmation, setConfirmation] = useState<PlanConfirmation | null>(null);
+  const [confirmationHistoryWarning, setConfirmationHistoryWarning] = useState<string>();
+  const [confirmationRecoveryReady, setConfirmationRecoveryReady] = useState(false);
+  const [planLoadState, setPlanLoadState] = useState<RequestState>("loading");
+  const [planLoadMessage, setPlanLoadMessage] = useState<string>();
+  const [workflowStage, setWorkflowStage] = useState<PlanWorkflowStage>("setup");
+  const [selectedProposalFile, setSelectedProposalFile] = useState<File | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string>();
+  const [downloadMessage, setDownloadMessage] = useState<string>();
+  const [lastReadAt, setLastReadAt] = useState<Record<"active" | "history" | "proposal" | "context", string | undefined>>({ active: undefined, history: undefined, proposal: undefined, context: undefined });
+  const workflowHeadingRef = useRef<HTMLHeadingElement>(null);
+  const activePlanHeadingRef = useRef<HTMLHeadingElement>(null);
+  const historyHeadingRef = useRef<HTMLHeadingElement>(null);
+  const activationLauncherRef = useRef<HTMLElement | null>(null);
+  const decisionLauncherRef = useRef<HTMLElement | null>(null);
+  const confirmationSubmitGuard = useRef(false);
+  const confirmationReadGeneration = useRef(0);
   const shouldFocusCreation = useRef(false);
-  const creationFocusTarget = useRef<"setup" | "proposal">("setup");
+  const formIsDirty = useRef(false);
+  const contextWasRestored = useRef(false);
+  const readGeneration = useRef({ active: 0, history: 0, proposal: 0, context: 0 });
+  const readControllers = useRef<{ active?: AbortController; history?: AbortController; proposal?: AbortController; context?: AbortController }>({});
+  const confirmationLauncherRef = useRef<HTMLElement | null>(null);
+  const confirmationModal = useModalKeyboard<HTMLElement>(Boolean(confirmation), () => {
+    if (confirmation?.phase !== "pending") { confirmationSubmitGuard.current = false; setConfirmation(null); setConfirmationHistoryWarning(undefined); setConfirmationRecoveryReady(false); }
+  }, confirmationLauncherRef, () => confirmation?.snapshot.kind === "activate"
+    ? activePlanHeadingRef.current ?? historyHeadingRef.current
+    : workflowHeadingRef.current ?? activePlanHeadingRef.current);
+
+  useEffect(() => {
+    const open = Boolean(confirmation);
+    const content = document.querySelector<HTMLElement>(".coaching-content--plan");
+    const nav = document.querySelector<HTMLElement>(".dashboard-nav");
+    if (!open || !content) return;
+    const background = Array.from(content.children).filter((element) => !element.classList.contains("coach-dialog-backdrop")) as HTMLElement[];
+    background.forEach((element) => { element.inert = true; });
+    if (nav) nav.inert = true;
+    return () => { background.forEach((element) => { element.inert = false; }); if (nav) nav.inert = false; };
+  }, [confirmation]);
 
   useEffect(() => {
     void loadPlanPage();
+    return () => { Object.values(readControllers.current).forEach((controller) => controller?.abort()); };
   }, []);
 
   async function loadPlanPage() {
-    const currentActivePlan = await apiRequest("/api/v1/coaching/plans/active").catch(() => null);
-    setActivePlan(currentActivePlan);
-    if (onlineMode) {
-      setProposal(null);
-      setProposalState("idle");
-      setProposalMessage(undefined);
-      await loadPlanHistory();
-      return;
-    }
-    await Promise.all([loadLatestProposal(currentActivePlan), loadPlanHistory()]);
+    await Promise.all([
+      loadActivePlan(),
+      loadPlanHistory(),
+      ...(onlineMode ? [] : [loadLatestProposal(), loadCurrentContext()]),
+    ]);
   }
 
-  async function loadLatestProposal(currentActivePlan: JsonRecord | null) {
-    setProposalState("loading"); setProposalMessage("Loading your latest saved draft…");
+  function invalidateRead(resource: "active" | "history" | "proposal" | "context") { readGeneration.current[resource] += 1; readControllers.current[resource]?.abort(); }
+  function clearPrivateReadState() {
+    setActivePlan(null); setPlanHistory([]); setProposal(null); setPublishedContext(null); setPublicationMetadata(null);
+  }
+  function startRead(resource: "active" | "history" | "proposal" | "context") {
+    readControllers.current[resource]?.abort();
+    const controller = new AbortController();
+    readControllers.current[resource] = controller;
+    const generation = ++readGeneration.current[resource];
+    return { controller, generation };
+  }
+  function completeRead(resource: "active" | "history" | "proposal" | "context", generation: number) {
+    return shouldApplyRead(readGeneration.current[resource], generation);
+  }
+
+  async function loadActivePlan() {
+    const { controller, generation } = startRead("active");
+    setPlanLoadState("loading"); setPlanLoadMessage(undefined);
     try {
-      const response = await apiRequest("/api/v1/coaching/proposals/latest");
-      const latest = asRecord(response.proposal);
-      if (latest.status === "proposed" && typeof latest.id === "string") {
-        const activeVersion = Number(currentActivePlan?.version ?? 0);
-        const proposalVersion = Number(latest.version ?? 0);
-        if (currentActivePlan && proposalVersion <= activeVersion) {
-          setProposal(null); setProposalState("idle"); setProposalMessage(undefined);
-          return;
-        }
-        setProposal(latest); setProposalState("success");
-        setProposalMessage("Saved draft loaded for review. Nothing is active until you approve it.");
+      const currentActivePlan = await planApiRequest("/api/v1/coaching/plans/active", activePlanApiResponseSchema, { signal: controller.signal });
+      if (!completeRead("active", generation)) return;
+      setActivePlan(currentActivePlan);
+      setPlanLoadState("success"); setLastReadAt((current) => ({ ...current, active: new Date().toLocaleString() }));
+    } catch (error) {
+      if (controller.signal.aborted || !completeRead("active", generation)) return;
+      const requestError = error as Error & { code?: string; status?: number };
+      if (isPrivacyReadFailure(requestError)) clearPrivateReadState();
+      if (isDocumentedActivePlanAbsence(requestError)) {
+        setActivePlan(null);
+        setPlanLoadState("success"); setLastReadAt((current) => ({ ...current, active: new Date().toLocaleString() }));
         return;
       }
-      setProposal(null); setProposalState("idle"); setProposalMessage(undefined);
+      setPlanLoadState("error");
+      setPlanLoadMessage(error instanceof Error ? error.message : "The active plan could not be loaded.");
+    }
+  }
+
+  async function loadLatestProposal() {
+    const { controller, generation } = startRead("proposal");
+    setProposalReadState("loading"); setProposalReadMessage("Loading your latest saved draft…");
+    try {
+      const response = await planApiRequest("/api/v1/coaching/proposals/latest", latestProposalApiResponseSchema, { signal: controller.signal });
+      if (!completeRead("proposal", generation)) return;
+      const latest = response.proposal ? asRecord(response.proposal) : null;
+      if (latest?.status === "proposed" && typeof latest.id === "string") {
+        setProposal(latest);
+        setProposalReadState("success");
+        setProposalReadMessage("Saved draft loaded for review. Nothing is active until you approve it.");
+        setLastReadAt((current) => ({ ...current, proposal: new Date().toLocaleString() }));
+        return;
+      }
+      setProposal(null); setProposalReadState("success"); setProposalReadMessage(undefined);
+      setLastReadAt((current) => ({ ...current, proposal: new Date().toLocaleString() }));
     } catch (error) {
-      setProposalState("error");
-      setProposalMessage(error instanceof Error ? `Saved draft could not be loaded: ${error.message}` : "Saved draft could not be loaded.");
+      if (controller.signal.aborted || !completeRead("proposal", generation)) return;
+      if (isPrivacyReadFailure(error as { status?: number })) clearPrivateReadState();
+      setProposalReadState("error");
+      setProposalReadMessage(error instanceof Error ? `Saved draft could not be loaded: ${error.message}` : "Saved draft could not be loaded.");
+    }
+  }
+
+  async function loadCurrentContext() {
+    const { controller, generation } = startRead("context");
+    setContextReadState("loading"); setContextReadMessage("Loading your published planning context…");
+    try {
+      const response = await planApiRequest("/api/v1/coaching/context/current", currentContextApiResponseSchema, { signal: controller.signal });
+      if (!completeRead("context", generation)) return;
+      const context = response.context ? asRecord(response.context) : null;
+      setPublishedContext(context);
+      setContextReadState("success"); setContextReadMessage(context ? "Published context is available to continue in Codex." : undefined); setLastReadAt((current) => ({ ...current, context: new Date().toLocaleString() }));
+    } catch (error) {
+      if (controller.signal.aborted || !completeRead("context", generation)) return;
+      if (isPrivacyReadFailure(error as { status?: number })) clearPrivateReadState();
+      setContextReadState("error");
+      setContextReadMessage(error instanceof Error ? `Published context could not be loaded: ${error.message}` : "Published context could not be loaded.");
     }
   }
 
   async function loadPlanHistory() {
+    const { controller, generation } = startRead("history");
     setHistoryState("loading"); setHistoryMessage("Loading approved plan versions…");
     try {
-      const response = await apiRequest("/api/v1/coaching/plans/history");
-      setPlanHistory(Array.isArray(response.plans) ? response.plans.map(asRecord) : []);
-      setHistoryState("success"); setHistoryMessage(undefined);
+      const response = await planApiRequest("/api/v1/coaching/plans/history", planHistoryApiResponseSchema, { signal: controller.signal });
+      if (!completeRead("history", generation)) return;
+      setPlanHistory(response.plans.map(asRecord));
+      setHistoryState("success"); setHistoryMessage(undefined); setLastReadAt((current) => ({ ...current, history: new Date().toLocaleString() }));
     } catch (error) {
+      if (controller.signal.aborted || !completeRead("history", generation)) return;
+      if (isPrivacyReadFailure(error as { status?: number })) clearPrivateReadState();
       setHistoryState("error"); setHistoryMessage(error instanceof Error ? error.message : "Plan history could not be loaded.");
     }
   }
 
-  async function confirmPlanActivation() {
-    if (!activationCandidate) return;
-    const planId = String(activationCandidate.id ?? "");
-    if (!planId) {
-      setActivationCandidate(null);
-      setActivationState("error");
-      setActivationMessage("This approved plan has no identifier and cannot be selected.");
-      return;
+  function validRevision(value: unknown) { return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null; }
+
+  function openConfirmation(kind: PlanConfirmationKind, target: JsonRecord, launcher: HTMLElement) {
+    const targetId = typeof target.id === "string" ? target.id : typeof target.proposalId === "string" ? target.proposalId : "";
+    const targetRevision = validRevision(target.revision);
+    if (!targetId || (kind !== "activate" && !targetRevision)) {
+      setProposalState("error"); setProposalMessage("This reviewed item is incomplete and cannot be confirmed. Reload it before trying again."); return;
     }
-    setActivationState("loading");
-    setActivationMessage(`Making ${coachingPlanLabel(activationCandidate).toLowerCase()} active…`);
+    confirmationSubmitGuard.current = false;
+    confirmationLauncherRef.current = launcher;
+    setConfirmationHistoryWarning(undefined); setConfirmationRecoveryReady(false);
+    setConfirmation({
+      snapshot: {
+        kind, targetId, targetRevision,
+        targetLabel: kind === "activate" ? coachingPlanLabel(target) : `draft version ${String(target.version ?? targetRevision)}`,
+        replacingPlanId: kind === "approve" && typeof activePlan?.id === "string" ? activePlan.id : null,
+        expectedActivePlanId: typeof activePlan?.id === "string" ? activePlan.id : null,
+        historyWasStale: kind === "approve" && asRecord(target.review).historyStatus === "stale",
+      },
+      phase: "ready", acknowledgement: false,
+    });
+  }
+
+  function closeConfirmation() {
+    if (confirmation?.phase === "pending") return;
+    confirmationSubmitGuard.current = false;
+    setConfirmation(null); setConfirmationHistoryWarning(undefined); setConfirmationRecoveryReady(false);
+  }
+
+  async function refreshHistoryAfterConfirmedWrite() {
     try {
-      const response = await apiRequest(`/api/v1/coaching/plans/${encodeURIComponent(planId)}/activate`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expectedActivePlanId: activePlan?.id ?? null }),
-      });
-      const selected = asRecord(response.activePlan);
-      setActivePlan(selected);
-      await loadPlanHistory();
-      setActivationState("success");
-      setActivationMessage(`${coachingPlanLabel(selected)} is now active. Today and Calendar use this approved version.`);
-      setActivationCandidate(null);
-    } catch (error) {
-      setActivationState("error");
-      setActivationMessage(error instanceof Error ? error.message : "The approved plan could not be made active.");
-      setActivationCandidate(null);
-      await loadPlanPage();
+      const response = await planApiRequest("/api/v1/coaching/plans/history", planHistoryApiResponseSchema);
+      setPlanHistory(response.plans.map(asRecord)); setHistoryState("success"); setHistoryMessage(undefined);
+    } catch {
+      setConfirmationHistoryWarning("The change is confirmed, but version history could not be refreshed. You can retry that read without repeating the decision.");
     }
   }
 
+  async function confirmPlanAction() {
+    const current = confirmation;
+    if (!current || !canSubmitConfirmation(current) || confirmationSubmitGuard.current) return;
+    const snapshot = current.snapshot;
+    const body = snapshot.kind === "activate" ? activationRequestBody(snapshot) : decisionRequestBody(snapshot, current.acknowledgement);
+    if (!body) { setConfirmation({ ...current, phase: "failure", message: "The reviewed identity is incomplete. Reload and review it before confirming." }); return; }
+    confirmationSubmitGuard.current = true;
+    setConfirmation({ ...current, phase: "pending", message: snapshot.kind === "activate" ? `Making ${snapshot.targetLabel.toLowerCase()} active…` : "Saving your decision…" });
+    try {
+      if (snapshot.kind === "activate") {
+        const response = await planApiRequest(`/api/v1/coaching/plans/${encodeURIComponent(snapshot.targetId)}/activate`, planActivationApiResponseSchema, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        const selected = asRecord(response.activePlan);
+        invalidateRead("active"); invalidateRead("history");
+        setActivePlan(selected);
+        setConfirmation({ snapshot, acknowledgement: current.acknowledgement, phase: "success", message: `${coachingPlanLabel(selected)} is now active. Home and Calendar use this approved version.` });
+      } else {
+        const response = await planApiRequest(`/api/v1/coaching/proposals/${encodeURIComponent(snapshot.targetId)}/decision`, proposalDecisionApiResponseSchema, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        if (response.decision !== snapshot.kind) throw Object.assign(new Error("The response did not match the confirmed action."), { code: "MALFORMED_RESPONSE" });
+        invalidateRead("active"); invalidateRead("history"); invalidateRead("proposal");
+        setActivePlan(response.plan ? asRecord(response.plan) : null);
+        setProposal(null);
+        setConfirmation({ snapshot, acknowledgement: current.acknowledgement, phase: "success", message: snapshot.kind === "approve" ? "Plan activated after explicit approval. Home and Calendar now use this immutable version." : "Draft rejected. The active plan was not changed." });
+      }
+      confirmationSubmitGuard.current = false;
+      void refreshHistoryAfterConfirmedWrite();
+    } catch (error) {
+      confirmationSubmitGuard.current = false;
+      const requestError = error as Error & { code?: string; status?: number };
+      if (isPlanConflict(requestError)) setConfirmation({ snapshot, acknowledgement: false, phase: "conflict", message: conflictMessage(requestError) });
+      else if (requestError.status && requestError.status < 500 && requestError.code !== "MALFORMED_RESPONSE") setConfirmation({ snapshot, acknowledgement: current.acknowledgement, phase: "failure", message: "This decision could not be saved. Check the reviewed information and try again." });
+      else setConfirmation({ snapshot, acknowledgement: false, phase: "uncertain", message: uncertainMessage(snapshot) });
+    }
+  }
+
+  async function reconcileConfirmation() {
+    const current = confirmation;
+    if (!current || current.phase === "pending") return;
+    const generation = ++confirmationReadGeneration.current;
+    const { snapshot } = current;
+    setConfirmationRecoveryReady(false);
+    setConfirmation({ ...current, phase: current.phase === "conflict" ? "conflict" : "uncertain", message: `${current.message ?? uncertainMessage(snapshot)} Checking the current Plan state…` });
+    const reads = await Promise.allSettled([
+      planApiRequest("/api/v1/coaching/plans/active", activePlanApiResponseSchema).catch((error) => isDocumentedActivePlanAbsence(error as { status?: number; code?: string }) ? null : Promise.reject(error)),
+      planApiRequest("/api/v1/coaching/plans/history", planHistoryApiResponseSchema),
+      ...(snapshot.kind === "activate" ? [] : [planApiRequest("/api/v1/coaching/proposals/latest", latestProposalApiResponseSchema)]),
+    ]);
+    if (generation !== confirmationReadGeneration.current) return;
+    if (reads[0].status !== "fulfilled" || reads[1].status !== "fulfilled") {
+      setConfirmation({ ...current, phase: current.phase === "conflict" ? "conflict" : "uncertain", message: `${current.message ?? uncertainMessage(snapshot)} Current Plan details could not be fully loaded. Retry this read; no new decision was sent.` }); return;
+    }
+    const refreshedActive = reads[0].value ? asRecord(reads[0].value) : null;
+    setActivePlan(refreshedActive); setPlanHistory(reads[1].value.plans.map(asRecord)); setPlanLoadState("success"); setHistoryState("success");
+    if ((snapshot.kind === "activate" || snapshot.kind === "approve") && refreshedActive?.id === snapshot.targetId) {
+      if (snapshot.kind === "approve") setProposal(null);
+      setConfirmation({ snapshot, acknowledgement: false, phase: "success", message: `${snapshot.kind === "activate" ? snapshot.targetLabel : "The reviewed plan"} is currently active. This observed state is not attributed to the earlier request.` }); return;
+    }
+    if (snapshot.kind !== "activate") {
+      const proposalRead = reads[2];
+      if (proposalRead?.status !== "fulfilled") { setConfirmation({ ...current, phase: "uncertain", message: `${uncertainMessage(snapshot)} The current draft could not be loaded, so no result is assumed.` }); return; }
+      const latest = proposalRead.value.proposal ? asRecord(proposalRead.value.proposal) : null;
+      setProposal(latest);
+      if (!latest || latest.id !== snapshot.targetId) { setConfirmation({ snapshot, acknowledgement: false, phase: "uncertain", message: "The attempted draft is no longer available through this read. That does not establish whether it was rejected; its old confirmation remains disabled." }); return; }
+    }
+    setConfirmationRecoveryReady(true);
+    setConfirmation({ snapshot, acknowledgement: false, phase: "conflict", message: "Current Plan information was reloaded. Review the current consequences and open a new confirmation before sending another decision." });
+  }
+
+  function returnToReview() {
+    if (!confirmationRecoveryReady) return;
+    const kind = confirmation?.snapshot.kind;
+    if (kind === "activate") {
+      confirmationModal.requestCloseFocus(() => historyHeadingRef.current ?? activePlanHeadingRef.current ?? workflowHeadingRef.current);
+      closeConfirmation();
+      return;
+    }
+    confirmationModal.requestCloseFocus(() => workflowHeadingRef.current ?? activePlanHeadingRef.current);
+    setWorkflowStage("review"); shouldFocusCreation.current = true; setCreationOpen(true);
+    closeConfirmation();
+  }
+
   function toggleDay(day: string) {
+    formIsDirty.current = true;
     setAvailableDays((current) => {
       const next = new Set(current);
       if (next.has(day)) next.delete(day); else next.add(day);
@@ -333,67 +686,98 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   }
 
   function openPlanCreation() {
-    creationFocusTarget.current = proposal ? "proposal" : "setup";
+    const savedPlanningGoal = asRecord(publishedContext?.planningGoal);
+    const hasUnfinishedPlanningGoal = savedPlanningGoal.status === "draft";
+    setWorkflowStage(actionableProposal ? "review" : publishedContext && hasUnfinishedPlanningGoal ? "continue" : "setup");
     shouldFocusCreation.current = true;
     setCreationOpen(true);
   }
 
   useEffect(() => {
     if (!creationOpen || !shouldFocusCreation.current) return;
-    const target = creationFocusTarget.current === "proposal" ? proposalHeadingRef.current : creationHeadingRef.current;
-    target?.focus();
+    workflowHeadingRef.current?.focus();
     shouldFocusCreation.current = false;
-  }, [creationOpen]);
+  }, [creationOpen, workflowStage]);
+
+  useEffect(() => {
+    if (!publishedContext || formIsDirty.current || contextWasRestored.current) return;
+    const restored = restorationValues(publishedContext);
+    // The local publication form is deliberately a performance-race form. A
+    // validated consistency target remains available in the envelope, but is
+    // never silently fabricated into a distance/time race target.
+    if (restored.goalKind && restored.goalKind !== "performance") {
+      contextWasRestored.current = true;
+      return;
+    }
+    if (restored.displayName) setDisplayName(restored.displayName);
+    if (restored.why) setWhy(restored.why);
+    if (restored.title) setGoalTitle(restored.title);
+    if (restored.targetDate) setTargetDate(restored.targetDate);
+    if (restored.distanceKm) setDistanceKm(restored.distanceKm);
+    if (restored.targetTime) setTargetTime(restored.targetTime);
+    if (restored.timezone) setTimezone(restored.timezone);
+    if (restored.units === "metric" || restored.units === "imperial") setUnits(restored.units);
+    if (restored.preferredLongRunDay) setPreferredLongRunDay(restored.preferredLongRunDay);
+    if (restored.desiredSessionsPerWeek) setDesiredSessionsPerWeek(String(restored.desiredSessionsPerWeek));
+    if (restored.days.length > 0) setAvailableDays(new Set(restored.days.map((day) => day[0].toUpperCase() + day.slice(1))));
+    contextWasRestored.current = true;
+  }, [publishedContext]);
 
   async function publishContext(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!why.trim() || !goalTitle.trim() || !targetDate || availableDays.size === 0) {
-      setContextState("error"); setContextMessage("Complete your why, goal, target date, and at least one available day."); return;
+    const targetTimeParts = targetTime.split(":").map(Number);
+    const targetTimeSeconds = targetTime.trim() === "" ? undefined : targetTimeParts.length === 3 && targetTimeParts.every(Number.isFinite)
+      ? targetTimeParts[0] * 3600 + targetTimeParts[1] * 60 + targetTimeParts[2]
+      : NaN;
+    const desiredSessions = Number(desiredSessionsPerWeek);
+    if (!why.trim() || !goalTitle.trim() || !targetDate || availableDays.size === 0 || !Number.isFinite(Number(distanceKm)) || Number(distanceKm) <= 0 || !Number.isInteger(desiredSessions) || desiredSessions < 1 || desiredSessions > availableDays.size || (targetTime.trim() !== "" && (!Number.isFinite(targetTimeSeconds ?? NaN) || (targetTimeSeconds ?? 0) <= 0))) {
+      setContextState("error"); setContextMessage("Enter a race outcome, date, distance, and enough available days for the desired weekly sessions. Target time must use HH:MM:SS when supplied."); return;
     }
     setContextState("loading"); setContextMessage("Publishing a versioned coaching context…");
     try {
       const body = {
-        profile: { displayName, why, timezone: timezoneDefault, units: "metric" },
-        goalDraft: { title: goalTitle, targetDate, distanceMeters: Number(distanceKm) * 1000 },
-        weeklyRoutine: { timezone: timezoneDefault, availableDays: [...availableDays].map((day) => day.toLowerCase()), preferredLongRunDay: "sunday" },
+        profile: { displayName, why, timezone, units },
+        goalDraft: { title: goalTitle, targetDate, distanceMeters: Number(distanceKm) * 1000, ...(targetTimeSeconds === undefined ? {} : { targetTimeSeconds }) },
+        weeklyRoutine: { timezone, availableDays: [...availableDays].map((day) => day.toLowerCase()), preferredLongRunDay, desiredSessionsPerWeek: desiredSessions },
       };
-      const response = await apiRequest("/api/v1/coaching/context/publish", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      setContextState("success"); setContextMessage(`Context ${String(response.artifactId ?? response.id ?? "published")} is ready. Continue planning in Codex, then import its proposal below.`);
+      const response = await planApiRequest("/api/v1/coaching/context/publish", contextPublishApiResponseSchema, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      invalidateRead("context"); invalidateRead("proposal");
+      setPublicationMetadata(asRecord(response));
+      setContextState("success");
+      setContextMessage(`Context ${String(response.artifactId)} is saved. Continue in Codex with this context, then return here and import its proposal. Your saved draft will reappear here for review.`);
+      setWorkflowStage("continue");
+      shouldFocusCreation.current = true;
+      void loadCurrentContext();
     } catch (error) { setContextState("error"); setContextMessage(error instanceof Error ? error.message : "Context could not be published."); }
   }
 
   async function importProposal(file: File | null) {
-    if (!file) return;
-    setProposalState("loading"); setProposalMessage("Validating the selected proposal…"); setProposal(null); setAcknowledgeStale(false);
+    if (!file) { setProposalState("error"); setProposalMessage("Choose the proposal JSON file before importing it."); return; }
+    setProposalState("loading"); setProposalMessage("Validating the selected proposal…");
     try {
       const parsed: unknown = JSON.parse(await file.text());
-      const response = await apiRequest("/api/v1/coaching/proposals/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(parsed) });
-      setProposal(asRecord(response.proposal ?? response)); setProposalState("success"); setProposalMessage("Draft imported for review. Nothing is active yet.");
+      const response = await planApiRequest("/api/v1/coaching/proposals/import", proposalImportApiResponseSchema, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(parsed) });
+      invalidateRead("proposal");
+      setProposal(asRecord(response.proposal)); setSelectedProposalFile(null); setProposalState("success"); setProposalMessage("Draft imported for review. Nothing is active yet.");
+      setWorkflowStage("review"); shouldFocusCreation.current = true;
     } catch (error) { setProposalState("error"); setProposalMessage(error instanceof Error ? error.message : "Proposal could not be imported."); }
   }
 
-  async function confirmDecision() {
-    if (!proposal || !decision) return;
-    const proposalId = String(proposal.id ?? proposal.proposalId ?? "");
-    if (!proposalId) { setProposalState("error"); setProposalMessage("The imported proposal has no identifier."); setDecision(null); return; }
-    setProposalState("loading");
+  async function copyCodexInstructions() {
+    const artifactId = String(contextArtifact.id ?? publicationMetadata?.artifactId ?? "the published context artifact");
+    const instructions = `Provide Codex with the validated coaching-context.v1.json for ${artifactId} and the selected Second Brain context. Ask for one coaching-plan-proposal.v1 JSON file compatible with that context, goal, and routine. Return to Plan, choose Import proposal, select that JSON, import it explicitly, review it, then explicitly confirm a decision. Publishing, copying, downloading, importing, and leaving Plan never activate a plan.`;
+    try { await navigator.clipboard.writeText(instructions); setCopyMessage("Instructions copied. Paste them into Codex with the downloaded context JSON."); }
+    catch { setCopyMessage("Copy is unavailable in this browser. Select and copy the readable instructions above manually."); }
+  }
+
+  function downloadContext() {
+    if (!publishedContext) { setDownloadMessage("The validated context envelope is not available yet. Retry published context; no new context was published."); return; }
     try {
-      const response = await apiRequest(`/api/v1/coaching/proposals/${encodeURIComponent(proposalId)}/decision`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          decision,
-          expectedRevision: Number(proposal.revision ?? 1),
-          acknowledgeStale,
-          ...(decision === "approve" && activePlan?.id ? { replacingPlanId: String(activePlan.id) } : {}),
-        }),
-      });
-      if (decision === "approve") {
-        setActivePlan(asRecord(response.plan ?? response.activePlan ?? response));
-        await loadPlanHistory();
-      }
-      setProposal(null); setProposalState("success"); setProposalMessage(decision === "approve" ? "Plan activated after explicit approval." : "Draft rejected. The active plan was not changed.");
-    } catch (error) { setProposalState("error"); setProposalMessage(error instanceof Error ? error.message : "Decision could not be saved."); }
-    finally { setDecision(null); setAcknowledgeStale(false); }
+      const blob = new Blob([JSON.stringify(publishedContext, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = "coaching-context.v1.json"; anchor.click(); URL.revokeObjectURL(url);
+      setDownloadMessage("Context JSON download started from the validated saved envelope.");
+    } catch { setDownloadMessage("The context JSON could not be downloaded. Copy the visible instructions and retry the context read; no plan was changed."); }
   }
 
   const proposalWorkouts = proposal && (Array.isArray(proposal.workouts) ? proposal.workouts : Array.isArray(proposal.sessions) ? proposal.sessions : []);
@@ -408,36 +792,80 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   const goalTargetSummary = goalTarget.kind === "performance"
     ? `${Number(goalTarget.distanceMeters ?? 0) / 1000} km by ${String(goalTarget.targetDate ?? "unspecified date")}${goalTarget.targetTimeSeconds ? ` in ${String(goalTarget.targetTimeSeconds)} seconds` : ""}`
     : `${String(goalTarget.metric ?? "consistency")} ${String(goalTarget.threshold ?? "")} from ${String(goalTarget.startsOn ?? "—")} to ${String(goalTarget.endsOn ?? "—")}`;
-  const creationActionLabel = proposal ? "Review saved draft" : activePlan ? "Create a new plan with Codex" : "Create a plan with Codex";
+  // Immediately after publication the response is the authoritative new
+  // metadata while the independently retried context GET is still in flight.
+  // After a reload metadata is absent and the validated envelope is used.
+  const contextArtifact = asRecord(publicationMetadata?.artifact ?? publishedContext?.artifact);
+  const contextPath = typeof publicationMetadata?.jsonPath === "string" ? publicationMetadata.jsonPath : undefined;
+  const contextArtifactId = typeof contextArtifact.id === "string" ? contextArtifact.id : undefined;
+  const restoredPlanningGoal = asRecord(publishedContext?.planningGoal);
+  const restoredSettledGoal = asRecord(publishedContext?.settledGoal);
+  const restoredGoalTarget = asRecord(restoredPlanningGoal.target);
+  const completedPlanningContext = !restoredPlanningGoal.id && restoredSettledGoal.status === "settled";
+  const unsupportedRestorationGoal = restoredPlanningGoal.status === "draft" && restoredGoalTarget.kind !== "performance";
+  const proposalIsNewer = !activePlan || Number(proposal?.version ?? 0) > Number(activePlan.version ?? 0);
+  const actionableProposal = isActionableProposal({ proposal, activePlan, activePlanStatus: planLoadState === "idle" ? "loading" : planLoadState, contextArtifactId });
+  const proposalContextMismatch = Boolean(proposal && contextArtifactId && proposal.contextArtifactId !== contextArtifactId);
+  const contextAvailable = Boolean(publishedContext || publicationMetadata);
+  const creationActionLabel = actionableProposal ? "Review saved draft" : contextAvailable && !completedPlanningContext ? "Resume with Codex" : activePlan ? "Create a new plan with Codex" : "Create a plan with Codex";
+  const currentStage = confirmation && confirmation.snapshot.kind !== "activate" ? "Confirm" : workflowStage === "continue" ? "Continue in Codex" : workflowStage === "import" ? "Import proposal" : workflowStage === "review" ? "Review" : "Goal & context";
   const activeContentVersion = coachingContentVersion(activePlan);
   const activePlanToday = activePlan ? localDateInTimezone(String(activePlan.timezone ?? timezoneDefault)) : "";
-  return <CoachShell page="plan" title="Plan" subtitle={onlineMode ? "Choose which explicitly approved structured plan is active" : "Set your goal and explicitly approve each plan version"} meta={activePlan ? `Active · ${activeContentVersion ?? `record ${String(activePlan.version ?? 1)}`}` : "No active plan"}>
+  return <CoachShell page="plan" title="Plan" subtitle={onlineMode ? "Choose which explicitly approved structured plan is active" : "Set your goal and explicitly approve each plan version"} meta={planLoadState === "error" ? "Plan unavailable" : planLoadState === "loading" ? "Loading plan…" : activePlan ? `Active · ${activeContentVersion ?? `record ${String(activePlan.version ?? 1)}`}` : "No active plan"}>
     <section className="coach-panel coach-panel--plan-focus" aria-labelledby="active-plan-heading">
-      <div className="coach-panel-heading plan-focus-heading"><div><p className="eyebrow">Your training focus</p><h3 id="active-plan-heading">Active plan</h3></div>{onlineMode ? <span className="status-chip">Online plan control</span> : <button className="button button-primary" type="button" aria-controls="plan-creation-workflow" aria-expanded={creationOpen} onClick={openPlanCreation}>{creationActionLabel}</button>}</div>
-      {activePlan ? <><dl className="summary-list active-plan-summary"><div><dt>Status</dt><dd>Active approved version</dd></div><div><dt>Coaching version</dt><dd>{activeContentVersion ?? "Not supplied"}</dd></div><div><dt>Approval record</dt><dd>{String(activePlan.version ?? 1)}</dd></div><div><dt>Date range</dt><dd>{String(activePlan.startsOn ?? "—")} to {String(activePlan.endsOn ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{activeWorkouts.length}</dd></div><div><dt>Timezone</dt><dd>{String(activePlan.timezone ?? timezoneDefault)}</dd></div></dl><p>{onlineMode ? "This plan was explicitly approved before publication. Selecting another approved version changes Today and Calendar, but does not alter any workout prescription." : "Follow this approved version in Calendar. Creating a replacement never changes it until you review and approve the new draft."}</p><Link className="text-link" href="/dashboard/calendar">Open active plan in Calendar</Link><ActivePlanOverview plan={activePlan} today={activePlanToday} /></> : <div className="plan-focus-empty"><p>{onlineMode ? "No approved plan has been synced yet. Your local coaching workflow remains the authority for creating and approving plans." : "No plan is active yet. Start with Codex, then return here to review and approve the proposal before it affects Today or Calendar."}</p></div>}
-      {proposal ? <p className="plan-draft-note" role="status">A newer saved draft is ready for review. Your active plan remains unchanged until you explicitly approve it.</p> : null}
+      <div className="coach-panel-heading plan-focus-heading"><div><p className="eyebrow">Your training focus</p><h2 id="active-plan-heading" ref={activePlanHeadingRef} tabIndex={-1}>Active plan</h2></div>{onlineMode ? <span className="status-chip">Online plan control</span> : !creationOpen ? <button className="button button-primary" type="button" aria-controls="plan-creation-workflow" aria-expanded={creationOpen} onClick={openPlanCreation}>{creationActionLabel}</button> : <span className="status-chip">Workflow open</span>}</div>
+      <nav className="local-plan-switch" aria-label="Plan views"><Link aria-current="page" href="/dashboard/plan">Overview</Link><Link href="/dashboard/calendar">Calendar</Link></nav>
+      {planLoadState === "loading" ? <p className="coach-status coach-status--loading" role="status">{activePlan ? "Refreshing the active approved plan; the last successful read remains below." : "Loading the active approved plan…"}</p> : null}
+      {planLoadState === "error" ? <div className="coach-status coach-status--error" role="alert"><p>Active-plan status could not be checked. {planLoadMessage}</p>{activePlan ? <p>The last loaded approved plan remains visible below while you retry.</p> : null}<button className="button button-secondary" type="button" onClick={() => void loadActivePlan()}>Retry active plan</button></div> : null}
+      {activePlan ? <><dl className="summary-list active-plan-summary"><div><dt>Status</dt><dd>Active approved version</dd></div><div><dt>Coaching version</dt><dd>{activeContentVersion ?? "Not supplied"}</dd></div><div><dt>Approval record</dt><dd>{String(activePlan.version ?? 1)}</dd></div><div><dt>Date range</dt><dd>{String(activePlan.startsOn ?? "—")} to {String(activePlan.endsOn ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{activeWorkouts.length}</dd></div><div><dt>Timezone</dt><dd>{String(activePlan.timezone ?? timezoneDefault)}</dd></div></dl><p>{onlineMode ? "This plan was explicitly approved before publication. Selecting another approved version changes Home and Calendar, but does not alter any workout prescription." : "Follow this approved version in Calendar. Creating a replacement never changes it until you review and approve the new draft."}</p><Link className="text-link" href="/dashboard/calendar">Open active plan in Calendar</Link><ActivePlanOverview plan={activePlan} today={activePlanToday} /></> : null}
+      {lastReadAt.active ? <p className="field-help">Last successful active-plan read: {lastReadAt.active}. This is a client read time, not plan or training-data freshness.</p> : null}
+      {planLoadState === "success" && !activePlan ? <div className="plan-focus-empty"><p>{onlineMode ? "No approved plan has been synced yet. Your local coaching workflow remains the authority for creating and approving plans." : "No plan is active yet. Start with Codex, then return here to review and approve the proposal before it affects Home or Calendar."}</p></div> : null}
+      {actionableProposal ? <p className="plan-draft-note" role="status">A newer saved draft is ready for review. Your active plan remains unchanged until you explicitly approve it.</p> : null}
+      {!onlineMode && proposalReadState === "error" ? <div className="history-error" role="alert"><p>{proposalReadMessage}</p><button className="button button-secondary" type="button" onClick={() => void loadLatestProposal()}>Retry saved draft</button></div> : null}
+      {!onlineMode && contextReadState === "error" ? <div className="history-error" role="alert"><p>{contextReadMessage}</p><button className="button button-secondary" type="button" onClick={() => void loadCurrentContext()}>Retry published context</button></div> : null}
     </section>
     {!onlineMode && creationOpen ? <div className="plan-creation-workflow" id="plan-creation-workflow">
-    <section className="coach-panel" aria-labelledby="coach-setup-heading">
-      <div className="coach-panel-heading"><div><p className="eyebrow">Step 1</p><h3 id="coach-setup-heading" ref={creationHeadingRef} tabIndex={-1}>Create a plan with Codex</h3></div><span className="status-chip">Draft inputs</span></div>
-      <p>Set the goal and routine Codex should plan from. The app publishes current coaching context; you continue the planning conversation in Codex.</p>
+    <ol className="plan-stage-list" aria-label="Plan setup stages">{["Goal & context", "Continue in Codex", "Import proposal", "Review", "Confirm"].map((stage) => <li key={stage} className={currentStage === stage ? "plan-stage-list--active" : undefined}>{stage}</li>)}</ol>
+    {workflowStage === "setup" ? <section className="coach-panel" aria-labelledby="coach-setup-heading">
+      <div className="coach-panel-heading"><div><p className="eyebrow">Step 1 of 5 · Goal &amp; context</p><h2 id="coach-setup-heading" ref={workflowHeadingRef} tabIndex={-1}>Set your race goal</h2></div><span className="status-chip">Draft inputs</span></div>
+      <p>Tell us the race outcome and routine Codex should plan from. Publishing saves context only; it does not create or activate a plan.</p>
+      <div className="plan-data-needed" role="note"><strong>What is needed</strong><p>Race distance, date, optional target time, why it matters, and the days you can train. Recent training is used when available; missing history limits what can be assessed.</p></div>
       <form className="coach-form coach-form-grid" onSubmit={publishContext}>
-        <label><span>Name</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-        <label><span>Goal</span><input required value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="Finish my first half marathon" /></label>
-        <label><span>Target date</span><input required type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></label>
-        <label><span>Target distance (km)</span><input required min="1" step="0.1" type="number" value={distanceKm} onChange={(event) => setDistanceKm(event.target.value)} /></label>
-        <label className="field-wide"><span>Why this matters</span><textarea required rows={3} value={why} onChange={(event) => setWhy(event.target.value)} placeholder="The personal reason you want to keep showing up" /></label>
-        <fieldset className="field-wide routine-fieldset"><legend>Available training days</legend><div className="weekday-options">{weekdays.map((day) => <label key={day}><input type="checkbox" checked={availableDays.has(day)} onChange={() => toggleDay(day)} /><span>{day.slice(0, 3)}</span></label>)}</div><p className="field-help">Sunday is the preferred long-run day. Codex can discuss a different routine before you import a plan.</p></fieldset>
+        {completedPlanningContext ? <p className="coach-status coach-status--idle field-wide" role="status">This restored context records a completed planning decision, not an unfinished workflow. Starting here preserves that record and publishes a new context only when you choose Publish context for Codex.</p> : null}
+        {unsupportedRestorationGoal ? <p className="coach-status coach-status--error field-wide" role="alert">This published context has a {String(restoredGoalTarget.kind)} target. It remains available in the context JSON, but it cannot be silently converted into this race-distance form. Continue with it in Codex or enter a new race goal deliberately.</p> : null}
+        <label><span>Name</span><input value={displayName} onChange={(event) => { formIsDirty.current = true; setDisplayName(event.target.value); }} /></label>
+        <label><span>Target outcome</span><input required value={goalTitle} onChange={(event) => { formIsDirty.current = true; setGoalTitle(event.target.value); }} placeholder="Finish my first half marathon" /></label>
+        <label><span>Target date</span><input required type="date" value={targetDate} onChange={(event) => { formIsDirty.current = true; setTargetDate(event.target.value); }} /></label>
+        <label><span>Target distance (km)</span><input required min="1" step="0.1" type="number" value={distanceKm} onChange={(event) => { formIsDirty.current = true; setDistanceKm(event.target.value); }} /></label>
+        <label><span>Target time (optional)</span><input inputMode="numeric" pattern="[0-9]{1,2}:[0-5][0-9]:[0-5][0-9]" placeholder="02:00:00" value={targetTime} onChange={(event) => { formIsDirty.current = true; setTargetTime(event.target.value); }} aria-describedby="target-time-help" /><span className="field-help" id="target-time-help">Use HH:MM:SS. Leave blank if you only want to track the race outcome.</span></label>
+        <label><span>Timezone</span><input value={timezone} onChange={(event) => { formIsDirty.current = true; setTimezone(event.target.value); }} /></label>
+        <label><span>Units</span><select value={units} onChange={(event) => { formIsDirty.current = true; setUnits(event.target.value as "metric" | "imperial"); }}><option value="metric">Metric</option><option value="imperial">Imperial</option></select></label>
+        <label className="field-wide"><span>Why this matters</span><textarea required rows={3} value={why} onChange={(event) => { formIsDirty.current = true; setWhy(event.target.value); }} placeholder="The personal reason you want to keep showing up" /></label>
+        <fieldset className="field-wide routine-fieldset"><legend>Available training days</legend><div className="weekday-options">{weekdays.map((day) => <label key={day}><input type="checkbox" checked={availableDays.has(day)} onChange={() => toggleDay(day)} /><span>{day.slice(0, 3)}</span></label>)}</div><label><span>Preferred long-run day</span><select value={preferredLongRunDay} onChange={(event) => { formIsDirty.current = true; setPreferredLongRunDay(event.target.value); }}>{weekdays.map((day) => <option key={day} value={day.toLowerCase()}>{day}</option>)}</select></label><label><span>Desired sessions each week</span><input required type="number" min="1" max={availableDays.size} value={desiredSessionsPerWeek} onChange={(event) => { formIsDirty.current = true; setDesiredSessionsPerWeek(event.target.value); }} /></label><p className="field-help">These supported routine preferences are included in the published context; Codex can discuss a different routine before you import a plan.</p></fieldset>
         <button className="button button-primary field-wide" disabled={contextState === "loading"} type="submit">{contextState === "loading" ? "Publishing…" : "Publish context for Codex"}</button>
       </form>
+      <details className="plan-assumptions"><summary>Prediction assumptions</summary><p>Any outlook uses the supported prediction data already available in Race Predictor. It is an estimate, not a race-day guarantee. Freshness, missing activities, and optional evidence can limit the assessment; they are shown alongside the result.</p></details>
       <StatusLine state={contextState} message={contextMessage} />
-    </section>
-    <section className="coach-panel" aria-labelledby="proposal-import-heading">
-      <div className="coach-panel-heading"><div><p className="eyebrow">Step 2</p><h3 id="proposal-import-heading" ref={proposalHeadingRef} tabIndex={-1}>Import and review proposal</h3></div><span className={`status-chip ${proposal ? "status-chip--draft" : ""}`}>{proposal ? "Draft · not active" : "Waiting for file"}</span></div>
-      <label className="file-field"><span>Codex proposal JSON</span><input type="file" accept=".json,application/json" onChange={(event) => void importProposal(event.target.files?.[0] ?? null)} /></label>
-      <p className="field-help">The app reads only the file you select. Importing or leaving this page never activates a plan.</p>
+      <div className="coach-actions"><button className="button button-secondary" type="button" onClick={() => { setWorkflowStage("import"); shouldFocusCreation.current = true; }}>I already have a proposal</button><button className="button button-secondary" type="button" onClick={() => setCreationOpen(false)}>Return to overview</button></div>
+    </section> : null}
+    {workflowStage === "continue" ? <section className="coach-panel" aria-labelledby="codex-continuation-heading">
+      <div className="coach-panel-heading"><div><p className="eyebrow">Step 2 of 5 · Continue in Codex</p><h2 id="codex-continuation-heading" ref={workflowHeadingRef} tabIndex={-1}>Continue with your published context</h2></div><span className="status-chip">Context saved</span></div>
+      <p>Open Codex on this computer and provide the validated <strong>coaching-context.v1.json</strong> with the selected Second Brain context. Ask Codex to return one <strong>coaching-plan-proposal.v1</strong> JSON file compatible with this context, goal, and routine. Return here, choose Import proposal, select that JSON, explicitly import it, review it, then explicitly confirm a decision. Publishing, copying, downloading, importing, and leaving do not activate a plan.</p>
+      {contextPath ? <p className="field-help">Published context: <code>{contextPath}</code></p> : null}
+      {typeof contextArtifact.id === "string" ? <p className="field-help">Context artifact: {contextArtifact.id} · captured {String(contextArtifact.capturedAt ?? "time not returned")}</p> : null}
+      {Array.isArray(contextArtifact.warnings) && contextArtifact.warnings.length > 0 ? <div className="today-warnings" role="note"><strong>Context warnings</strong><ul>{contextArtifact.warnings.map((warning, index) => <li key={index}>{String(asRecord(warning).message ?? warning)}</li>)}</ul></div> : null}
+      <div className="coach-actions"><button className="button button-secondary" type="button" disabled={!publishedContext} onClick={downloadContext}>Download context JSON</button><button className="button button-secondary" type="button" onClick={() => void copyCodexInstructions()}>Copy Codex instructions</button></div>
+      {downloadMessage ? <p className="field-help" role="status">{downloadMessage}</p> : null}{copyMessage ? <p className="field-help" role="status">{copyMessage}</p> : null}
+      {contextReadState === "error" ? <div className="history-error" role="alert"><p>{contextReadMessage}</p><button className="button button-secondary" type="button" onClick={() => void loadCurrentContext()}>Retry published context</button></div> : null}
+      <div className="coach-actions"><button className="button button-primary" type="button" onClick={() => { setWorkflowStage("import"); shouldFocusCreation.current = true; }}>I have a proposal</button><button className="button button-secondary" type="button" onClick={() => { setWorkflowStage("setup"); shouldFocusCreation.current = true; }}>Edit goal and context</button><button className="button button-secondary" type="button" onClick={() => setCreationOpen(false)}>Return to overview</button></div>
+    </section> : null}
+    {workflowStage === "import" || workflowStage === "review" ? <section className="coach-panel" aria-labelledby="proposal-import-heading">
+      <div className="coach-panel-heading"><div><p className="eyebrow">Step {workflowStage === "import" ? "3" : "4"} of 5 · {workflowStage === "import" ? "Import proposal" : "Review"}</p><h2 id="proposal-import-heading" ref={workflowHeadingRef} tabIndex={-1}>{workflowStage === "import" ? "Import your Codex proposal" : "Review proposal"}</h2></div><span className={`status-chip ${proposal ? "status-chip--draft" : ""}`}>{proposal ? "Draft · not active" : "Waiting for file"}</span></div>
+      {workflowStage === "import" ? <><label className="file-field"><span>Codex proposal JSON</span><input disabled={proposalState === "loading"} type="file" accept=".json,application/json" onChange={(event) => { setSelectedProposalFile(event.target.files?.[0] ?? null); setProposalState("idle"); setProposalMessage(undefined); }} /></label>
+      <p className="field-help">{selectedProposalFile ? `Selected: ${selectedProposalFile.name}. Review the selection, then explicitly import it.` : "Bring back the proposal JSON from Codex. Select a file before importing it."} The app reads only the file you select. Importing or leaving this page never activates a plan.</p><div className="coach-actions"><button className="button button-primary" type="button" disabled={!selectedProposalFile || proposalState === "loading"} onClick={() => void importProposal(selectedProposalFile)}>{proposalState === "loading" ? "Importing…" : "Import selected proposal"}</button></div></> : null}
       <StatusLine state={proposalState} message={proposalMessage} />
-      {proposal ? <div className="proposal-review">
+      {workflowStage === "review" ? <StatusLine state={proposalReadState} message={proposalReadMessage} /> : null}
+      {workflowStage === "review" && proposal ? <div className="proposal-review">
         <dl className="summary-list"><div><dt>Status</dt><dd>Draft proposal</dd></div><div><dt>Version</dt><dd>{String(proposal.version ?? 1)}</dd></div><div><dt>Date range</dt><dd>{String(proposal.startsOn ?? "—")} to {String(proposal.endsOn ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{proposalWorkouts ? proposalWorkouts.length : 0}</dd></div><div><dt>History freshness</dt><dd>{historyIsStale ? "Stale — acknowledgement required" : "Current"}</dd></div></dl>
         {historyIsStale ? <div className="today-warnings" role="alert"><strong>History changed after this proposal was generated.</strong><p>{String(proposalReview.historyWarning ?? "Review the newly imported activity history before approving this plan.")}</p></div> : null}
         <div><h4>Goal and outcome</h4><p><strong>{String(proposalReview.goalTitle ?? "Settled goal")}</strong> · {goalTargetSummary}</p></div>
@@ -446,34 +874,49 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
         <div className="issue-list"><h4>Assumptions and cautions</h4>{proposalAssumptions.length > 0 ? <><strong>Assumptions</strong><ul>{proposalAssumptions.map((item, index) => <li key={`assumption-${index}`}>{String(item)}</li>)}</ul></> : <p className="quiet-copy">No assumptions were supplied.</p>}{proposalCautions.length > 0 ? <><strong>Cautions</strong><ul>{proposalCautions.map((item, index) => <li key={`caution-${index}`}>{String(item)}</li>)}</ul></> : <p className="quiet-copy">No plan-level cautions were supplied.</p>}</div>
         <div className="issue-list"><h4>Prescription details</h4><div className="session-grid session-grid--agenda">{proposalWorkouts?.map((value, index) => { const workout = asRecord(value); const cautions = Array.isArray(workout.cautions) ? workout.cautions : []; return <article className="session-card" key={String(workout.id ?? index)}><div className="session-card-top"><div><p className="eyebrow">{String(workout.kind ?? "session")} · {String(workout.scheduledDate ?? "—")}</p><h4>{String(workout.title ?? "Planned session")}</h4></div><span className="status-chip">{String(workout.durationMinutes ?? 0)} min</span></div><p><strong>Purpose:</strong> {String(workout.purpose ?? "—")}</p><p><strong>Prescription:</strong> {String(workout.prescription ?? "—")}</p><dl><div><dt>Start</dt><dd>{String(workout.startTime ?? "Flexible")}</dd></div><div><dt>Intensity</dt><dd>{workout.intensityRpe ? `RPE ${String(workout.intensityRpe)}` : "Not specified"}</dd></div><div><dt>Distance</dt><dd>{workout.distanceMeters ? `${Number(workout.distanceMeters) / 1000} km` : "Not specified"}</dd></div><div><dt>Cautions</dt><dd>{cautions.length > 0 ? cautions.map(String).join("; ") : "None supplied"}</dd></div></dl></article>; })}</div></div>
         <div className="issue-list"><h4>{proposalReview.comparedActivePlanId ? `Changes from active plan v${String(proposalReview.comparedActivePlanVersion ?? "")}` : "Activation impact"}</h4><ul>{materialDifferences.map((value, index) => { const difference = asRecord(value); return <li key={`${String(difference.field ?? "difference")}-${index}`}><strong>{String(difference.change ?? "changed")}:</strong> {String(difference.summary ?? "Review this material difference.")}</li>; })}</ul></div>
-        <div className="coach-actions"><button className="button button-primary" type="button" onClick={() => setDecision("approve")}>Review and approve</button><button className="button button-secondary" type="button" onClick={() => setDecision("reject")}>Reject draft</button></div>
+        {planLoadState !== "success" ? <p className="coach-status coach-status--error" role="alert">Wait for or retry the authoritative active-plan read before deciding on this saved draft.</p> : null}
+        {proposalContextMismatch ? <p className="coach-status coach-status--error" role="alert">This saved proposal refers to a different published context artifact. It can be inspected, but cannot be confirmed as this context’s proposal.</p> : null}
+        <div className="coach-actions"><button className="button button-primary" type="button" disabled={proposalState === "loading" || !actionableProposal} onClick={(event) => proposal && openConfirmation("approve", proposal, event.currentTarget)}>Review and approve</button><button className="button button-secondary" type="button" disabled={proposalState === "loading" || !actionableProposal} onClick={(event) => proposal && openConfirmation("reject", proposal, event.currentTarget)}>Reject draft</button><button className="button button-secondary" type="button" onClick={() => { setWorkflowStage("import"); shouldFocusCreation.current = true; }}>Import another proposal</button><button className="button button-secondary" type="button" onClick={() => setCreationOpen(false)}>Return to overview</button></div>
       </div> : null}
-    </section>
+      {workflowStage === "import" ? <div className="coach-actions"><button className="button button-secondary" type="button" disabled={proposalState === "loading"} onClick={() => { setWorkflowStage(contextAvailable ? "continue" : "setup"); shouldFocusCreation.current = true; }}>Back</button><button className="button button-secondary" type="button" disabled={proposalState === "loading"} onClick={() => setCreationOpen(false)}>Return to overview</button></div> : null}
+    </section> : null}
     </div> : null}
-    <section className="coach-panel" aria-labelledby="plan-history-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Immutable record</p><h3 id="plan-history-heading">Approved plan version history</h3></div><span className="status-chip">{planHistory.length} version{planHistory.length === 1 ? "" : "s"}</span></div>
+    <section className="coach-panel" aria-labelledby="plan-history-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Immutable record</p><h2 id="plan-history-heading" ref={historyHeadingRef} tabIndex={-1}>Approved plan version history</h2></div><span className="status-chip">{planHistory.length} version{planHistory.length === 1 ? "" : "s"}</span></div>
       {onlineMode ? <p className="quiet-copy">Open any inactive approved version below and choose <strong>Make this approved plan active</strong>. A new coaching version appears here only after its normal approval and publication.</p> : null}
-      <StatusLine state={activationState} message={activationMessage} />
-      {historyState === "loading" ? <StatusLine state="loading" message={historyMessage} /> : null}
-      {historyState === "error" ? <div className="history-error" role="alert"><p>{historyMessage}</p><button className="button button-secondary" type="button" onClick={() => void loadPlanHistory()}>Retry version history</button></div> : null}
+      {historyState === "loading" ? <StatusLine state="loading" message={planHistory.length > 0 ? "Refreshing approved plan versions; the last successful history remains below." : historyMessage} /> : null}
+      {historyState === "error" ? <div className="history-error" role="alert"><p>{historyMessage}</p>{planHistory.length > 0 ? <p>The last successful approved history remains below.</p> : null}<button className="button button-secondary" type="button" onClick={() => void loadPlanHistory()}>Retry version history</button></div> : null}
+      {lastReadAt.history ? <p className="field-help">Last successful history read: {lastReadAt.history}. This is a client read time, not plan freshness.</p> : null}
       {historyState === "success" && planHistory.length === 0 ? <p className="quiet-copy">No approved plan versions yet. Imported drafts never appear here before approval.</p> : null}
-      {historyState === "success" && planHistory.length > 0 ? <div className="plan-history-list">{planHistory.map((plan, index) => {
+      {planHistory.length > 0 ? <div className="plan-history-list">{planHistory.map((plan, index) => {
         const approval = asRecord(plan.approval);
         const workouts = Array.isArray(plan.workouts) ? plan.workouts : [];
         const isActive = plan.status === "active" || plan.id === activePlan?.id;
         const isLatestApproved = index === 0;
         const contentVersion = coachingContentVersion(plan);
-        return <details className="plan-version" key={String(plan.id)} open={isActive}>
+        return <details className="plan-version" key={String(plan.id)} open={false}>
           <summary><span><strong>{contentVersion ? `Coaching version ${contentVersion}` : `Approved record ${String(plan.version ?? 1)}`}</strong><small>Approval record {String(plan.version ?? 1)} · {String(plan.startsOn ?? "—")} to {String(plan.endsOn ?? "—")}</small></span><span className={`status-chip${isActive ? " status-chip--active" : ""}`}>{isActive ? "Active" : isLatestApproved ? "Latest approved" : "Retired"}</span></summary>
           <div className="plan-version-details"><dl className="summary-list"><div><dt>Status</dt><dd>{isActive ? "Active approved version" : "Available approved version"}</dd></div><div><dt>Coaching version</dt><dd>{contentVersion ?? "Not supplied"}</dd></div><div><dt>Approval record</dt><dd>{String(plan.version ?? 1)}</dd></div><div><dt>Goal snapshot</dt><dd>{String(plan.goalId ?? "—")}</dd></div><div><dt>Sessions</dt><dd>{workouts.length}</dd></div></dl>
             <p><strong>Approved rationale:</strong> {String(approval.rationale ?? "No rationale supplied.")}</p>
-            {onlineMode && !isActive ? <div className="coach-actions"><button className="button button-primary" type="button" disabled={activationState === "loading"} onClick={() => setActivationCandidate(plan)}>Make this approved plan active</button><span className="quiet-copy">No session prescription will be changed.</span></div> : null}
+            {onlineMode && !isActive ? <div className="coach-actions"><button className="button button-secondary" type="button" disabled={confirmation?.phase === "pending"} onClick={(event) => openConfirmation("activate", plan, event.currentTarget)}>Make this approved plan active</button><span className="quiet-copy">No session prescription will be changed.</span></div> : null}
             <div className="plan-history-sessions">{workouts.map((value, index) => { const workout = asRecord(value); return <article key={String(workout.id ?? index)}><h4>{String(workout.title ?? "Approved session")}</h4><p>{String(workout.prescription ?? "No prescription supplied.")}</p><small>{String(workout.scheduledDate ?? "—")} · {String(workout.durationMinutes ?? "—")} min</small></article>; })}</div>
           </div>
         </details>;
       })}</div> : null}
     </section>
-    {activationCandidate ? <div className="coach-dialog-backdrop"><section className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="plan-activation-title"><h3 id="plan-activation-title">Make {coachingPlanLabel(activationCandidate).toLowerCase()} active?</h3><p>{activePlan ? `This will retire ${coachingPlanLabel(activePlan).toLowerCase()} and make the selected approved plan the source for Today and Calendar.` : "This will make the selected approved plan the source for Today and Calendar."} The approved workouts will not be edited or adapted.</p><div className="coach-actions"><button autoFocus className="button button-primary" type="button" disabled={activationState === "loading"} onClick={() => void confirmPlanActivation()}>{activationState === "loading" ? "Making active…" : "Make active"}</button><button className="button button-secondary" type="button" disabled={activationState === "loading"} onClick={() => setActivationCandidate(null)}>Cancel</button></div></section></div> : null}
-    {decision ? <div className="coach-dialog-backdrop"><section className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="plan-decision-title"><h3 id="plan-decision-title">{decision === "approve" ? "Activate this plan version?" : "Reject this draft?"}</h3><p>{decision === "approve" ? activePlan ? `This explicitly settles the proposed goal, retires active plan v${String(activePlan.version ?? 1)}, and activates the new immutable version.` : "This explicitly settles the proposed goal and makes this immutable plan version active." : "The draft will be durably rejected. Your current active goal and plan, if any, will not change."}</p>{decision === "approve" && historyIsStale ? <label className="checkbox-field"><input autoFocus type="checkbox" checked={acknowledgeStale} onChange={(event) => setAcknowledgeStale(event.target.checked)} /><span>I reviewed the stale-history warning and explicitly approve using this proposal.</span></label> : null}<div className="coach-actions"><button autoFocus={!historyIsStale} disabled={decision === "approve" && historyIsStale && !acknowledgeStale} className={decision === "approve" ? "button button-primary" : "button button-secondary"} type="button" onClick={() => void confirmDecision()}>Confirm {decision}</button><button className="button button-secondary" type="button" onClick={() => { setDecision(null); setAcknowledgeStale(false); }}>Cancel</button></div></section></div> : null}
+    {confirmation ? <div className="coach-dialog-backdrop"><section ref={confirmationModal.dialogRef} onKeyDown={confirmationModal.onKeyDown} tabIndex={-1} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="plan-confirmation-title" aria-describedby="plan-confirmation-description plan-confirmation-status">
+      <h3 id="plan-confirmation-title">{confirmation.snapshot.kind === "activate" ? `Make ${confirmation.snapshot.targetLabel.toLowerCase()} active?` : confirmation.snapshot.kind === "approve" ? "Activate this plan version?" : "Reject this draft?"}</h3>
+      <p id="plan-confirmation-description">{confirmation.snapshot.kind === "activate" ? confirmation.snapshot.replacingPlanId ? "This will retire the reviewed active plan and make the selected approved plan the source for Home and Calendar. The approved workouts will not be edited or adapted." : "This will make the selected approved plan the source for Home and Calendar. The approved workouts will not be edited or adapted." : confirmation.snapshot.kind === "approve" ? confirmation.snapshot.replacingPlanId ? "This explicitly settles the reviewed proposed goal, retires the reviewed active plan, and activates the new immutable version for Home and Calendar." : "This explicitly settles the reviewed proposed goal and makes this immutable plan version active for Home and Calendar." : "The reviewed draft will be durably rejected. Your current active goal and plan, if any, will not change."}</p>
+      {confirmation.snapshot.kind === "approve" && confirmation.snapshot.historyWasStale ? <label className="checkbox-field"><input autoFocus type="checkbox" checked={confirmation.acknowledgement} disabled={confirmation.phase !== "ready"} onChange={(event) => setConfirmation({ ...confirmation, acknowledgement: event.target.checked })} /><span>I reviewed the stale-history warning and explicitly approve using this proposal.</span></label> : null}
+      {confirmation.message ? <p id="plan-confirmation-status" className={`coach-status coach-status--${confirmation.phase === "success" ? "success" : confirmation.phase === "pending" ? "loading" : confirmation.phase === "ready" ? "idle" : "error"}`} role={confirmation.phase === "pending" || confirmation.phase === "success" ? "status" : "alert"} aria-live={confirmation.phase === "pending" || confirmation.phase === "success" ? "polite" : "assertive"}>{confirmation.message}</p> : <span id="plan-confirmation-status" className="sr-only" />}
+      {confirmationHistoryWarning ? <p className="coach-status coach-status--error" role="alert">{confirmationHistoryWarning}</p> : null}
+      <div className="coach-actions">
+        {(confirmation.phase === "ready" || confirmation.phase === "failure") ? <button autoFocus={!confirmation.snapshot.historyWasStale} className="button button-primary" type="button" disabled={!canSubmitConfirmation(confirmation)} onClick={() => void confirmPlanAction()}>Confirm {confirmation.snapshot.kind === "activate" ? "activation" : confirmation.snapshot.kind}</button> : null}
+        {(confirmation.phase === "conflict" || confirmation.phase === "uncertain") ? <button className="button button-secondary" type="button" onClick={() => void reconcileConfirmation()}>Check current Plan</button> : null}
+        {confirmationRecoveryReady ? <button className="button button-primary" type="button" onClick={returnToReview}>Return to review</button> : null}
+        {confirmationHistoryWarning ? <button className="button button-secondary" type="button" onClick={() => void refreshHistoryAfterConfirmedWrite()}>Retry version history</button> : null}
+        {confirmation.phase !== "pending" ? <button className="button button-secondary" type="button" onClick={closeConfirmation}>{confirmation.phase === "success" ? "Close" : "Cancel"}</button> : null}
+      </div>
+    </section></div> : null}
   </CoachShell>;
 }
 
@@ -543,6 +986,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const today = localDateInTimezone(planTimezone);
   const [anchorDate, setAnchorDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(initialDate ?? "") ? initialDate! : today);
   const [view, setView] = useState<"week" | "agenda">("week");
+  const preferredWideView = useRef<"week" | "agenda">("week");
   const [sessions, setSessions] = useState<CalendarSessionView[]>([]);
   const [activities, setActivities] = useState<CalendarActivityView[]>([]);
   const [activitiesReadStatus, setActivitiesReadStatus] = useState<"available" | "unavailable">("available");
@@ -640,9 +1084,25 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }, [selectedDetail]);
 
   useEffect(() => {
+    const open = Boolean(selectedDetail || pending || amendDraft);
+    const content = document.querySelector<HTMLElement>(".coaching-content--calendar");
+    const nav = document.querySelector<HTMLElement>(".dashboard-nav");
+    if (!open || !content) return;
+    const background = Array.from(content.children).filter((element) => !element.classList.contains("coach-dialog-backdrop")) as HTMLElement[];
+    background.forEach((element) => { element.inert = true; });
+    if (nav) nav.inert = true;
+    return () => {
+      background.forEach((element) => { element.inert = false; });
+      if (nav) nav.inert = false;
+    };
+  }, [selectedDetail, pending, amendDraft]);
+
+  useEffect(() => {
     const narrowCalendar = window.matchMedia("(max-width: 1199px)");
     if (narrowCalendar.matches) setView("agenda");
-    const useAgenda = (event: MediaQueryListEvent) => { if (event.matches) setView("agenda"); };
+    const useAgenda = (event: MediaQueryListEvent) => {
+      setView(event.matches ? "agenda" : preferredWideView.current);
+    };
     narrowCalendar.addEventListener("change", useAgenda);
     return () => narrowCalendar.removeEventListener("change", useAgenda);
   }, []);
@@ -901,6 +1361,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       <div className="session-card-top"><p className="eyebrow">{activity.sport.replace("_", " ")} · recorded</p><time dateTime={activity.localDate}>{formatCoachingDate(activity.localDate)}</time></div>
       <h3>{activity.title}</h3>
       <p><strong>Actual workout:</strong> {metrics || "Recorded run"}</p>
+      <Link className="text-link" href={`/dashboard/activities?activityId=${encodeURIComponent(activity.id)}#coach-review-${encodeURIComponent(activity.id)}`}>View activity and review</Link>
     </article>;
   }
 
@@ -935,7 +1396,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }
 
   return <CoachShell page="calendar" title="Calendar" subtitle={onlineMode ? "Owner-managed future sessions with preserved approved sources" : "Approved sessions and reasoned, auditable future changes"} meta={`${formatCoachingDate(range.from, planTimezone)} – ${formatCoachingDate(range.to, planTimezone)} · ${planTimezone}`}>
-    <section className="coach-panel calendar-controls" aria-label="Calendar controls"><p id="calendar-scroll-help">Scroll to browse weeks · Page Up / Page Down when focused</p><div className="segmented" aria-label="Calendar view"><button type="button" aria-pressed={view === "week"} onClick={() => setView("week")}>Weeks</button><button type="button" aria-pressed={view === "agenda"} onClick={() => setView("agenda")}>Agenda</button></div></section>
+    <section className="coach-panel calendar-controls" aria-label="Calendar controls"><nav className="local-plan-switch" aria-label="Plan views"><Link href="/dashboard/plan">Overview</Link><Link aria-current="page" href="/dashboard/calendar">Calendar</Link></nav><p id="calendar-scroll-help">Browse the approved schedule by date. Agenda is used below the wide layout.</p><div className="segmented" aria-label="Calendar view"><button className="calendar-week-toggle" type="button" aria-pressed={view === "week"} onClick={() => { preferredWideView.current = "week"; setView("week"); }}>Weeks</button><button type="button" aria-pressed={view === "agenda"} onClick={() => { preferredWideView.current = "agenda"; setView("agenda"); }}>Agenda</button></div></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
     {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h3>Calendar could not be loaded</h3><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
     {state === "success" && message ? <StatusLine state="success" message={message} /> : null}
@@ -954,7 +1415,10 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
           return day.toISOString().slice(0, 10);
         }).map(renderCalendarDay)}
       </section>)}
-    </section> : sessions.length + activities.length > 0 ? <section className="session-grid session-grid--agenda" aria-label="Agenda training schedule">{[...activities].sort((left, right) => left.localDate.localeCompare(right.localDate)).map(renderActivityCard)}{sessions.map((session) => renderSessionCard(session))}</section> : <section className="coach-panel coach-empty"><h3>No runs or planned sessions in this calendar window</h3><p>Scroll to inspect another date range, or import and sync your activity history.</p><Link className="text-link" href="/dashboard/activities">Open Activities</Link></section>}</section> : null}
+    </section> : sessions.length + activities.length > 0 ? <section className="session-grid session-grid--agenda" aria-label="Agenda training schedule">{[
+      ...activities.map((activity) => ({ kind: "activity" as const, date: activity.localDate, value: activity })),
+      ...sessions.map((session) => ({ kind: "session" as const, date: session.effectiveDate, value: session })),
+    ].sort((left, right) => left.date.localeCompare(right.date) || left.kind.localeCompare(right.kind)).map((item) => item.kind === "activity" ? renderActivityCard(item.value) : renderSessionCard(item.value))}</section> : <section className="coach-panel coach-empty"><h3>No runs or planned sessions in this calendar window</h3><p>Scroll to inspect another date range, or import and sync your activity history.</p><Link className="text-link" href="/dashboard/activities">Open Training</Link></section>}</section> : null}
     {renderCalendarDetail()}
     {pending ? <div className="coach-dialog-backdrop"><form ref={pendingModal.dialogRef} onKeyDown={pendingModal.onKeyDown} onSubmit={(event) => { event.preventDefault(); void confirmEdit(); }} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">
       <h3 id="calendar-edit-title">Confirm {pending.operation}</h3>
@@ -980,90 +1444,143 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
 }
 
 export function SettingsPage() {
-  const [enabled, setEnabled] = useState(true);
-  const [localTime, setLocalTime] = useState("06:30");
-  const [timezone, setTimezone] = useState(timezoneDefault);
-  const [state, setState] = useState<RequestState>("loading");
-  const [message, setMessage] = useState<string>();
+  const [baseline, setBaseline] = useState<ReminderDraft | null>(null);
+  const [draft, setDraft] = useState<ReminderDraft>({ enabled: false, localTime: "", timezone: "" });
+  const [preferencesRead, setPreferencesRead] = useState<SettingsReadState<JsonRecord>>({ status: "loading" });
+  const [contextRead, setContextRead] = useState<SettingsReadState<string | null>>({ status: "loading" });
+  const [saveState, setSaveState] = useState<RequestState>("idle");
+  const [saveMessage, setSaveMessage] = useState<string>();
   const [handoff, setHandoff] = useState("");
-  const [handoffStatus, setHandoffStatus] = useState("Not generated");
   const [externalStatus, setExternalStatus] = useState<ReminderExternalStatus>("not_configured");
-  const [externalReference, setExternalReference] = useState("");
+  const [artifactReference, setArtifactReference] = useState<string | null>(null);
+  const [externalTaskRef, setExternalTaskRef] = useState("");
+  const [continuing, setContinuing] = useState(false);
   const [automationState, setAutomationState] = useState<RequestState>("idle");
   const [automationMessage, setAutomationMessage] = useState<string>();
-  const [contextReference, setContextReference] = useState("No published coaching context found");
+  const [needsAuthoritativeRecovery, setNeedsAuthoritativeRecovery] = useState(false);
+  const [settingsGroup, setSettingsGroup] = useState<"preferences" | "reminders" | "privacy">("preferences");
+  const [returnTo, setReturnTo] = useState("/dashboard/settings");
+  const mutationRef = useRef(false);
+  const preferencesGeneration = useRef(0);
+  const contextGeneration = useRef(0);
+  const dirty = hasUnsavedReminderChanges(baseline, draft);
+  const stage = reminderStage({ preferencesAvailable: preferencesRead.status === "ready" || Boolean(preferencesRead.data), dirty, enabled: draft.enabled, externalStatus, generatedHandoff: Boolean(handoff), continuing });
 
   useEffect(() => {
-    void Promise.all([
-      apiRequest("/api/v1/coaching/reminder-preferences"),
-      apiRequest("/api/v1/coaching/context/current").catch(() => null),
-    ]).then(([response, contextResponse]) => {
-      const persistedExternalStatus = normalizeReminderExternalStatus(response.externalStatus);
-      const context = asRecord(contextResponse);
-      const envelope = asRecord(context.context ?? context.snapshot ?? context);
-      const artifact = asRecord(envelope.artifact);
-      const reference = context.exchangeReference ?? context.envelopePath ?? context.jsonPath
-        ?? envelope.exchangeReference ?? envelope.envelopePath ?? envelope.jsonPath
-        ?? (artifact.id ? `Coach Exchange/Generated/coaching-context.v1.json · ${String(artifact.id)}` : undefined);
-      setEnabled(response.enabled !== false); setLocalTime(String(response.localTime ?? "06:30")); setTimezone(String(response.timezone ?? timezoneDefault));
-      setExternalStatus(persistedExternalStatus); setHandoffStatus(handoffStatusLabel(persistedExternalStatus));
-      if (typeof response.externalReference === "string") setExternalReference(response.externalReference);
-      if (reference) setContextReference(String(reference));
-      setState("success");
-    }).catch(() => { setState("idle"); setMessage("Using Phase 1 defaults until you save."); });
+    setReturnTo(safeRecoveryPath(new URLSearchParams(window.location.search).get("returnTo"), "/dashboard/settings"));
+    void loadPreferences();
+    void loadContext();
   }, []);
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setState("loading"); setMessage("Saving app preferences…");
+  async function loadPreferences() {
+    const generation = ++preferencesGeneration.current;
+    setPreferencesRead((current) => current.data ? { status: "refreshing", data: current.data, checkedAt: current.checkedAt ?? Date.now() } : { status: "loading" });
     try {
-      const response = await apiRequest("/api/v1/coaching/reminder-preferences", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled, localTime, timezone, channel: "codex_task", motivationalContext: true }) });
-      const persistedExternalStatus = normalizeReminderExternalStatus(response.externalStatus);
-      setExternalStatus(persistedExternalStatus); setHandoffStatus(handoffStatusLabel(persistedExternalStatus));
-      setState("success"); setMessage(`App reminder preference saved. ${externalAutomationStatusLabel(persistedExternalStatus)}.`);
-    } catch (error) { setState("error"); setMessage(error instanceof Error ? error.message : "Preferences could not be saved."); }
+      const response = await fetch("/api/v1/coaching/reminder-preferences");
+      const body: unknown = await response.json().catch(() => undefined);
+      if (!response.ok) throw new Error("Preferences could not be loaded.");
+      const parsed = reminderPreferencesApiResponseSchema.safeParse(body);
+      if (!parsed.success) throw new Error("Preferences could not be loaded because the response was unsupported.");
+      if (generation !== preferencesGeneration.current) return;
+      const value = parsed.data.data;
+      const next = { enabled: value.enabled, localTime: value.localTime, timezone: value.timezone };
+      setBaseline(next);
+      setDraft((current) => baseline && hasUnsavedReminderChanges(baseline, current) ? current : next);
+      setExternalStatus(value.externalStatus);
+      setArtifactReference(value.externalStatus === "prepared" ? value.externalReference : null);
+      setExternalTaskRef(externalTaskReference(value.externalStatus, value.externalReference));
+      setPreferencesRead({ status: "ready", data: value as unknown as JsonRecord, checkedAt: Date.now() });
+      setNeedsAuthoritativeRecovery(false);
+    } catch (error) {
+      if (generation === preferencesGeneration.current) setPreferencesRead((current) => settingsReadError(current, error instanceof Error ? error.message : "Preferences could not be loaded."));
+    }
+  }
+
+  async function loadContext() {
+    const generation = ++contextGeneration.current;
+    setContextRead((current) => current.data !== undefined ? { status: "refreshing", data: current.data, checkedAt: current.checkedAt ?? Date.now() } : { status: "loading" });
+    try {
+      const response = await fetch("/api/v1/coaching/context/current");
+      const body: unknown = await response.json().catch(() => undefined);
+      if (!response.ok) throw new Error("Coaching context could not be checked.");
+      const parsed = currentContextApiResponseSchema.safeParse(body);
+      if (!parsed.success) throw new Error("Coaching context could not be checked because the response was unsupported.");
+      if (generation !== contextGeneration.current) return;
+      const context = parsed.data.data.context;
+      const reference = context ? "Published coaching context" : null;
+      setContextRead({ status: "ready", data: reference, checkedAt: Date.now() });
+    } catch (error) {
+      if (generation === contextGeneration.current) setContextRead((current) => settingsReadError(current, error instanceof Error ? error.message : "Coaching context could not be checked."));
+    }
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (mutationRef.current || !baseline || needsAuthoritativeRecovery) return;
+    mutationRef.current = true; setSaveState("loading"); setSaveMessage("Saving app preferences…");
+    try {
+      const response = await apiRequest("/api/v1/coaching/reminder-preferences", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...draft, days: weekdays.map((day) => day.toLowerCase()), channel: "codex_task", motivationalContext: true }) });
+      const next = { enabled: Boolean(response.enabled), localTime: String(response.localTime), timezone: String(response.timezone) };
+      setBaseline(next); setDraft(next); setExternalStatus(normalizeReminderExternalStatus(response.externalStatus)); setArtifactReference(null); setHandoff(""); setContinuing(false);
+      setSaveState("success"); setSaveMessage("App reminder preference saved. Changing it does not create, update, or cancel a Codex task.");
+    } catch (error) {
+      const unknown = shouldRecoverBeforeRetry(!(error as Error & { status?: number }).status);
+      if (unknown) setNeedsAuthoritativeRecovery(true);
+      setSaveState("error"); setSaveMessage(unknown ? "The save outcome is unknown. Your edits are still here; reread saved preferences before trying again." : error instanceof Error ? error.message : "Preferences could not be saved. Your edits are still here.");
+    }
+    finally { mutationRef.current = false; }
   }
 
   async function generateHandoff() {
-    setHandoffStatus("Generating…");
+    if (mutationRef.current || needsAuthoritativeRecovery || stage !== "ready") return;
+    mutationRef.current = true; setAutomationState("loading"); setAutomationMessage("Preparing a versioned reminder handoff…");
     try {
-      const response = await apiRequest("/api/v1/coaching/reminder-handoffs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled, localTime, timezone }) });
-      const persistedExternalStatus = normalizeReminderExternalStatus(response.externalStatus);
+      const response = await apiRequest("/api/v1/coaching/reminder-handoffs", { method: "POST", headers: { "content-type": "application/json" } });
       setHandoff(String(response.handoff ?? response.instructions ?? response.content ?? "Handoff generated."));
-      setExternalStatus(persistedExternalStatus); setHandoffStatus(handoffStatusLabel(persistedExternalStatus));
-    } catch (error) { setHandoffStatus(error instanceof Error ? error.message : "Handoff could not be generated"); }
+      setExternalStatus(normalizeReminderExternalStatus(response.externalStatus)); setArtifactReference(typeof response.path === "string" ? response.path : null);
+      setAutomationState("success"); setAutomationMessage("Handoff prepared. It is not scheduled and delivery has not been verified.");
+    } catch (error) {
+      const unknown = shouldRecoverBeforeRetry(!(error as Error & { status?: number }).status);
+      if (unknown) setNeedsAuthoritativeRecovery(true);
+      setAutomationState("error"); setAutomationMessage(unknown ? "Preparation outcome is unknown. Reread saved preferences before preparing again." : error instanceof Error ? error.message : "Handoff could not be prepared.");
+    }
+    finally { mutationRef.current = false; }
   }
 
   async function copyHandoff() {
     if (!handoff) return;
-    try { await navigator.clipboard.writeText(handoff); setHandoffStatus("Copied · ready to paste into Codex"); }
-    catch { setHandoffStatus("Copy unavailable; select the handoff text manually"); }
+    try { await navigator.clipboard.writeText(handoff); setAutomationMessage("Instructions copied. Copying does not create or verify a recurring task."); }
+    catch { setAutomationMessage("Copy is unavailable; select the instructions manually. No external task has been created."); }
   }
 
   async function confirmExternalAutomation(status: "scheduled" | "attention") {
-    setAutomationState("loading"); setAutomationMessage(status === "scheduled" ? "Recording your external scheduling confirmation…" : "Recording that external setup needs attention…");
+    if (mutationRef.current || needsAuthoritativeRecovery || (status === "scheduled" && !externalTaskRef.trim())) return;
+    mutationRef.current = true; setAutomationState("loading"); setAutomationMessage(status === "scheduled" ? "Recording your external scheduling confirmation…" : "Recording that external setup needs attention…");
     try {
       const response = await apiRequest("/api/v1/coaching/reminder-handoffs/status", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ externalStatus: status, externalReference: status === "scheduled" ? externalReference.trim() : null }),
+        body: JSON.stringify({ externalStatus: status, externalReference: status === "scheduled" ? externalTaskRef.trim() : null }),
       });
       const persistedExternalStatus = normalizeReminderExternalStatus(response.externalStatus);
-      setExternalStatus(persistedExternalStatus); setHandoffStatus(handoffStatusLabel(persistedExternalStatus));
-      if (typeof response.externalReference === "string") setExternalReference(response.externalReference);
+      setExternalStatus(persistedExternalStatus);
+      setExternalTaskRef(externalTaskReference(persistedExternalStatus, typeof response.externalReference === "string" ? response.externalReference : null));
       setAutomationState("success");
       setAutomationMessage(status === "scheduled"
         ? "Recorded as scheduled from your confirmation. The app does not infer or verify external delivery."
         : "External setup is marked as needing attention.");
     } catch (error) {
-      setAutomationState("error"); setAutomationMessage(error instanceof Error ? error.message : "External status could not be saved.");
-    }
+      const unknown = shouldRecoverBeforeRetry(!(error as Error & { status?: number }).status);
+      if (unknown) setNeedsAuthoritativeRecovery(true);
+      setAutomationState("error"); setAutomationMessage(unknown ? "Confirmation outcome is unknown. Reread saved preferences before trying again." : error instanceof Error ? error.message : "External status could not be saved.");
+    } finally { mutationRef.current = false; }
   }
 
-  return <CoachShell page="settings" title="Settings" subtitle="Local coaching preferences and Codex reminder handoff" meta={`${localTime} · ${timezone}`}>
-    <section className="coach-panel settings-panel settings-panel--preference" aria-labelledby="reminder-settings-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Reminder preference</p><h3 id="reminder-settings-heading">Daily coaching reminder</h3></div><span className="status-chip">{enabled ? "Enabled" : "Disabled"}</span></div><form className="coach-form coach-form-grid" onSubmit={save}><label className="checkbox-field field-wide"><input disabled={state === "loading"} type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /><span>Enable the daily reminder preference</span></label><label><span>Local time</span><input disabled={state === "loading"} type="time" value={localTime} onChange={(event) => setLocalTime(event.target.value)} /></label><label><span>IANA timezone</span><input disabled={state === "loading"} value={timezone} onChange={(event) => setTimezone(event.target.value)} /></label><button className="button button-primary field-wide" disabled={state === "loading"} type="submit">Save preferences</button></form><StatusLine state={state} message={message} /></section>
-    <section className="coach-panel settings-panel settings-panel--privacy" aria-labelledby="settings-privacy-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Privacy boundary</p><h3 id="settings-privacy-heading">Structured coaching context only</h3></div><span className="status-chip">Local control</span></div><p>The app shares only the selected structured coaching context used for the handoff. Reminder preferences never scan notes or change an approved plan.</p></section>
-    <section className="coach-panel settings-panel settings-panel--operations" aria-labelledby="handoff-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Operations</p><h3 id="handoff-heading">Recurring motivation setup</h3></div><span className="status-chip">{handoffStatus}</span></div><p>Generate a versioned handoff for Codex. The app stores your preference; Codex owns the recurring task. A prepared handoff is not a scheduled reminder.</p><div className="coach-actions"><button className="button button-primary" type="button" onClick={() => void generateHandoff()}>Generate handoff</button><button className="button button-secondary" disabled={!handoff} type="button" onClick={() => void copyHandoff()}>Copy handoff</button></div>{handoff ? <textarea className="handoff-output" aria-label="Generated Codex reminder handoff" readOnly rows={7} value={handoff} /> : null}
-      <div className="external-confirmation"><h4>Confirm external setup</h4><p className="field-help">After you create the recurring Codex task, enter its task ID or link and explicitly confirm it here. This records your confirmation; the app does not infer delivery.</p><label><span>External task reference</span><input value={externalReference} onChange={(event) => setExternalReference(event.target.value)} placeholder="Codex task ID or link" /></label><div className="coach-actions"><button className="button button-primary" disabled={automationState === "loading" || externalStatus !== "prepared" || !externalReference.trim()} type="button" onClick={() => void confirmExternalAutomation("scheduled")}>Confirm scheduled externally</button><button className="button button-secondary" disabled={automationState === "loading" || externalStatus === "not_configured" || externalStatus === "disabled"} type="button" onClick={() => void confirmExternalAutomation("attention")}>Mark setup needs attention</button></div><StatusLine state={automationState} message={automationMessage} /></div>
-      <dl className="status-list"><div><dt>App preference</dt><dd>{state === "success" ? "Saved" : "Not yet saved"}</dd></div><div><dt>Handoff</dt><dd>{handoffStatus}</dd></div><div><dt>External automation</dt><dd>{externalAutomationStatusLabel(externalStatus)}</dd></div><div><dt>Coaching context</dt><dd className="context-reference">{contextReference}</dd></div></dl></section>
+  return <CoachShell page="settings" title="Settings" subtitle="Local coaching preferences and Codex reminder handoff" meta={baseline ? `${baseline.localTime} · ${baseline.timezone}` : "Checking preferences"}>
+    <h2 className="sr-only">Settings sections</h2>
+    {returnTo !== "/dashboard/settings" ? <section className="coach-panel"><p>Return to the import recovery without changing a preference or connection.</p><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></section> : null}
+    <details className="settings-group" open={settingsGroup === "preferences"} onToggle={(event) => { if (event.currentTarget.open) setSettingsGroup("preferences"); }}><summary>Preferences <span className="status-chip">{baseline ? (baseline.enabled ? "Enabled" : "Disabled") : "Unavailable"}</span></summary><section className="coach-panel settings-panel settings-panel--preference" aria-labelledby="reminder-settings-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Reminder preference</p><h3 id="reminder-settings-heading">Daily coaching reminder</h3></div></div>{preferencesRead.status === "error" && !preferencesRead.data ? <><p className="quiet-copy">Preferences could not be loaded. No editable defaults are shown until the saved preference is read.</p><button className="button button-primary" type="button" onClick={() => void loadPreferences()}>Retry preferences</button><StatusLine state="error" message={preferencesRead.message} /></> : <form className="coach-form coach-form-grid" onSubmit={save}><label className="checkbox-field field-wide"><input disabled={saveState === "loading" || preferencesRead.status === "refreshing"} type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /><span>Enable the daily reminder preference</span></label><label><span>Local time</span><input disabled={saveState === "loading"} type="time" value={draft.localTime} onChange={(event) => setDraft({ ...draft, localTime: event.target.value })} /></label><label><span>IANA timezone</span><input disabled={saveState === "loading"} value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} /></label><button className="button button-primary field-wide" disabled={saveState === "loading" || !dirty || needsAuthoritativeRecovery} type="submit">{saveState === "loading" ? "Saving…" : "Save preferences"}</button></form>} {needsAuthoritativeRecovery ? <button className="button button-secondary" type="button" onClick={() => void loadPreferences()}>Reread saved preferences</button> : null}{preferencesRead.status === "error" && preferencesRead.data ? <><StatusLine state="error" message={`${preferencesRead.message} Showing the last confirmed settings.`} /><button className="button button-secondary" type="button" onClick={() => void loadPreferences()}>Retry preferences</button></> : null}<StatusLine state={saveState} message={saveMessage} /></section></details>
+    <details className="settings-group" open={settingsGroup === "privacy"} onToggle={(event) => { if (event.currentTarget.open) setSettingsGroup("privacy"); }}><summary>Privacy <span className="status-chip">Local control</span></summary><section className="coach-panel settings-panel settings-panel--privacy" aria-labelledby="settings-privacy-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Privacy boundary</p><h3 id="settings-privacy-heading">Structured coaching context only</h3></div></div><p>The app shares only the selected structured coaching context used for the handoff. Reminder preferences never scan notes or change an approved plan.</p></section></details>
+    <details className="settings-group" open={settingsGroup === "reminders"} onToggle={(event) => { if (event.currentTarget.open) setSettingsGroup("reminders"); }}><summary>Reminder handoff <span className="status-chip">{handoffStatusLabel(externalStatus)}</span></summary><section className="coach-panel settings-panel settings-panel--operations" aria-labelledby="handoff-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Reminder handoff</p><h3 id="handoff-heading" tabIndex={-1}>Recurring motivation setup</h3></div></div><p>Generate a versioned handoff for Codex. The app stores your preference; Codex owns the recurring task. A prepared handoff is not a scheduled reminder.</p>{needsAuthoritativeRecovery ? <p className="quiet-copy">A reminder write outcome is unknown. Reread saved preferences before taking another reminder action.</p> : stage === "preferences-unavailable" ? <p className="quiet-copy">Load preferences before preparing a handoff.</p> : stage === "editing" ? <p className="quiet-copy">Save your changed preferences before preparing a handoff.</p> : stage === "disabled" ? <p className="quiet-copy">Reminders are disabled. Return to Preferences to enable them; this will not change a task you may already have created in Codex.</p> : stage === "ready" || stage === "attention" ? <div className="coach-actions"><button className="button button-primary" type="button" disabled={automationState === "loading"} onClick={() => void generateHandoff()}>{stage === "attention" ? "Prepare a new handoff" : "Prepare reminder handoff"}</button></div> : stage === "continue" ? <div className="coach-actions"><button className="button button-primary" type="button" onClick={() => { setContinuing(true); requestAnimationFrame(() => document.getElementById("external-task-reference")?.focus()); }}>Continue to confirmation</button><button className="button button-secondary" type="button" onClick={() => void copyHandoff()}>Copy instructions</button></div> : stage === "confirm" ? <div className="external-confirmation"><h4>Confirm external setup</h4><p className="field-help">Create or update the recurring Codex task, then paste its ID or link. This records only your confirmation; delivery is not verified.</p><label htmlFor="external-task-reference"><span>External task reference</span><input id="external-task-reference" value={externalTaskRef} onChange={(event) => setExternalTaskRef(event.target.value)} placeholder="Codex task ID or link" /></label><div className="coach-actions"><button className="button button-primary" disabled={automationState === "loading" || !externalTaskRef.trim()} type="button" onClick={() => void confirmExternalAutomation("scheduled")}>{automationState === "loading" ? "Confirming…" : "Confirm scheduled externally"}</button><button className="button button-secondary" disabled={automationState === "loading"} type="button" onClick={() => void confirmExternalAutomation("attention")}>Mark setup needs attention</button></div></div> : <p className="quiet-copy">Scheduled is recorded from your confirmation only. The app cannot verify external delivery.</p>}{handoff ? <textarea className="handoff-output" aria-label="Generated Codex reminder handoff" readOnly rows={7} value={handoff} /> : null}{artifactReference ? <p className="field-help context-reference">Prepared artifact: {artifactReference}. This is not an external task reference.</p> : null}<StatusLine state={automationState} message={automationMessage} /><dl className="status-list"><div><dt>App preference</dt><dd>{baseline ? (dirty ? "Unsaved changes" : "Confirmed") : "Unknown"}</dd></div><div><dt>External automation</dt><dd>{externalAutomationStatusLabel(externalStatus)}</dd></div><div><dt>Coaching context</dt><dd className="context-reference">{contextRead.status === "loading" ? "Checking…" : contextRead.status === "error" ? "Could not be checked" : contextRead.data ?? "No published coaching context"}</dd></div></dl>{contextRead.status === "error" ? <button className="button button-secondary" type="button" onClick={() => void loadContext()}>Retry context</button> : null}</section></details>
   </CoachShell>;
 }

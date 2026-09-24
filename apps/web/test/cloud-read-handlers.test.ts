@@ -113,8 +113,7 @@ test("cloud Calendar and Today work from approved structured data with no local 
     getComposition,
   );
   const withHistoryBody = await withHistory.json();
-  assert.equal(withHistoryBody.data.historicalSessions[0].planVersion, retiredPlan.version);
-  assert.equal(withHistoryBody.data.historicalSessions[0].scheduledDate, "2026-08-10");
+  assert.deepEqual(withHistoryBody.data.historicalSessions, []);
 });
 
 test("cloud Calendar preserves the approved schedule when supplemental history or activities fail", async () => {
@@ -132,6 +131,47 @@ test("cloud Calendar preserves the approved schedule when supplemental history o
   assert.equal(body.data.sessions[0].id, "run-a");
   assert.deepEqual(body.data.historicalSessions, []);
   assert.deepEqual(body.data.activities, []);
+  assert.equal(body.data.activitiesReadStatus, "unavailable");
+});
+
+test("cloud Calendar falls back to the approved plan when the effective session projection is unavailable", async () => {
+  const composition = fakeComposition([]);
+  composition.calendarSessions.listActiveCalendar = async () => { throw new Error("synthetic calendar projection outage"); };
+  const calendar = await handleCloudCalendar(
+    security,
+    new Request("http://localhost/api/v1/coaching/calendar?from=2026-08-10&to=2026-08-16"),
+    () => composition,
+  );
+  const body = await calendar.json();
+
+  assert.equal(calendar.status, 200);
+  assert.equal(body.data.sessions[0].id, "run-a");
+  assert.equal(body.data.sessions[0].effectiveDate, "2026-08-10");
+  assert.match(body.data.sessions[0].warnings[0], /approved plan source/u);
+});
+
+test("cloud Calendar recovers from an invalid effective session projection response", async () => {
+  const composition = fakeComposition([]);
+  composition.calendarSessions.listActiveCalendar = async () => [{
+    ...plan.workouts[0],
+    prescribedDate: plan.workouts[0].scheduledDate,
+    effectiveDate: plan.workouts[0].scheduledDate,
+    originalDate: plan.workouts[0].scheduledDate,
+    status: "upcoming" as const,
+    revision: 0,
+    warnings: [],
+    amendments: [],
+  }];
+  const calendar = await handleCloudCalendar(
+    security,
+    new Request("http://localhost/api/v1/coaching/calendar?from=2026-08-10&to=2026-08-16"),
+    () => composition,
+  );
+  const body = await calendar.json();
+
+  assert.equal(calendar.status, 200);
+  assert.equal(body.data.sessions[0].id, "run-a");
+  assert.match(body.data.sessions[0].warnings[0], /approved plan source/u);
 });
 
 test("cloud coaching handlers reject invalid dates and missing foreign resources without disclosure", async () => {

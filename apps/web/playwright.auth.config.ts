@@ -13,7 +13,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   outputDir: path.join(e2eRoot, "auth-test-results"),
-  reporter: [["list"]],
+  reporter: [["list"], ["json", { outputFile: path.join(e2eRoot, "results", "auth.json") }]],
   use: {
     baseURL,
     trace: "retain-on-failure",
@@ -29,6 +29,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
+      RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-auth-${process.env.RACEPREDICTOR_E2E_RUN_ID}`,
       AUTH_SECRET: "",
       AUTH_GITHUB_ID: "",
       AUTH_GITHUB_SECRET: "",

@@ -5,6 +5,8 @@ import { WindowsDpapiCredentialStore } from "./device-credential-store.js";
 import { LocalCloudSyncAgent } from "./local-sync-agent.js";
 import { RacePredictorSyncClient } from "./local-sync-client.js";
 import { LocalSyncProjectionRepository } from "./local-sync-projection.js";
+import { readSelectedSecondBrainSource } from "./obsidian-selected-context.js";
+import { runCloudActivityReviewBatch } from "./local-activity-review-cloud-worker.js";
 
 const command = process.argv[2];
 const localAppData = process.env.LOCALAPPDATA;
@@ -39,6 +41,29 @@ if (command === "enroll") {
   if (command === "sync") {
     const result = await agent.sync();
     process.stdout.write(`Local sync complete at cursor ${result.cursor ?? "empty"}; ${result.applied} change(s) applied.\n`);
+  } else if (command === "sync-and-publish") {
+    const result = await agent.syncAndPublish(() => readSelectedSecondBrainSource({ vaultPath }));
+    if (result.sync.status === "fulfilled") {
+      process.stdout.write(`Local sync complete at cursor ${result.sync.value.cursor ?? "empty"}; ${result.sync.value.applied} change(s) applied.\n`);
+    }
+    if (result.publication.status === "fulfilled") {
+      const snapshot = result.publication.value.snapshot;
+      process.stdout.write(snapshot
+        ? `Selected Second Brain revision ${snapshot.revision} published.\n`
+        : "Selected Second Brain context is unchanged.\n");
+    }
+    if (result.sync.status === "fulfilled" && result.publication.status === "fulfilled" && process.env.OPENAI_API_KEY) {
+      const reviewResult = await runCloudActivityReviewBatch({
+        databasePath,
+        athleteId,
+        token: await credentialStore.load(),
+        client: new RacePredictorSyncClient({ baseUrl }),
+      });
+      process.stdout.write(`Activity coach review job: ${JSON.stringify(reviewResult)}\n`);
+    }
+    if (result.sync.status === "rejected" || result.source.status === "rejected" || result.publication.status === "rejected") {
+      throw new Error("Local sync-and-publish did not complete; inspect the local sync status for the failed direction");
+    }
   } else if (command === "publish-context") {
     const inputPath = process.argv[3];
     if (!inputPath) throw new Error("publish-context requires one explicit structured JSON input path");
@@ -52,6 +77,6 @@ if (command === "enroll") {
     const result = await agent.publishApprovedPlan(plan);
     process.stdout.write(`Approved plan ${result.data.plan.id} published.\n`);
   } else {
-    throw new Error("Expected enroll, sync, publish-context, or publish-plan command");
+    throw new Error("Expected enroll, sync, sync-and-publish, publish-context, or publish-plan command");
   }
 }

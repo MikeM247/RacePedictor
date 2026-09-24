@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AthleteScope } from "../../../packages/core/src/contracts/auth.ts";
 import { buildActorContext } from "../../../packages/core/src/contracts/auth.ts";
 import type { StravaConnectionService } from "../../../packages/core/src/use-cases/strava-connection.ts";
+import { StravaConnectionError } from "../../../packages/core/src/use-cases/strava-connection.ts";
 import { POST as defaultConnect } from "../app/api/v1/providers/strava/connect/route.ts";
 import {
   handleStravaBackfill,
@@ -231,8 +232,19 @@ test("callback redirects only to the stored same-origin target and disconnect is
     }),
   );
   assert.equal(callback.status, 303);
-  assert.equal(callback.headers.get("location"), "https://race.example/dashboard/settings?provider=strava&connection=connected");
+  assert.equal(callback.headers.get("location"), "https://race.example/dashboard/settings?provider=strava&connection=connected&backfill=queued");
   assert.equal(initialBackfillAthlete, "athlete-a");
+
+  const queueUnavailable = await handleStravaCallback(
+    authenticated(),
+    new Request(`https://race.example/api/v1/providers/strava/callback?state=${"s".repeat(43)}&code=code&scope=activity%3Aread_all`),
+    () => ({
+      redirectUri,
+      service,
+      async enqueueInitialBackfill() { throw new Error("queue unavailable"); },
+    }),
+  );
+  assert.equal(queueUnavailable.headers.get("location"), "https://race.example/dashboard/settings?provider=strava&connection=connected&backfill=unavailable");
 
   const disconnected = await handleStravaDisconnect(
     authenticated(),
@@ -242,6 +254,24 @@ test("callback redirects only to the stored same-origin target and disconnect is
   const body = await disconnected.json();
   assert.equal(body.data.connection.status, "disconnected");
   assert.equal(body.data.providerRevocationConfirmed, true);
+});
+
+test("OAuth access denial remains an API error; it is not faked as a trusted recovery redirect", async () => {
+  const service = mockService({
+    async complete() { throw new StravaConnectionError(400, "OAUTH_ACCESS_DENIED", "Strava access was not granted"); },
+  });
+  await assert.rejects(
+    handleStravaCallback(
+      authenticated(),
+      new Request(`https://race.example/api/v1/providers/strava/callback?state=${"s".repeat(43)}&error=access_denied`),
+      () => ({ redirectUri, service }),
+    ),
+    (error: unknown) => {
+      assert.equal((error as { status?: number }).status, 400);
+      assert.equal((error as { code?: string }).code, "OAUTH_ACCESS_DENIED");
+      return true;
+    },
+  );
 });
 
 test("owner can queue only a bounded athlete-scoped backfill", async () => {

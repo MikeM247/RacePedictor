@@ -7,6 +7,7 @@ import {
   PrismaOnlineStatusRepository,
   PrismaSyncChangeRepository,
   PrismaTrainingPlanProjectionActivator,
+  PrismaActivityReviewRepository,
 } from "../../../../packages/db/src/cloud/index.js";
 import { assertServerRuntime } from "./server-runtime.ts";
 
@@ -24,6 +25,7 @@ function buildComposition() {
     dashboard: new PrismaCloudDashboardRepository({ prisma }),
     status: new PrismaOnlineStatusRepository({ prisma }),
     changes: new PrismaSyncChangeRepository({ prisma }),
+    activityReviews: new PrismaActivityReviewRepository({ prisma }),
   });
 }
 

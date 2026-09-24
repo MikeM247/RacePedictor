@@ -71,3 +71,16 @@ test("returns a recoverable error when the snapshot is missing", async () => {
   assert.equal(result.fetchStatus, "error");
   if (result.fetchStatus === "error") assert.match(result.errorMessage, /Run the Garmin refresh/);
 });
+
+test("preserves canonical driver and trend metadata, while an incomplete legacy snapshot remains unavailable", () => {
+  const complete = structuredClone(snapshot) as Record<string, any>;
+  complete.data.driverContributions = [{ key: "load", label: "Recent load", contributionPct: -4, direction: "negative", confidence: 0.7 }];
+  complete.data.featureTrendPoints = [{ weekStart: "2026-08-03", featureKey: "load", featureLabel: "Weekly load", value: 0, unit: "points" }];
+  const view = toDashboardViewModel(complete);
+  assert.deepEqual(view.driverContributions[0], complete.data.driverContributions[0]);
+  assert.deepEqual(view.featureTrendPoints[0], complete.data.featureTrendPoints[0]);
+
+  const incomplete = structuredClone(complete);
+  delete incomplete.data.featureTrendPoints[0].featureLabel;
+  assert.throws(() => toDashboardViewModel(incomplete), /featureTrendPoints.featureLabel/);
+});

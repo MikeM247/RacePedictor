@@ -784,8 +784,14 @@ export const createLocalCoachingRepository = ({
       .map(mapGoal);
   };
 
-  const getHistoryCoverage = () => {
+  const getHistoryCoverage = ({ through } = {}) => {
     ensureOpen();
+    const cutoff = through === undefined ? null : requireString(through, "through");
+    if (cutoff !== null && !Number.isFinite(Date.parse(cutoff))) {
+      fail("VALIDATION_ERROR", "through must be a valid timestamp");
+    }
+    const historyFilter = cutoff === null ? "" : " AND occurred_at <= ?";
+    const parameters = cutoff === null ? [normalizedAthleteId] : [normalizedAthleteId, cutoff];
     const table = database.prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'activities'
     `).get();
@@ -802,12 +808,12 @@ export const createLocalCoachingRepository = ({
     const coverage = database.prepare(`
       SELECT COUNT(*) AS activityCount, MIN(occurred_at) AS earliestOccurredAt,
         MAX(occurred_at) AS latestOccurredAt, COALESCE(SUM(distance_m), 0) AS totalDistanceM
-      FROM activities WHERE athlete_id = ?
-    `).get(normalizedAthleteId);
+      FROM activities WHERE athlete_id = ?${historyFilter}
+    `).get(...parameters);
     const sourceTypes = database.prepare(`
       SELECT DISTINCT source_type AS sourceType
-      FROM activities WHERE athlete_id = ? ORDER BY source_type
-    `).all(normalizedAthleteId).map((row) => row.sourceType);
+      FROM activities WHERE athlete_id = ?${historyFilter} ORDER BY source_type
+    `).all(...parameters).map((row) => row.sourceType);
     return {
       athleteId: normalizedAthleteId,
       activityCount: coverage.activityCount,

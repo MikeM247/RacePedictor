@@ -49,9 +49,7 @@ export class PrismaCalendarSessionAmendmentRepository {
         orderBy: [{ sessionId: "asc" }],
         include: { amendments: { orderBy: [{ revision: "asc" }] } },
       });
-      const projected = rows.length === plan.workouts.length
-        ? rows.map(projectSession)
-        : fallbackSessions(plan, rows);
+      const projected = fallbackSessions(plan, rows);
       return projected.filter((session) => session.effectiveDate >= from && session.effectiveDate <= to);
     } catch (error) {
       if (!(error instanceof CalendarSessionAmendmentError)) reportProjectionReadFailure("calendar", error);
@@ -398,7 +396,16 @@ function projectReviewAmendment(row) {
 
 function fallbackSessions(plan, rows) {
   const byId = new Map(rows.map((row) => [row.sessionId, row]));
-  return plan.workouts.map((workout) => byId.has(workout.id) ? projectSession(byId.get(workout.id)) : fallbackSession(plan, workout));
+  return plan.workouts.map((workout) => {
+    const row = byId.get(workout.id);
+    if (!row) return fallbackSession(plan, workout);
+    try {
+      return projectSession(row);
+    } catch (error) {
+      reportProjectionReadFailure("calendar-session", error);
+      return fallbackSession(plan, workout);
+    }
+  });
 }
 
 function fallbackSession(plan, workout) {

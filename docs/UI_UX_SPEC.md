@@ -9,7 +9,7 @@
 ## Dashboard Information Architecture (Desktop-First)
 
 ### Global Shell
-- Race Predictor branding uses the supplied runner-and-prediction logo in the sign-in experience and a cropped runner mark in the dashboard rail; the tab uses the dedicated Race Predictor app icon.
+- Race Predictor branding uses the supplied runner-and-prediction logo in the sign-in experience and a tightly cropped transparent version in dashboard navigation; the tab uses the dedicated Race Predictor app icon.
 - Initial analytics navigation order:
   1. Overview
   2. Activities

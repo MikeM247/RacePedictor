@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { isDashboardPageCurrent, type DashboardPage } from "./dashboard-navigation-state";
 
@@ -38,8 +39,15 @@ export function DashboardNavigation({ activePage }: DashboardNavigationProps) {
       <a className="dashboard-skip-link" href="#dashboard-main-content">Skip to page content</a>
       <aside className="dashboard-nav" aria-label="Application navigation">
         <Link className="dashboard-brand" href="/dashboard" aria-label="Race Predictor Home">
-          <span className="dashboard-brand-mark" aria-hidden="true" />
-          <span className="dashboard-brand-copy"><strong>Race Predictor</strong><small>Night Ops</small></span>
+          <Image
+            src="/racepredictor-brand.png"
+            alt=""
+            aria-hidden="true"
+            width={782}
+            height={616}
+            sizes="(max-width: 767px) 160px, 190px"
+            priority
+          />
         </Link>
         <nav className="dashboard-nav-primary" aria-label="Primary navigation">
           {primaryLinks.map(renderLink)}

@@ -39,46 +39,20 @@
 }
 
 .dashboard-brand {
-  display: flex;
-  gap: 11px;
-  align-items: center;
-  min-width: 0;
+  display: block;
+  flex: 0 0 auto;
+  width: min(100%, 190px);
+  line-height: 0;
   color: var(--rp-text);
   text-decoration: none;
 }
 
-.dashboard-brand-mark {
-  display: grid;
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
-  border: 1px solid color-mix(in srgb, var(--rp-cyan) 72%, var(--rp-border));
-  border-radius: var(--rp-radius-sm);
-  background: url("/racepredictor-logo.png") 48% 32% / 190% no-repeat;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rp-bg) 45%, transparent);
-}
-
-.dashboard-brand-copy {
-  display: grid;
-  min-width: 0;
-  line-height: 1.15;
-}
-
-.dashboard-brand-copy strong {
-  overflow: hidden;
-  font-size: 1rem;
-  letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard-brand-copy small {
-  margin-top: 4px;
-  color: var(--rp-cyan);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.dashboard-brand img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 0;
+  box-shadow: none;
 }
 
 .dashboard-nav nav {
@@ -693,9 +667,7 @@
 
 @media (max-width: 767px) {
   .dashboard-nav { z-index: 2; padding: 13px 16px 14px; }
-  .dashboard-brand { justify-content: flex-start; }
-  .dashboard-brand-mark { flex-basis: 32px; width: 32px; height: 32px; }
-  .dashboard-brand-copy { display: grid; }
+  .dashboard-nav > .dashboard-brand { width: min(100%, 160px); padding: 0; }
   .dashboard-nav-primary { margin-top: 12px !important; }
   .dashboard-nav-primary,
   .dashboard-nav-secondary { gap: 4px; }

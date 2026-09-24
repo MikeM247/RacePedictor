@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   formatCoachingDate,
   normalizeCalendarSessions,
@@ -9,6 +9,7 @@ import {
   type CalendarSessionView,
 } from "../../lib/coaching-ui-state";
 import { todayCoachingStates, type TodayCoachingState } from "../../lib/today-coaching";
+import { createRecoveryContext, readRecoveryContext, recoveryReturnHref, restoreRecoveryFocus } from "../../lib/recovery-context";
 import "./coaching-ui.css";
 
 type JsonRecord = Record<string, unknown>;
@@ -162,6 +163,25 @@ export function TodayCoachingCard({ compact = false }: { compact?: boolean }) {
   const [weekSessions, setWeekSessions] = useState<CalendarSessionView[]>([]);
   const [weekError, setWeekError] = useState("");
   const [weekRequestVersion, setWeekRequestVersion] = useState(0);
+  const focusedCalendarLauncher = useRef<HTMLAnchorElement | null>(null);
+
+  function openCalendar(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const destination = new URL(event.currentTarget.href);
+    if (destination.origin !== window.location.origin || destination.pathname !== "/dashboard/calendar") return;
+    event.preventDefault();
+    const context = createRecoveryContext({ kind: "home", path: "/dashboard", scrollY: window.scrollY, focusKey: event.currentTarget.id });
+    window.history.replaceState(window.history.state, "", recoveryReturnHref(context, "/dashboard"));
+    window.location.assign(destination.href);
+  }
+
+  function restoreCalendarLauncher(node: HTMLAnchorElement | null) {
+    const context = readRecoveryContext(new URLSearchParams(window.location.search).get("recovery"));
+    if (!node || focusedCalendarLauncher.current === node || context?.kind !== "home" || context.focusKey !== node.id) return;
+    focusedCalendarLauncher.current = node;
+    restoreRecoveryFocus(context);
+    window.requestAnimationFrame(() => node.focus({ preventScroll: true }));
+  }
 
   useEffect(() => {
     let current = true;
@@ -266,7 +286,7 @@ export function TodayCoachingCard({ compact = false }: { compact?: boolean }) {
       </div>
       <div className="today-meta">
         <span className={`status-chip${state === "stale" || state === "missed" ? " status-chip--warning" : state === "skipped" ? " status-chip--muted" : " status-chip--current"}`}>{stateLabels[state]}</span>
-        {session.id && links.session ? <Link className="button button-primary" href={String(links.session)}>View session</Link> : <Link className="button button-secondary" href={String(links.calendar ?? "/dashboard/calendar")}>View calendar</Link>}
+        {session.id && links.session ? <Link id="view-today-session" ref={restoreCalendarLauncher} className="button button-primary" href={String(links.session)} onClick={openCalendar}>View session</Link> : <Link id="view-today-calendar" ref={restoreCalendarLauncher} className="button button-secondary" href={String(links.calendar ?? "/dashboard/calendar")} onClick={openCalendar}>View calendar</Link>}
         <Link className="text-link" href={String(links.plan ?? "/dashboard/plan")}>Open active plan</Link>
       </div>
     </div>

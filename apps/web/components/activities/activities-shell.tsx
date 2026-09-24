@@ -140,7 +140,15 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
   }
   function parentLabel() { const target = explicitParent(); const pathname = target.split("?", 1)[0]; return pathname === "/dashboard/calendar" ? "Back to Calendar" : pathname === "/dashboard" ? "Back to Home" : "Back to Training"; }
   function closeDetail(updateHistory = true) {
-    if (updateHistory && new URLSearchParams(window.location.search).has("activityId")) {
+    const params = new URLSearchParams(window.location.search);
+    if (updateHistory && params.has("activityId")) {
+      const context = recovery ?? readRecoveryContext(params.get("recovery"));
+      const returnTo = safeRecoveryPath(params.get("returnTo"), "/dashboard/activities");
+      // Opening a disclosure saves this detail's presentation state in history.
+      // That must not turn a Home or Calendar deep link into a Training-list return.
+      if (returnTo !== "/dashboard/activities" || context?.kind === "home") {
+        window.location.assign(explicitParent()); return;
+      }
       const state = window.history.state as TrainingHistoryState | null;
       if (state?.racePredictorTraining && state.detailOpen) { window.history.back(); return; }
       window.location.assign(explicitParent()); return;

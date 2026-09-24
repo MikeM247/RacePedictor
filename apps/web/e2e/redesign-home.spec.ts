@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { coachingFixtures, fixturePlan } from "./coaching-fixtures.ts";
 
 const overview = {
   fetchStatus: "success",
@@ -81,9 +82,33 @@ test("F02 Home keeps three groups ordered, presents a qualified latest review, a
   ]);
   await expect(page).toHaveURL(/recovery=/);
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
+  const telemetry = page.locator("details.detail-disclosure").first();
+  await telemetry.locator("summary").click();
+  await expect(telemetry).toHaveAttribute("open", "");
   await page.getByRole("button", { name: "← Back to Home" }).click();
   await expect(page).toHaveURL(/recovery=/);
   await expect(page.getByRole("link", { name: "View full session review" })).toBeFocused();
+  expect(writes).toEqual([]);
+});
+
+test("F02 restores the Home session launcher after Calendar browser Back", async ({ page }) => {
+  const writes: string[] = [];
+  page.on("request", (request) => { if (!["GET", "HEAD"].includes(request.method())) writes.push(`${request.method()} ${new URL(request.url()).pathname}`); });
+  await mockHome(page);
+  await page.unroute("**/api/v1/coaching/today");
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.today()) }));
+  await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.activePlan(fixturePlan())) }));
+  await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.calendar()) }));
+
+  await page.goto("/dashboard");
+  const launcher = page.getByRole("link", { name: "View session" });
+  await expect(launcher).toBeVisible();
+  await launcher.click();
+  await expect(page).toHaveURL(/\/dashboard\/calendar\?session=session_resume/);
+  await expect(page.getByRole("heading", { name: "Plan details" })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/dashboard\?recovery=/);
+  await expect(launcher).toBeFocused();
   expect(writes).toEqual([]);
 });
 

@@ -122,6 +122,26 @@ test("a safe readiness recovery restores the disclosure, selected distance, and 
   await expect(page.getByRole("button", { name: "View readiness" })).toBeFocused();
 });
 
+test("readiness can return from Data Quality before any import without changing evidence", async ({ page }) => {
+  await mockReadiness(page);
+  const writes: string[] = [];
+  page.on("request", (request) => { if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) writes.push(`${request.method()} ${new URL(request.url()).pathname}`); });
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { actor: { activeAthleteId: "f01-athlete" } } }) }));
+  await page.route("**/api/v1/providers/strava/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { connection: { displayStatus: "disconnected" } } }) }));
+
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "View readiness" }).click();
+  await page.getByRole("link", { name: "Review data coverage" }).click();
+  await expect(page.getByRole("heading", { name: "Data Quality" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No file import result yet" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to readiness" })).toBeVisible();
+  await page.getByRole("link", { name: "Return to readiness" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?recovery=.*#readiness$/);
+  await expect(page.getByRole("heading", { name: "Evidence for this outlook" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View readiness" })).toBeFocused();
+  expect(writes).toEqual([]);
+});
+
 test("readiness has no horizontal overflow or hidden caveat at required CSS widths", async ({ page }) => {
   await mockReadiness(page);
   for (const width of [320, 767, 768, 1199, 1200, 1440]) {

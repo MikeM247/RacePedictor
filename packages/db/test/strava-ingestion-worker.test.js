@@ -21,6 +21,7 @@ test("recent backfill status is athlete-scoped and omits private job payload", a
             availableAt: new Date("2026-08-10T10:15:00.000Z"),
             completedAt: null,
             attemptCount: 1,
+            errorCode: "STRAVA_PAYLOAD_INVALID",
           }];
         },
       },
@@ -45,6 +46,7 @@ test("recent backfill status is athlete-scoped and omits private job payload", a
     availableAt: "2026-08-10T10:15:00.000Z",
     completedAt: null,
     attemptCount: 1,
+    diagnosticCode: "STRAVA_PAYLOAD_INVALID",
   }]);
 });
 

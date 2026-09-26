@@ -129,8 +129,8 @@ test("online Activities renders cloud-enveloped Strava data without a client cra
   expect(browserErrors).toEqual([]);
 });
 
-test("Training keeps a queued Strava import visible before workouts arrive", async ({ page }) => {
-  let jobStatus: "queued" | "completed" = "queued";
+test("Training keeps a queued Strava import and its failure diagnostic visible", async ({ page }) => {
+  let jobStatus: "queued" | "completed" | "failed" = "queued";
   await page.route("**/api/v1/activities**", (route) => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ data: { items: [] } }),
   }));
@@ -139,6 +139,7 @@ test("Training keeps a queued Strava import visible before workouts arrive", asy
       jobId: "backfill-a", status: jobStatus, createdAt: "2026-09-26T17:00:00.000Z",
       updatedAt: "2026-09-26T17:05:00.000Z", availableAt: "2026-09-26T17:00:00.000Z",
       completedAt: jobStatus === "completed" ? "2026-09-26T17:05:00.000Z" : null, attemptCount: 1,
+      diagnosticCode: jobStatus === "failed" ? "STRAVA_PAYLOAD_INVALID" : null,
     }] } }),
   }));
   await page.goto("/dashboard/activities");
@@ -151,6 +152,9 @@ test("Training keeps a queued Strava import visible before workouts arrive", asy
   await notice.getByRole("button", { name: "Refresh status" }).click();
   await expect(notice).toContainText("Finished");
   await expect(notice).toContainText("does not confirm every workout was accepted");
+  jobStatus = "failed";
+  await notice.getByRole("button", { name: "Refresh status" }).click();
+  await expect(notice).toContainText("Diagnostic code: STRAVA_PAYLOAD_INVALID");
 });
 
 test("online Activities handles a malformed success envelope as a recoverable error", async ({ page }) => {

@@ -84,6 +84,7 @@ export class PrismaStravaIngestionJobRepository {
         availableAt: true,
         completedAt: true,
         attemptCount: true,
+        errorCode: true,
       },
     });
     return immutableCopy(jobs.map((job) => ({
@@ -94,6 +95,7 @@ export class PrismaStravaIngestionJobRepository {
       availableAt: job.availableAt.toISOString(),
       completedAt: job.completedAt?.toISOString() ?? null,
       attemptCount: job.attemptCount,
+      diagnosticCode: job.errorCode,
     })));
   }
 

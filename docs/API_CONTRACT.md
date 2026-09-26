@@ -216,6 +216,7 @@ All new endpoints remain additive under `/api/v1`, require an authenticated acto
 
 - Health/session: non-sensitive health plus authenticated actor/session state.
 - Provider lifecycle: Strava connect, callback, status, bounded backfill, and disconnect.
+- `GET /api/v1/providers/strava/backfill` returns recent athlete-scoped import summaries, including the saved diagnostic code when a job needs attention; it never returns job payloads or provider credentials.
 - Webhook/jobs: public Strava subscription validation/receipt with durable idempotent handoff; protected internal processing and reconciliation triggers.
 - Operations: `GET /api/v1/operations/status` requires the owner session and returns only measured planning signals, warning/hard-stop thresholds, processing state, and supported owner action. `GET|POST /api/v1/internal/reconciliation` requires `Authorization: Bearer $CRON_SECRET`; GET is the daily Vercel Cron contract and POST is the bounded operator trigger.
 - Cloud reads/status: existing activity/dashboard/coaching reads backed by cloud services plus independent provider-ingestion, activity, local-device, and Second Brain freshness.

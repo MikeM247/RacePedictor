@@ -61,6 +61,7 @@ export type StravaBackfillJobSummary = Readonly<{
   availableAt: string;
   completedAt: string | null;
   attemptCount: number;
+  diagnosticCode: string | null;
 }>;
 
 /** Durable state transitions must compare the claim's lease token. */

@@ -339,6 +339,7 @@ test("owner can revisit saved Strava import status within the active athlete sco
     availableAt: "2026-09-26T17:15:00.000Z",
     completedAt: null,
     attemptCount: 1,
+    diagnosticCode: null,
   }];
   const response = await handleStravaBackfillStatus(
     authenticated(),

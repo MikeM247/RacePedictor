@@ -10,6 +10,7 @@ const job = {
   availableAt: "2026-09-26T10:15:00.000Z",
   completedAt: null,
   attemptCount: 1,
+  diagnosticCode: null,
 };
 
 test("Strava import labels distinguish queued, retry, completion, and failure", () => {
@@ -19,4 +20,6 @@ test("Strava import labels distinguish queued, retry, completion, and failure", 
   assert.match(backfillStatusMessage({ ...job, status: "completed", completedAt: job.availableAt }, now), /Processing finished/u);
   assert.equal(backfillStatusLabel({ ...job, status: "dead_letter" }, now), "Needs attention");
   assert.match(backfillStatusMessage({ ...job, status: "failed" }, now), /stopped before it finished/u);
+  assert.match(backfillStatusMessage({ ...job, status: "failed", diagnosticCode: "STRAVA_PAYLOAD_INVALID" }, now), /Diagnostic code: STRAVA_PAYLOAD_INVALID/u);
+  assert.match(backfillStatusMessage({ ...job, status: "failed", diagnosticCode: "STRAVA_REAUTH_REQUIRED" }, now), /Reconnect Strava/u);
 });

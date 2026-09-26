@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { planProposalV2Schema, raceMilestoneSchema } from "../../../packages/core/src/contracts/coaching.ts";
+import { goalTargetSchema, planProposalV2Schema, raceMilestoneSchema } from "../../../packages/core/src/contracts/coaching.ts";
+import { z } from "zod";
 import { calculatePlanProposalContentHash, LocalCoachingService } from "../lib/local-coaching-service.ts";
 
 function argument(name: string) {
@@ -15,21 +16,25 @@ if (!structurePath) throw new Error("Expected --goal-structure <path>");
 const service = new LocalCoachingService();
 try {
   const activePlan = service.getActivePlan();
-  const settledGoal = service.getSettledGoal();
-  if (!activePlan || !settledGoal) throw new Error("An active plan and settled goal are required");
+  if (!activePlan) throw new Error("An active plan is required");
 
   const raw = JSON.parse(await readFile(path.resolve(structurePath), "utf8")) as Record<string, unknown>;
-  if (raw.primaryGoalId !== settledGoal.id) throw new Error("Structured primary goal must match the settled goal");
+  const primaryGoal = z.object({
+    title: z.string().trim().min(1).max(200),
+    why: z.string().trim().min(1).max(2000),
+    target: goalTargetSchema,
+  }).strict().parse(raw.primaryGoal);
+  if (primaryGoal.target.kind !== "performance") throw new Error("Race milestones require a performance primary goal");
   const milestones = raceMilestoneSchema.array().max(12).parse(raw.milestones);
-  const context = await service.publishCoachingContext();
+  const planningGoal = service.createGoal(primaryGoal);
+  const context = await service.publishCoachingContext({ planningGoalId: planningGoal.id });
   const { approval } = activePlan;
-  const { status: _goalStatus, settledAt: _settledAt, settledBy: _settledBy, ...goalBody } = settledGoal;
   const sessionIds = new Map(activePlan.workouts.map((workout) => [workout.id, `session_${randomUUID()}`]));
   const candidate = {
     id: `proposal_goal_structure_${randomUUID()}`,
     athleteId: activePlan.athleteId,
-    goalId: activePlan.goalId,
-    goalRevision: activePlan.goalRevision,
+    goalId: planningGoal.id,
+    goalRevision: planningGoal.revision,
     routineRevision: activePlan.routineRevision,
     version: activePlan.version + 1,
     revision: 1,
@@ -47,7 +52,7 @@ try {
     workouts: activePlan.workouts.map((workout) => ({ ...workout, id: sessionIds.get(workout.id)! })),
     createdAt: new Date().toISOString(),
     status: "proposed" as const,
-    proposedGoal: { ...goalBody, status: "draft" as const },
+    proposedGoal: planningGoal,
     milestones,
     goalRationale: approval.goalRationale,
     rationale: approval.rationale,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatCoachingDate } from "../../lib/coaching-ui-state";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -36,11 +37,24 @@ function targetLabel(workout: JsonRecord) {
   return parts.length > 0 ? parts.join(" · ") : "Target not specified";
 }
 
+function raceTimeLabel(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return [hours, minutes, remainder].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+function distanceLabel(meters: number) {
+  return `${(meters / 1000).toLocaleString("en-ZA", { maximumFractionDigits: 1 })} km`;
+}
+
 export function ActivePlanOverview({ plan, today }: { plan: JsonRecord; today: string }) {
   const weeks = Array.isArray(plan.weeklyStructure) ? plan.weeklyStructure.map(asRecord) : [];
   const workouts = Array.isArray(plan.workouts) ? plan.workouts.map(asRecord) : [];
   const approval = asRecord(plan.approval);
-  const proposedGoal = asRecord(plan.proposedGoal);
+  const review = asRecord(approval.review);
+  const goalTarget = asRecord(review.goalTarget);
+  const milestones = Array.isArray(plan.milestones) ? plan.milestones.map(asRecord) : [];
   const assumptions = strings(plan.assumptions ?? approval.assumptions);
   const cautions = strings(plan.cautions ?? approval.cautions);
   const rationale = String(plan.rationale ?? approval.rationale ?? "No approved rationale was supplied.");
@@ -61,7 +75,7 @@ export function ActivePlanOverview({ plan, today }: { plan: JsonRecord; today: s
   const activeWeekSessions = activeWeek
     ? strings(activeWeek.sessionIds).map((id) => workoutById.get(id)).filter((workout): workout is JsonRecord => Boolean(workout))
     : [];
-  const goalTitle = typeof proposedGoal.title === "string" ? proposedGoal.title : null;
+  const goalTitle = typeof review.goalTitle === "string" ? review.goalTitle : null;
 
   return <div className="active-plan-overview">
     {progress ? <section className="plan-progress" aria-labelledby="plan-progress-heading">
@@ -70,7 +84,9 @@ export function ActivePlanOverview({ plan, today }: { plan: JsonRecord; today: s
       <p>{progress.elapsedDays} approved calendar day{progress.elapsedDays === 1 ? "" : "s"} elapsed. This is date progress, not workout completion.</p>
     </section> : null}
 
-    {goalTitle ? <section className="plan-fact-block"><p className="eyebrow">Approved goal</p><h3>{goalTitle}</h3></section> : null}
+    {goalTitle ? <section className="plan-fact-block"><p className="eyebrow">Approved goal</p><h3>{goalTitle}</h3>{goalTarget.kind === "performance" ? <p>{distanceLabel(Number(goalTarget.distanceMeters))} · {formatCoachingDate(String(goalTarget.targetDate), String(plan.timezone ?? "UTC"))}{Number(goalTarget.targetTimeSeconds) > 0 ? ` · ${raceTimeLabel(Number(goalTarget.targetTimeSeconds))}` : ""}</p> : null}
+      {milestones.length > 0 ? <div className="plan-goal-milestones"><h4>Approved milestones</h4><ul>{milestones.map((milestone, index) => <li key={String(milestone.id ?? index)}><strong>{String(milestone.title ?? "Milestone")}</strong><span>{distanceLabel(Number(milestone.distanceMeters))} · {formatCoachingDate(String(milestone.targetDate), String(plan.timezone ?? "UTC"))} · {raceTimeLabel(Number(milestone.targetTimeSeconds))}</span>{milestone.eventName ? <p>{String(milestone.eventName)}</p> : null}</li>)}</ul></div> : null}
+    </section> : null}
 
     <section className="plan-week-browser" aria-labelledby="plan-weeks-heading">
       <div className="plan-section-heading"><div><p className="eyebrow">Weekly rhythm</p><h3 id="plan-weeks-heading">Sessions by explicit calendar week</h3></div><span className="status-chip">{weeks.length} week{weeks.length === 1 ? "" : "s"}</span></div>

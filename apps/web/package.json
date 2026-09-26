@@ -15,6 +15,7 @@
     "test:e2e:local": "node scripts/assert-e2e-port.mjs 3311 && playwright test --config playwright.config.ts && node scripts/assert-e2e-port.mjs 3314 && playwright test --config playwright.home.local.config.ts && node scripts/assert-e2e-port.mjs 3313 && playwright test --config playwright.readiness.local.config.ts",
     "test:e2e:online": "playwright test --config playwright.online.config.ts",
     "test:e2e:auth": "playwright test --config playwright.auth.config.ts",
+    "coaching:propose-goal-structure": "node --experimental-strip-types scripts/propose-goal-structure.ts",
     "coaching:today": "node --experimental-strip-types scripts/read-today-coaching.ts"
   },
   "dependencies": {

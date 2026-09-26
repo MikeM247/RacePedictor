@@ -92,6 +92,8 @@
 .plan-progress,.plan-fact-block,.plan-week-browser,.plan-review-notes{padding:13px;border:1px solid var(--rp-border,#293b4e);border-radius:8px;background:var(--rp-bg,#07111d)}
 .plan-progress-copy,.plan-section-heading{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
 .plan-progress-copy h3,.plan-section-heading h3,.plan-fact-block h3,.plan-week-detail h4{margin:0}
+.plan-goal-milestones{margin-top:14px;padding-top:12px;border-top:1px solid var(--rp-border,#293b4e)}
+.plan-goal-milestones h4{margin:0 0 8px}.plan-goal-milestones ul{display:grid;gap:10px;margin:0;padding-left:20px}.plan-goal-milestones li{color:var(--rp-text-muted,#a9b6c6)}.plan-goal-milestones li strong,.plan-goal-milestones li span{display:block;color:var(--rp-text,#f5f8fc)}.plan-goal-milestones li span{margin-top:2px;font-size:.9rem}.plan-goal-milestones li p{margin:4px 0 0}
 .plan-progress-copy>span{color:var(--rp-text-muted,#a9b6c6);font-size:.82rem;font-variant-numeric:tabular-nums}
 .plan-progress-track{height:6px;margin:14px 0 8px;overflow:hidden;border-radius:999px;background:var(--rp-surface-raised,#132438)}
 .plan-progress-track span{display:block;height:100%;border-radius:inherit;background:var(--rp-cyan,#20c7f5)}

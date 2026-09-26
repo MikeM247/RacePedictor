@@ -129,6 +129,30 @@ test("online Activities renders cloud-enveloped Strava data without a client cra
   expect(browserErrors).toEqual([]);
 });
 
+test("Training keeps a queued Strava import visible before workouts arrive", async ({ page }) => {
+  let jobStatus: "queued" | "completed" = "queued";
+  await page.route("**/api/v1/activities**", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ data: { items: [] } }),
+  }));
+  await page.route("**/api/v1/providers/strava/backfill", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ data: { jobs: [{
+      jobId: "backfill-a", status: jobStatus, createdAt: "2026-09-26T17:00:00.000Z",
+      updatedAt: "2026-09-26T17:05:00.000Z", availableAt: "2026-09-26T17:00:00.000Z",
+      completedAt: jobStatus === "completed" ? "2026-09-26T17:05:00.000Z" : null, attemptCount: 1,
+    }] } }),
+  }));
+  await page.goto("/dashboard/activities");
+  const notice = page.getByRole("region", { name: "Strava import status" });
+  await expect(notice).toContainText("Queued");
+  await expect(page.getByRole("heading", { name: "No activities yet" })).toBeVisible();
+  await page.reload();
+  await expect(notice).toContainText("Queued");
+  jobStatus = "completed";
+  await notice.getByRole("button", { name: "Refresh status" }).click();
+  await expect(notice).toContainText("Finished");
+  await expect(notice).toContainText("does not confirm every workout was accepted");
+});
+
 test("online Activities handles a malformed success envelope as a recoverable error", async ({ page }) => {
   const browserErrors: Error[] = [];
   page.on("pageerror", (error) => browserErrors.push(error));
@@ -350,6 +374,7 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
   let stravaState: "disconnected" | "connected" = "disconnected";
   let backfillCalls = 0;
   let failNextBackfill = true;
+  let backfillQueued = false;
   const stravaConnection = () => ({
     athleteId: "athlete-a", provider: "strava", status: stravaState,
     displayStatus: stravaState, connectedAt: stravaState === "connected" ? "2026-08-10T12:00:00.000Z" : null,
@@ -397,6 +422,14 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
     } }) });
   });
   await page.route("**/api/v1/providers/strava/backfill", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { jobs: backfillQueued ? [{
+        jobId: "backfill-a", status: "queued", createdAt: "2026-08-10T12:02:00.000Z",
+        updatedAt: "2026-08-10T12:02:00.000Z", availableAt: "2026-08-10T12:02:00.000Z",
+        completedAt: null, attemptCount: 0,
+      }] : [] } }) });
+      return;
+    }
     expect(route.request().method()).toBe("POST");
     const body = route.request().postDataJSON() as {
       after: string;
@@ -416,6 +449,7 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
       } }) });
       return;
     }
+    backfillQueued = true;
     await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ data: {
       jobId: "backfill-a", reused: false, status: "queued", bounds: body,
     } }) });
@@ -442,12 +476,13 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
   await expect(page.getByText("Strava history is temporarily unavailable")).toBeVisible();
   failNextBackfill = false;
   await page.getByRole("button", { name: "Import last 90 days" }).click();
-  await expect(page.getByText("Recent Strava history is queued. It may take a moment to appear in Activities.")).toBeVisible();
+  await expect(page.getByText("Recent Strava history is queued. Track its status below or in Training.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Recent Strava imports" })).toContainText("Queued");
   expect(backfillCalls).toBe(2);
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Disconnect Strava" }).click();
   await expect(page.getByText("Strava disconnected. Existing workouts and raw history were preserved.")).toBeVisible();
-  await expect(stravaPanel.locator(".status-chip")).toHaveText("Disconnected");
+  await expect(stravaPanel.locator(".coach-panel-heading > .status-chip")).toHaveText("Disconnected");
 
   await page.getByText("Paired computer", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Pair and manage a computer" })).toBeVisible();

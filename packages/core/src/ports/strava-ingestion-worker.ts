@@ -53,6 +53,16 @@ export type StravaJobFailure = StravaJobCompletion & Readonly<{
   diagnosticCode: string;
 }>;
 
+export type StravaBackfillJobSummary = Readonly<{
+  jobId: string;
+  status: "queued" | "processing" | "completed" | "failed" | "dead_letter";
+  createdAt: string;
+  updatedAt: string;
+  availableAt: string;
+  completedAt: string | null;
+  attemptCount: number;
+}>;
+
 /** Durable state transitions must compare the claim's lease token. */
 export interface StravaIngestionJobRepository {
   enqueueBatch(
@@ -61,6 +71,7 @@ export interface StravaIngestionJobRepository {
       | { kind: "backfill"; request: StravaBackfillWindow }
       | { kind: "reconciliation"; request: StravaReconciliationWindow },
   ): Promise<Readonly<{ jobId: string; reused: boolean }>>;
+  listRecentBackfills(scope: AthleteScope): Promise<readonly StravaBackfillJobSummary[]>;
   claimNext(input: StravaJobClaimRequest): Promise<ClaimedStravaIngestionJob | null>;
   claimById(jobId: string, input: StravaJobClaimRequest): Promise<ClaimedStravaIngestionJob | null>;
   markCompleted(input: StravaJobCompletion): Promise<void>;

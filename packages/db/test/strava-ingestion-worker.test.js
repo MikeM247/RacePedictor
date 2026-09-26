@@ -5,6 +5,49 @@ import { PrismaStravaIngestionJobRepository } from "../src/cloud/index.js";
 
 const t0 = "2026-08-10T10:00:00.000Z";
 
+test("recent backfill status is athlete-scoped and omits private job payload", async () => {
+  let query;
+  const repository = new PrismaStravaIngestionJobRepository({
+    prisma: {
+      $transaction() {},
+      ingestionJob: {
+        async findMany(input) {
+          query = input;
+          return [{
+            id: "job-a",
+            status: "queued",
+            createdAt: new Date(t0),
+            updatedAt: new Date(t0),
+            availableAt: new Date("2026-08-10T10:15:00.000Z"),
+            completedAt: null,
+            attemptCount: 1,
+          }];
+        },
+      },
+    },
+  });
+  const scope = athleteScopeFor(buildActorContext({
+    userId: "owner-a",
+    permittedAthleteIds: ["athlete-a"],
+    activeAthleteId: "athlete-a",
+    requestId: "request-status-a",
+    credentialKind: "session",
+  }));
+  const jobs = await repository.listRecentBackfills(scope);
+  assert.deepEqual(query.where, { athleteId: "athlete-a", kind: "backfill" });
+  assert.equal(query.take, 10);
+  assert.equal(Object.hasOwn(query.select, "payload"), false);
+  assert.deepEqual(jobs, [{
+    jobId: "job-a",
+    status: "queued",
+    createdAt: t0,
+    updatedAt: t0,
+    availableAt: "2026-08-10T10:15:00.000Z",
+    completedAt: null,
+    attemptCount: 1,
+  }]);
+});
+
 test("optimistic claim gives two workers one winner and stale lease recovery is fenced", async () => {
   const prisma = new FakeWorkerPrisma();
   prisma.seed("job-a", "athlete-a", activityEvent("event-a", "900000000001"));

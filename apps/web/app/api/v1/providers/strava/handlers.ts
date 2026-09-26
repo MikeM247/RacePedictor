@@ -93,6 +93,21 @@ export async function handleStravaBackfill(
   }
 }
 
+export async function handleStravaBackfillStatus(
+  security: SensitiveRouteContext,
+  _request: Request,
+  getComposition: GetStravaRouteComposition = defaultStravaRouteComposition,
+) {
+  try {
+    const scope = requireStravaAthleteScope(security);
+    const list = getComposition().listRecentBackfills;
+    if (!list) throw new ApiHttpError(503, "CONFIGURATION_ERROR", "Strava import status is unavailable");
+    return success({ jobs: await list(scope) });
+  } catch (error) {
+    translateStravaRouteError(error);
+  }
+}
+
 export async function handleStravaStatus(
   security: SensitiveRouteContext,
   _request: Request,

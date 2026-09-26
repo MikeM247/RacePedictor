@@ -6,6 +6,8 @@ import { DashboardNavigation } from "../dashboard/dashboard-navigation.tsx";
 import "../dashboard/dashboard.css";
 import "../coaching/coaching-ui.css";
 import { safeRecoveryPath } from "../../lib/recovery-context";
+import type { StravaBackfillJobSummary } from "../../../../packages/core/src/ports/strava-ingestion-worker.ts";
+import { backfillStatusLabel, backfillStatusMessage } from "../../lib/strava-backfill-view.ts";
 
 type Device = {
   id: string;
@@ -72,10 +74,13 @@ export function OnlineSyncSettings() {
   const [stravaBusy, setStravaBusy] = useState(false);
   const [stravaMessage, setStravaMessage] = useState("");
   const [stravaReadFailed, setStravaReadFailed] = useState(false);
+  const [backfills, setBackfills] = useState<readonly StravaBackfillJobSummary[]>([]);
+  const [backfillState, setBackfillState] = useState<RequestState>("loading");
   const [operationsReadFailed, setOperationsReadFailed] = useState(false);
   const [deviceMutationBusy, setDeviceMutationBusy] = useState(false);
   const deviceGeneration = useRef(0);
   const providerGeneration = useRef(0);
+  const backfillGeneration = useRef(0);
   const operationsGeneration = useRef(0);
   const [returnTo, setReturnTo] = useState("/dashboard/settings");
   const [settingsGroup, setSettingsGroup] = useState<SettingsGroupName>("connections");
@@ -88,8 +93,15 @@ export function OnlineSyncSettings() {
     if (requestedSection === "connections" || requestedSection === "devices" || requestedSection === "privacy" || requestedSection === "operations") setSettingsGroup(requestedSection);
     void loadSessionAndDevices();
     void loadStrava();
+    void loadBackfills();
     void loadOperations();
   }, []);
+
+  useEffect(() => {
+    if (!backfills.some((job) => job.status === "queued" || job.status === "processing")) return;
+    const timeout = window.setTimeout(() => { void loadBackfills(); }, 20_000);
+    return () => window.clearTimeout(timeout);
+  }, [backfills]);
 
   async function loadSessionAndDevices() {
     const generation = ++deviceGeneration.current;
@@ -121,14 +133,27 @@ export function OnlineSyncSettings() {
         const backfill = query.get("backfill");
         setStravaMessage(
           backfill === "queued"
-            ? "Strava is connected and the initial 90-day import is queued. Refresh Training shortly to see imported workouts."
+            ? "Strava is connected and the initial 90-day import is queued. Track its status below."
             : backfill === "already_queued"
-              ? "Strava is connected and the initial 90-day import is already queued. Refresh Training shortly to see imported workouts."
+              ? "Strava is connected and the initial 90-day import is already queued. Track its status below."
               : "Strava is connected, but the initial import could not be queued. Use Import last 90 days below to retry.",
         );
       }
     } catch {
       if (generation === providerGeneration.current) { setStravaReadFailed(true); setStravaMessage("Strava status could not be checked. This is not a disconnected account."); }
+    }
+  }
+
+  async function loadBackfills() {
+    const generation = ++backfillGeneration.current;
+    try {
+      const result = await request("/api/v1/providers/strava/backfill", { cache: "no-store" });
+      if (!Array.isArray(result.jobs)) throw new Error("Import status was unsupported.");
+      if (generation !== backfillGeneration.current) return;
+      setBackfills(result.jobs as StravaBackfillJobSummary[]);
+      setBackfillState("ready");
+    } catch {
+      if (generation === backfillGeneration.current) setBackfillState("error");
     }
   }
 
@@ -200,8 +225,9 @@ export function OnlineSyncSettings() {
         }),
       });
       setStravaMessage(result.reused === true
-        ? "Recent Strava history is already queued. It may take a moment to appear in Activities."
-        : "Recent Strava history is queued. It may take a moment to appear in Activities.");
+        ? "Recent Strava history is already queued. Track its status below or in Training."
+        : "Recent Strava history is queued. Track its status below or in Training.");
+      await loadBackfills();
     } catch (error) {
       setStravaMessage(error instanceof Error ? error.message : "Recent Strava history could not be queued.");
     } finally {
@@ -288,6 +314,18 @@ export function OnlineSyncSettings() {
                 : <button className="button button-primary" disabled={stravaBusy || !athleteId} type="button" onClick={() => void connectStrava()}>{strava?.displayStatus === "action_required" ? "Reconnect Strava" : "Connect Strava"}</button>}
             </div>
             {stravaMessage ? <p className="coach-status" role="status">{stravaMessage}</p> : null}
+            <section className="strava-import-status" aria-labelledby="strava-import-status-heading">
+              <div className="coach-panel-heading"><h3 id="strava-import-status-heading">Recent Strava imports</h3><button className="button button-secondary" type="button" onClick={() => void loadBackfills()}>Refresh status</button></div>
+              {backfillState === "loading" ? <p className="quiet-copy">Checking import status…</p> : null}
+              {backfillState === "error" ? <p className="coach-status coach-status--error" role="alert">Import status could not be checked. Your Strava connection and saved workouts have not been changed.</p> : null}
+              {backfillState === "ready" && backfills.length === 0 ? <p className="quiet-copy">No recent import request is recorded.</p> : null}
+              {backfills.length > 0 ? <ol className="strava-import-list">{backfills.map((job) => <li className="strava-import-card" key={job.jobId}>
+                <div className="strava-import-card-heading"><strong>Requested {formatDate(job.createdAt)}</strong><span className="status-chip">{backfillStatusLabel(job)}</span></div>
+                <p>{backfillStatusMessage(job)}</p>
+                {job.status === "completed" ? <Link className="text-link" href="/dashboard/activities">Check Training</Link> : null}
+              </li>)}</ol> : null}
+              <p className="field-help">A finished import means processing ended. Confirm the missing workouts in Training; queue status alone cannot confirm each activity was accepted.</p>
+            </section>
           </section>
 
           </SettingsGroup>

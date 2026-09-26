@@ -64,6 +64,7 @@ export function getCloudPrismaClient(): unknown;
 export class PrismaStravaIngestionJobRepository implements StravaIngestionJobRepository {
   constructor(input: { prisma: unknown });
   enqueueBatch: StravaIngestionJobRepository["enqueueBatch"];
+  listRecentBackfills: StravaIngestionJobRepository["listRecentBackfills"];
   claimNext: StravaIngestionJobRepository["claimNext"];
   claimById: StravaIngestionJobRepository["claimById"];
   markCompleted: StravaIngestionJobRepository["markCompleted"];

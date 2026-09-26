@@ -8,6 +8,7 @@ import { StravaConnectionError } from "../../../packages/core/src/use-cases/stra
 import { POST as defaultConnect } from "../app/api/v1/providers/strava/connect/route.ts";
 import {
   handleStravaBackfill,
+  handleStravaBackfillStatus,
   handleStravaCallback,
   handleStravaConnect,
   handleStravaDisconnect,
@@ -326,6 +327,33 @@ test("owner can queue only a bounded athlete-scoped backfill", async () => {
       return true;
     },
   );
+});
+
+test("owner can revisit saved Strava import status within the active athlete scope", async () => {
+  let receivedAthlete: string | null = null;
+  const jobs = [{
+    jobId: "backfill-job",
+    status: "queued" as const,
+    createdAt: "2026-09-26T17:00:00.000Z",
+    updatedAt: "2026-09-26T17:00:00.000Z",
+    availableAt: "2026-09-26T17:15:00.000Z",
+    completedAt: null,
+    attemptCount: 1,
+  }];
+  const response = await handleStravaBackfillStatus(
+    authenticated(),
+    new Request("https://race.example/api/v1/providers/strava/backfill"),
+    () => ({
+      redirectUri,
+      service: mockService(),
+      async listRecentBackfills(scope) {
+        receivedAthlete = scope.athleteId;
+        return jobs;
+      },
+    }),
+  );
+  assert.equal(receivedAthlete, "athlete-a");
+  assert.deepEqual((await response.json()).data, { jobs });
 });
 
 test("cloud-disabled local mode never initializes Strava provider configuration", { concurrency: false }, async () => {

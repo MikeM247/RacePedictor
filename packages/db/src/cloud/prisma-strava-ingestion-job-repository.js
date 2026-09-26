@@ -70,6 +70,33 @@ export class PrismaStravaIngestionJobRepository {
     });
   }
 
+  async listRecentBackfills(scope) {
+    const athleteId = assertAthleteScope(scope);
+    const jobs = await this.#prisma.ingestionJob.findMany({
+      where: { athleteId, kind: "backfill" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 10,
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        availableAt: true,
+        completedAt: true,
+        attemptCount: true,
+      },
+    });
+    return immutableCopy(jobs.map((job) => ({
+      jobId: job.id,
+      status: job.status,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+      availableAt: job.availableAt.toISOString(),
+      completedAt: job.completedAt?.toISOString() ?? null,
+      attemptCount: job.attemptCount,
+    })));
+  }
+
   async claimNext(input) {
     return this.#claim(null, input);
   }

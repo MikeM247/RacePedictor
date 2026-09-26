@@ -178,6 +178,12 @@
 .settings-panel--preference,.settings-panel--connections{border-left:3px solid var(--rp-cyan,#20c7f5)}
 .settings-panel--privacy{border-left:3px solid var(--rp-violet,#9b78ff)}
 .settings-panel--operations{border-left:3px solid var(--rp-amber,#f4b942)}
+.strava-import-status{margin-top:20px;padding-top:16px;border-top:1px solid var(--rp-border,#293b4e)}
+.strava-import-status .coach-panel-heading{align-items:center}
+.strava-import-list{display:grid;gap:10px;margin:12px 0;padding:0;list-style:none}
+.strava-import-card{padding:12px;border:1px solid var(--rp-border,#293b4e);border-radius:8px;background:var(--rp-bg,#07111d)}
+.strava-import-card-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.strava-import-card p{margin:8px 0 0;color:var(--rp-text-muted,#a9b6c6)}
 .external-confirmation{border-color:var(--rp-border,#293b4e);background:var(--rp-bg,#07111d)}
 .status-list{border-top-color:var(--rp-border,#293b4e)}
 .status-list div{padding:8px 0;border-bottom:1px solid var(--rp-border,#293b4e)}

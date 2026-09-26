@@ -1,6 +1,7 @@
 import { ZodError } from "zod";
 import { athleteScopeFor, type AthleteScope } from "../../../../../../../packages/core/src/contracts/auth.ts";
 import type { StravaBackfillRequest } from "../../../../../../../packages/core/src/contracts/strava.ts";
+import type { StravaBackfillJobSummary } from "../../../../../../../packages/core/src/ports/strava-ingestion-worker.ts";
 import {
   StravaConnectionError,
   type StravaConnectionService,
@@ -9,12 +10,14 @@ import { ApiHttpError, type ApiErrorCode } from "../../../../../lib/server/api-r
 import type { SensitiveRouteContext } from "../../../../../lib/server/route-security.ts";
 import { getStravaConnectionComposition } from "../../../../../lib/server/strava/composition.ts";
 import { getStravaIngestionComposition } from "../../../../../lib/server/strava/ingestion-composition.ts";
+import { PrismaStravaIngestionJobRepository } from "../../../../../../../packages/db/src/cloud/index.js";
 
 export interface StravaRouteComposition {
   redirectUri: string;
   service: StravaConnectionService;
   enqueueBackfill?: (scope: AthleteScope, request: StravaBackfillRequest) => Promise<{ jobId: string; reused: boolean }>;
   enqueueInitialBackfill?: (scope: AthleteScope) => Promise<{ jobId: string; reused: boolean }>;
+  listRecentBackfills?: (scope: AthleteScope) => Promise<readonly StravaBackfillJobSummary[]>;
 }
 
 export type GetStravaRouteComposition = () => StravaRouteComposition;
@@ -25,6 +28,7 @@ export const defaultStravaRouteComposition: GetStravaRouteComposition = () => {
     ...connection,
     enqueueBackfill: (scope, request) => getStravaIngestionComposition().enqueueBackfill(scope, request),
     enqueueInitialBackfill: (scope) => getStravaIngestionComposition().enqueueInitialBackfill(scope),
+    listRecentBackfills: (scope) => new PrismaStravaIngestionJobRepository({ prisma: connection.prisma }).listRecentBackfills(scope),
   };
 };
 

@@ -21,6 +21,13 @@
 
 .activities-content { width: min(var(--rp-content-max), 100%); margin: 0 auto; padding: 20px var(--rp-content-gutter) 36px; }
 
+.strava-import-notice{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px;padding:14px 16px;border:1px solid var(--rp-border);border-left:3px solid var(--rp-cyan);border-radius:10px;background:var(--rp-surface)}
+.strava-import-notice .eyebrow{margin:0 0 4px}
+.strava-import-notice strong{color:var(--rp-text)}
+.strava-import-notice p{margin:6px 0 0;color:var(--rp-text-muted)}
+.strava-import-notice .strava-import-requested{font-size:.82rem}
+.strava-import-notice-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
 .activity-filter-disclosure {
   margin-bottom: 14px;
   border: 1px solid var(--rp-border);

@@ -212,6 +212,36 @@ test("scheduled sync runner invokes the combined pull-and-publish command", asyn
   assert.match(runner, /npm\.cmd run sync:local -- sync-and-publish/u);
 });
 
+test("explicit approved-plan publication attempts verified goal context after the plan and reports pending separately", async () => {
+  const fixture = await localFixture();
+  const calls = [];
+  const plan = { id: "plan-a", status: "active" };
+  const context = { planId: "plan-a", contextHash: "a".repeat(64) };
+  const agent = await agentFor(fixture, {
+    publishApprovedPlan: async (_token, value) => { calls.push(["plan", value]); return { data: { plan: value } }; },
+    publishPlanGoalContext: async (_token, value) => { calls.push(["goal-context", value]); return { data: { contextHash: value.contextHash, publishedAt: NOW, reused: false } }; },
+  });
+
+  const published = await agent.publishApprovedPlan(plan, context);
+  assert.equal(published.goalContext.state, "ready");
+  assert.deepEqual(calls.map(([kind]) => kind), ["plan", "goal-context"]);
+
+  const unavailable = await agent.publishApprovedPlan(plan);
+  assert.equal(unavailable.goalContext.state, "unavailable");
+  assert.equal(calls.length, 3, "an unverified source never triggers sidecar publication");
+});
+
+test("explicit approved-plan publication preserves the plan and reports sidecar failure as pending", async () => {
+  const fixture = await localFixture();
+  const agent = await agentFor(fixture, {
+    publishApprovedPlan: async (_token, plan) => ({ data: { plan } }),
+    publishPlanGoalContext: async () => { throw Object.assign(new Error("synthetic unavailable"), { code: "CLOUD_UNAVAILABLE" }); },
+  });
+  const result = await agent.publishApprovedPlan({ id: "plan-a", status: "active" }, { planId: "plan-a" });
+  assert.equal(result.data.plan.id, "plan-a");
+  assert.deepEqual(result.goalContext, { state: "pending", reasonCode: "CLOUD_UNAVAILABLE" });
+});
+
 test("selected Second Brain publication persists an exact immutable retry payload before the API call", async () => {
   const fixture = await localFixture();
   const accepted = [];

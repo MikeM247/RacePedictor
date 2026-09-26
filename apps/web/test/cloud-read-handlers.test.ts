@@ -8,10 +8,12 @@ import {
   CalendarSessionAmendmentError,
   TrainingPlanActivationError,
 } from "../../../packages/db/src/cloud/index.js";
+import type { CloudCalendarSession } from "../../../packages/db/src/cloud/index.js";
 import { createSyntheticTestActor } from "../lib/server/auth.ts";
 import {
   handleCloudActivities,
   handleCloudActivePlan,
+  handleCloudActiveGoalContext,
   handleCloudCalendar,
   handleCloudCoachingReviewContext,
   handleCloudOnlineStatus,
@@ -101,6 +103,8 @@ test("cloud Calendar and Today work from approved structured data with no local 
   assert.equal(calendarBody.data.activities[0].id, "activity-a");
   assert.deepEqual(calendarBody.data.historicalSessions, []);
   assert.equal(todayBody.data.state, "upcoming");
+  assert.equal(todayBody.data.todayScheduleKind, "prescribed_session");
+  assert.equal(todayBody.data.nextWorkout, null);
   assert.equal(todayBody.data.source, "fallback");
   const serialized = JSON.stringify({ calendarBody, todayBody });
   assert.doesNotMatch(serialized, /vault|relativePath|storageKey|credential|refreshToken/u);
@@ -114,6 +118,158 @@ test("cloud Calendar and Today work from approved structured data with no local 
   );
   const withHistoryBody = await withHistory.json();
   assert.deepEqual(withHistoryBody.data.historicalSessions, []);
+});
+
+test("cloud Today uses the plan timezone and effective next non-rest session", async () => {
+  const composition = fakeComposition([]);
+  const amendedSession: CloudCalendarSession = {
+    id: "amended-run",
+    kind: "run",
+    scheduledDate: "2026-08-12",
+    prescribedDate: "2026-08-12",
+    effectiveDate: "2026-08-12",
+    originalDate: "2026-08-12",
+    title: "Amended easy run",
+    purpose: "Keep the easy rhythm.",
+    prescription: "Run easily for 25 minutes.",
+    cautions: [],
+    durationMinutes: 25,
+    status: "upcoming",
+    revision: 2,
+    warnings: [],
+    amendments: [{
+      id: "amendment-cloud-run",
+      planId: plan.id,
+      sessionId: "amended-run",
+      operation: "amend",
+      actor: "owner-a",
+      changedAt: "2026-08-10T06:00:00.000Z",
+      reason: "Synthetic availability change",
+      changedFields: ["prescription"],
+      before: { prescription: "Run easily for 40 minutes." },
+      after: { prescription: "Run easily for 25 minutes." },
+      expectedRevision: 1,
+      resultingRevision: 2,
+    }],
+  };
+  const sessions: CloudCalendarSession[] = [
+    {
+      ...amendedSession,
+      id: "rest-today",
+      kind: "rest",
+      scheduledDate: "2026-08-10",
+      prescribedDate: "2026-08-10",
+      effectiveDate: "2026-08-10",
+      originalDate: "2026-08-10",
+      title: "Approved recovery day",
+      prescription: "Rest.",
+      durationMinutes: 0,
+      amendments: [],
+    },
+    {
+      ...amendedSession,
+      id: "skipped-run",
+      scheduledDate: "2026-08-11",
+      prescribedDate: "2026-08-11",
+      effectiveDate: "2026-08-11",
+      originalDate: "2026-08-11",
+      title: "Skipped run",
+      status: "skipped",
+      amendments: [],
+    },
+    amendedSession,
+    {
+      ...amendedSession,
+      id: "moved-run",
+      scheduledDate: "2026-08-14",
+      prescribedDate: "2026-08-13",
+      effectiveDate: "2026-08-14",
+      originalDate: "2026-08-13",
+      title: "Moved run",
+      amendments: [],
+    },
+  ];
+  const cloudPlan = trainingPlanSchema.parse({
+    ...plan,
+    weeklyStructure: [{ weekStartsOn: "2026-08-10", focus: "Synthetic effective week", sessionIds: sessions.map((session) => session.id) }],
+    workouts: sessions.map((session) => ({
+      id: session.id,
+      kind: session.kind,
+      scheduledDate: session.prescribedDate,
+      ...(session.startTime ? { startTime: session.startTime } : {}),
+      title: session.title,
+      purpose: session.purpose,
+      prescription: session.prescription,
+      cautions: session.cautions,
+      durationMinutes: session.durationMinutes,
+    })),
+  });
+  composition.coaching.getActivePlan = async () => cloudPlan;
+  composition.calendarSessions.listActiveCalendar = async () => sessions;
+
+  const current = await handleCloudToday(
+    security,
+    new Request("http://localhost/api/v1/coaching/today"),
+    () => composition,
+    () => new Date("2026-08-09T22:30:00.000Z"),
+  );
+  const currentBody = (await current.json()).data;
+  assert.equal(currentBody.date, "2026-08-10", "the plan timezone determines the local date at a UTC boundary");
+  assert.equal(currentBody.todayScheduleKind, "prescribed_rest");
+  assert.equal(currentBody.nextWorkout.id, "amended-run");
+  assert.equal(currentBody.nextWorkout.prescription, "Run easily for 25 minutes.");
+
+  const amendedDay = await handleCloudToday(
+    security,
+    new Request("http://localhost/api/v1/coaching/today?date=2026-08-12"),
+    () => composition,
+    () => now,
+  );
+  const amendedBody = (await amendedDay.json()).data;
+  assert.equal(amendedBody.session.title, "Amended easy run");
+  assert.equal(amendedBody.nextWorkout.id, "moved-run");
+  assert.equal(amendedBody.nextWorkout.scheduledDate, "2026-08-14", "Today follows the moved effective date");
+
+  const afterLastSession = await handleCloudToday(
+    security,
+    new Request("http://localhost/api/v1/coaching/today?date=2026-08-15"),
+    () => composition,
+    () => now,
+  );
+  const afterLastBody = (await afterLastSession.json()).data;
+  assert.equal(afterLastBody.todayScheduleKind, "unscheduled");
+  assert.equal(afterLastBody.nextWorkout, null);
+});
+
+test("active cloud goal-context read distinguishes pending, ready, and no-active-plan states", async () => {
+  const scopes: string[] = [];
+  const composition = fakeComposition(scopes);
+  const getComposition = () => composition;
+  const pending = await handleCloudActiveGoalContext(security, getComposition);
+  assert.equal((await pending.json()).data.context.state, "projection_pending");
+
+  composition.goalContexts.findForPlan = async (scope) => {
+    scopes.push(scope.athleteId);
+    return {
+      goal: {
+        id: "goal-athlete-a", athleteId: "athlete-a", revision: 2, title: "Marathon target",
+        why: "Synthetic approved goal", target: { kind: "performance", distanceMeters: 42_195, targetDate: "2026-11-01", targetTimeSeconds: 14_400 },
+      },
+      milestones: [{ id: "half-a", title: "Half marathon", distanceMeters: 21_097.5, targetDate: "2026-10-01", targetTimeSeconds: 7_200 }],
+      contextHash: "d".repeat(64), publishedAt: "2026-08-10T08:00:00.000Z",
+    };
+  };
+  const ready = await handleCloudActiveGoalContext(security, getComposition);
+  const readyContext = (await ready.json()).data.context;
+  assert.equal(readyContext.state, "ready");
+  assert.equal(readyContext.goal.title, "Marathon target");
+  assert.equal(readyContext.milestones[0].title, "Half marathon");
+  assert.equal(readyContext.projection.contextHash, "d".repeat(64));
+
+  composition.coaching.getActivePlan = async (scope) => { scopes.push(scope.athleteId); return null; };
+  const none = await handleCloudActiveGoalContext(security, getComposition);
+  assert.equal((await none.json()).data.context.state, "no_active_plan");
+  assert.deepEqual(new Set(scopes), new Set(["athlete-a"]));
 });
 
 test("cloud Calendar preserves the approved schedule when supplemental history or activities fail", async () => {
@@ -371,6 +527,9 @@ function fakeComposition(scopes: string[]): CloudReadComposition {
       getActivePlan: async (scope: { athleteId: string }) => { record(scope); return scope.athleteId === "athlete-a" ? plan : null; },
       listHistory: async (scope: { athleteId: string }) => { record(scope); return scope.athleteId === "athlete-a" ? [plan] : []; },
       findPlan: async (scope: { athleteId: string }, planId: string) => { record(scope); return scope.athleteId === "athlete-a" && planId === plan.id ? plan : null; },
+    },
+    goalContexts: {
+      findForPlan: async (scope: { athleteId: string }) => { record(scope); return null; },
     },
     calendarSessions: {
       listActiveCalendar: async (scope: { athleteId: string }, range: { from: string; to: string }) => {

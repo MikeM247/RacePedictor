@@ -5,6 +5,7 @@ import {
   PrismaSecondBrainSnapshotRepository,
   PrismaSyncChangeRepository,
   PrismaTrainingPlanProjectionPublisher,
+  PrismaTrainingPlanGoalContextRepository,
   PrismaOperationalUsageRepository,
   PrismaActivityReviewRepository,
 } from "../../../../packages/db/src/cloud/index.js";
@@ -23,6 +24,7 @@ function buildComposition() {
     changes: new PrismaSyncChangeRepository({ prisma }),
     snapshots: new PrismaSecondBrainSnapshotRepository({ prisma }),
     plans: new PrismaTrainingPlanProjectionPublisher({ prisma }),
+    goalContexts: new PrismaTrainingPlanGoalContextRepository({ prisma }),
     usage: new PrismaOperationalUsageRepository({ prisma }),
     activityReviews: new PrismaActivityReviewRepository({ prisma }),
   });

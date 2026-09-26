@@ -71,14 +71,12 @@ export function HomeRecentTraining() {
       <div className="home-review-commentary" aria-label="Coach's review commentary">
         {presentation.headline ? <p><strong>{presentation.headline}</strong></p> : null}
         <p>{presentation.assessment}</p>
-        {presentation.advice ? <p><strong>Review advice:</strong> {presentation.advice}</p> : null}
         {presentation.isFullPassageFallback ? <p className="home-review-fallback">Full review passage shown because safely shortening this supplied text could change its meaning.</p> : null}
       </div>
-      <p className="home-session-caveat"><strong>{reviewMatchLabel(review.comparison)}:</strong> {review.comparison.interpretation}{review.comparison.planVersion ? ` Plan version ${review.comparison.planVersion}.` : " No plan version was supplied."}</p>
+      <p className="home-session-caveat"><strong>{reviewMatchLabel(review.comparison)}:</strong>{review.comparison.planVersion ? ` Plan version ${review.comparison.planVersion}.` : " No plan version was supplied."} {review.comparison.interpretation}</p>
       <p className="home-session-caveat"><strong>Goal impact:</strong> Goal impact cannot be assessed from the available review evidence.</p>
-      {presentation.limitations.map((limit) => <p className="home-session-caveat" key={limit}><strong>Evidence limit:</strong> {limit}</p>)}
+      {presentation.limitations.length > 0 ? <p className="home-session-caveat"><strong>Evidence limits:</strong> {presentation.limitations.join(" ")}</p> : null}
       <p className="home-session-caveat">This advisory review does not change your approved prescription.</p>
-      <p className="home-review-provenance">Review revision {presentation.revision}.</p>
       <Link id={fullReviewLauncherId} ref={restoreFullReviewLauncher} className="text-link" href={sessionHref} onClick={openFullReview}>View full session review</Link>
     </> : <><p role="status">{reviewRead.phase === "error" ? `Feedback could not be checked${reviewRead.message ? `: ${reviewRead.message}` : ""}. Its request status and training conclusions are unknown.` : reviewRead.phase === "loading" ? "Checking this session’s review status…" : reviewStatusMessage(feedback?.status)}</p><p className="home-session-caveat">Goal impact cannot be assessed without sufficient review evidence. The recorded facts remain available.</p><Link id={fullReviewLauncherId} ref={restoreFullReviewLauncher} className="text-link" href={sessionHref} onClick={openFullReview}>View latest session</Link></>}
   </article>;

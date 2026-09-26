@@ -144,6 +144,26 @@ export class PrismaCloudCoachingRepository {
   findPlan(scope: AthleteScope, planId: string): Promise<TrainingPlan | null>;
 }
 
+export class TrainingPlanGoalContextConflictError extends Error {
+  readonly code: "GOAL_CONTEXT_CONFLICT";
+}
+export class TrainingPlanGoalContextUnavailableError extends Error {
+  readonly code: "GOAL_CONTEXT_UNAVAILABLE";
+}
+export class TrainingPlanGoalContextHashError extends Error {
+  readonly code: "GOAL_CONTEXT_HASH_INVALID";
+}
+export class PrismaTrainingPlanGoalContextRepository {
+  constructor(input: { prisma: unknown; now?: () => Date });
+  publish(scope: AthleteScope, value: import("../../../core/src/contracts/coaching.ts").TrainingPlanGoalContextPublishRequest, pairedDeviceId: string): Promise<{ contextHash: string; publishedAt: string; reused: boolean }>;
+  findForPlan(scope: AthleteScope, plan: TrainingPlan): Promise<{
+    goal: import("../../../core/src/contracts/coaching.ts").GoalContextRouteData["goal"];
+    milestones: import("../../../core/src/contracts/coaching.ts").RaceMilestone[];
+    contextHash: string;
+    publishedAt: string;
+  } | null>;
+}
+
 export class PrismaOnlineStatusRepository {
   constructor(input: { prisma: unknown });
   getFacts(scope: AthleteScope): Promise<OnlineStatusFacts>;

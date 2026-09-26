@@ -7,12 +7,18 @@ import {
 } from "../../../../packages/core/src/contracts/sync.ts";
 import { secondBrainContextSnapshotSchema } from "../../../../packages/core/src/contracts/second-brain-context.ts";
 import { activityCoachReviewArtifactSchema } from "../../../../packages/core/src/contracts/activity-review.ts";
-import { trainingPlanSchema } from "../../../../packages/core/src/contracts/coaching.ts";
+import {
+  trainingPlanGoalContextPublishRequestSchema,
+  trainingPlanSchema,
+} from "../../../../packages/core/src/contracts/coaching.ts";
 import { PairedDeviceError, type AuthenticatedDevice } from "../../../../packages/core/src/use-cases/paired-device.ts";
 import {
   CloudSyncCursorError,
   SecondBrainSnapshotConflictError,
   TrainingPlanProjectionConflictError,
+  TrainingPlanGoalContextConflictError,
+  TrainingPlanGoalContextHashError,
+  TrainingPlanGoalContextUnavailableError,
 } from "../../../../packages/db/src/cloud/index.js";
 import { ApiHttpError, success } from "./api-response.ts";
 import { readCloudEnvironment } from "./cloud-environment.ts";
@@ -159,6 +165,35 @@ export async function handlePublishApprovedPlan(
   } catch (error) {
     if (error instanceof TrainingPlanProjectionConflictError) {
       throw new ApiHttpError(409, "CONFLICT", "The approved plan conflicts with its immutable projection");
+    }
+    throw error;
+  }
+}
+
+export async function handlePublishApprovedPlanGoalContext(
+  security: AuthenticatedDevice,
+  request: Request,
+  getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
+) {
+  const parsed = trainingPlanGoalContextPublishRequestSchema.safeParse(await readJson(request));
+  if (!parsed.success) {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "Approved goal context is invalid", parsed.error.issues.map((issue) => ({
+      path: issue.path.map(String), message: issue.message,
+    })));
+  }
+  try {
+    return success(await getComposition().goalContexts.publish(
+      athleteScopeFor(security.actor), parsed.data, security.device.id,
+    ), 201);
+  } catch (error) {
+    if (error instanceof TrainingPlanGoalContextHashError) {
+      throw new ApiHttpError(400, "VALIDATION_ERROR", "Approved goal context hash is invalid");
+    }
+    if (error instanceof TrainingPlanGoalContextConflictError) {
+      throw new ApiHttpError(409, "CONFLICT", "Approved goal context conflicts with its immutable projection");
+    }
+    if (error instanceof TrainingPlanGoalContextUnavailableError) {
+      throw new ApiHttpError(409, "CONFLICT", "A matching approved plan projection is unavailable");
     }
     throw error;
   }

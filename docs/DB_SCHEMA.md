@@ -174,6 +174,26 @@ Indexes/constraints:
 - `@@index([importId, normalizeStatus, stagingIndex])`
 - `@@index([athleteId, sourceType, occurredAt(sort: Desc)])`
 
+### `TrainingPlanGoalContextProjection`
+
+Purpose: immutable online read projection of the goal and explicitly approved race milestones attached to one approved plan version. This sidecar keeps approved values available in Home without rewriting the immutable plan projection.
+
+Required fields:
+
+- Identity/relations: `id`, `athleteId`, `planId`, `pairedDeviceId`
+- Version link: `planVersion`, `goalId`, `goalRevision`, `approvalContentHash`
+- Approved snapshot: `goal` (strict settled-goal shape), `milestones` (strict list, at most 12)
+- Integrity/provenance: `contextHash`, `publishedAt`, `createdAt`
+
+Indexes/constraints:
+
+- `@@unique([athleteId, planId])` permits only one sidecar per immutable plan version.
+- `@@unique([athleteId, contextHash])` supports idempotent replay checks.
+- Composite foreign keys bind it to the same athlete's approved plan projection and paired device; deletes cascade only with their parent plan/athlete, while paired-device deletion is restricted.
+- Publication checks the plan ID/version/hash, goal ID/revision, and milestone snapshot inside a serializable transaction. An identical retry returns the original publication; different content conflicts.
+
+The migration `20260925110000_training_plan_goal_context` is additive. Backfill must use verifiable immutable proposal sources and never the synthetic legacy-goal fallback. Rollback disables the Home composition; it does not delete projection rows.
+
 ## Dedupe Strategy
 
 1. Use `sourceActivityId` when available from provider/file.

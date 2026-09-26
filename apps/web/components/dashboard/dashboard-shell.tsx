@@ -9,9 +9,9 @@ import { TodayCoachingCard } from "../coaching/today-coaching-card";
 import type { OnlineStatus } from "../../../../packages/core/src/contracts/sync.ts";
 import { OnlineStatusPanel } from "./online-status-panel";
 import { HomeRecentTraining } from "./home-recent-training";
+import { HomeGoalContext } from "./home-goal-context";
 import { createRecoveryContext, dataQualityHref, readRecoveryContext, restoreRecoveryFocus } from "../../lib/recovery-context";
 import { groupTrendSeries, selectOutlookReason } from "../../lib/readiness-evidence";
-import { createTargetRequestGate, initialTargetContextState, retainedTarget, targetContextFromNetworkFailure, targetContextFromResponse, targetContextLoading, type TargetContextState } from "../../lib/target-context-state";
 import "./dashboard.css";
 
 type DashboardShellProps = DashboardViewModel & {
@@ -153,50 +153,36 @@ export function DashboardShell({
           <div className="dashboard-toolbar-title">
             <p className="eyebrow">Training command centre</p>
             <h1 id="dashboard-page-title">Home</h1>
-            <p>A short race outlook, recent training meaning, and one clear next step.</p>
+            <p>Your approved goal, today&apos;s focus, and latest recorded activity.</p>
           </div>
         </header>
 
         <section className="dashboard-content" aria-label="Home content">
-          {analyticsLoading ? (
-            <section className="content-group home-group home-outlook" aria-labelledby="race-outlook-heading">
-              <p className="eyebrow">Race outlook</p><h2 id="race-outlook-heading" className="group-heading">Loading supported outlook…</h2>
-              <p className="state-copy">Today&apos;s approved coaching remains available while prediction data loads.</p>
-            </section>
-          ) : null}
-
-          {!analyticsLoading && uiState.showErrorState ? (
-            <section className="content-group home-group home-outlook state-panel--error" role="alert" aria-labelledby="race-outlook-heading">
-              <p className="eyebrow">Race outlook</p><h2 id="race-outlook-heading" className="group-heading">Outlook unavailable</h2>
-              <p>{errorMessage ?? "Please refresh the page and try again."}</p>
-              {onAnalyticsRetry ? <button className="button button-secondary state-panel-action" type="button" onClick={onAnalyticsRetry}>Try again</button> : null}
-            </section>
-          ) : null}
-
-          {!analyticsLoading && uiState.showEmptyState ? (
-            <section className="content-group home-group home-outlook" aria-labelledby="race-outlook-heading">
-              <p className="eyebrow">Race outlook</p><h2 id="race-outlook-heading" className="group-heading">No supported outlook yet</h2>
-              <p>Import training and settle a target before an outlook can be assessed. Recorded training and today&apos;s prescription remain available below.</p>
-              <RecoveryDataQualityLink label="Improve data coverage" issue="The outlook cannot yet be assessed from the available history." />
-            </section>
-          ) : null}
-
-          {!analyticsLoading && uiState.showContent ? (
-            <section className="content-group home-group home-outlook" aria-labelledby="race-outlook-heading">
-              <div className="group-heading-row"><div><p className="eyebrow">Race outlook</p><h2 id="race-outlook-heading" className="group-heading">{predictionDistanceLabel(selectedPrediction.targetDistanceM)} prediction</h2></div><p>Updated {formatHomeDate(selectedPrediction.generatedAt)}</p></div>
-              {predictionOptions.length > 1 ? <details className="home-prediction-settings"><summary>Prediction settings</summary><label className="distance-selector home-distance-selector" htmlFor="home-race-distance"><span>Show estimate for</span><select id="home-race-distance" value={selectedDistanceM} onChange={(event) => setSelectedDistanceM(Number(event.target.value))}>{predictionOptions.map((candidate) => <option key={candidate.targetDistanceM} value={candidate.targetDistanceM}>{predictionDistanceLabel(candidate.targetDistanceM)}</option>)}</select></label><p>This changes which supported estimate is shown. It does not change your race goal or calculation inputs.</p></details> : null}
-              {uiState.showStaleState ? <p className="home-inline-status state-panel--stale" role="status">Showing the last available outlook. {staleInfo.staleReason ?? "Live updates are delayed."}{staleInfo.staleAtIso ? ` Last update: ${formatHomeDate(staleInfo.staleAtIso, true)}.` : ""}</p> : null}
-              <div className="home-outlook-main"><div><strong className="home-outlook-value">{selectedKpis[0]?.value}</strong><span className="home-outlook-label">current-fitness estimate · {selectedKpis[1]?.value}</span></div><div className="home-outlook-copy"><p><strong>What this says:</strong> {outlookReason.text}</p><p><strong>Uncertainty:</strong> The supplied estimate range is {selectedKpis[2]?.value}. It is the model&apos;s low-to-high estimate span, not a probability or confidence score.</p><HomeReadinessContext /></div></div>
-              <div className="home-evidence-control"><button id="view-readiness" ref={readinessLauncher} className="text-link" type="button" aria-expanded={readinessOpen} aria-controls="readiness" onClick={openReadiness}>View readiness</button></div>
-              {readinessOpen ? <section id="readiness" className="home-evidence" aria-labelledby="readiness-heading" tabIndex={-1}><div className="home-evidence-heading"><div><p className="eyebrow">Readiness evidence</p><h3 id="readiness-heading">Evidence for this outlook</h3></div><button className="button button-secondary" type="button" onClick={closeReadiness}>Back to Home</button></div><p><strong>Assessment basis:</strong> imported activity history. Model {selectedPrediction.modelVersion}. The supplied drivers and trends are overview-level evidence; changing the displayed distance changes the estimate, not this shared evidence.</p><DriverEvidence drivers={driverContributions} /><TrendEvidence series={trendSeries} /><p className="home-evidence-caveat">Use this evidence to understand the estimate, not to infer an on-track verdict. The app does not have a supported target-race comparison.</p><div className="home-evidence-actions"><RecoveryDataQualityLink label="Review data coverage" issue="Readiness is limited by the available imported history." selectedDistanceM={selectedDistanceM} /><Link className="text-link" href="/dashboard/activities">Review training history</Link></div></section> : null}
+          <section className="content-group home-group home-goal" aria-labelledby="goal-and-milestone-heading">
+            <h2 id="goal-and-milestone-heading" className="group-heading">Your approved goal</h2>
+            <div className="home-goal-panel"><HomeGoalContext readinessAction={<button id="view-readiness" ref={readinessLauncher} className="text-link" type="button" aria-label="View current-fitness details" aria-expanded={readinessOpen} aria-controls="readiness" onClick={openReadiness}><span>Readiness details</span></button>} /></div>
+            {readinessOpen ? <section id="readiness" className="home-evidence" aria-labelledby="readiness-heading" tabIndex={-1}>
+              <div className="home-evidence-heading"><div><p className="eyebrow">Readiness detail</p><h3 id="readiness-heading">Current-fitness estimate</h3></div><button className="button button-secondary" type="button" onClick={closeReadiness}>Back to Home</button></div>
+              {analyticsLoading ? <p role="status">Loading the current-fitness estimate…</p> : null}
+              {!analyticsLoading && uiState.showErrorState ? <div role="alert"><p>{errorMessage ?? "Current-fitness details could not be loaded."}</p>{onAnalyticsRetry ? <button className="button button-secondary" type="button" onClick={onAnalyticsRetry}>Try again</button> : null}</div> : null}
+              {!analyticsLoading && uiState.showEmptyState ? <div><p>No compatible current-fitness estimate is available from the imported history.</p><RecoveryDataQualityLink label="Review data coverage" issue="No compatible current-fitness estimate is available from the current history." /></div> : null}
+              {!analyticsLoading && uiState.showContent ? <>
+                <div className="group-heading-row"><h4>{predictionDistanceLabel(selectedPrediction.targetDistanceM)} estimate</h4><p>Updated {formatHomeDate(selectedPrediction.generatedAt)}</p></div>
+                {predictionOptions.length > 1 ? <details className="home-prediction-settings"><summary>Estimate settings</summary><label className="distance-selector home-distance-selector" htmlFor="home-race-distance"><span>Show estimate for</span><select id="home-race-distance" value={selectedDistanceM} onChange={(event) => setSelectedDistanceM(Number(event.target.value))}>{predictionOptions.map((candidate) => <option key={candidate.targetDistanceM} value={candidate.targetDistanceM}>{predictionDistanceLabel(candidate.targetDistanceM)}</option>)}</select></label><p>This selects a current-fitness estimate. It does not change your approved goal.</p></details> : null}
+                {uiState.showStaleState ? <p className="home-inline-status state-panel--stale" role="status">Showing the last available estimate. {staleInfo.staleReason ?? "Live updates are delayed."}{staleInfo.staleAtIso ? ` Last update: ${formatHomeDate(staleInfo.staleAtIso, true)}.` : ""}</p> : null}
+                <div className="home-outlook-main"><div><strong className="home-outlook-value">{selectedKpis[0]?.value}</strong><span className="home-outlook-label">current-fitness estimate · {selectedKpis[1]?.value}</span></div><div className="home-outlook-copy"><p><strong>Training signal:</strong> {outlookReason.text}</p><p><strong>Estimate range:</strong> {selectedKpis[2]?.value}. This is the model&apos;s low-to-high estimate span, not a probability or race-day forecast.</p></div></div>
+                <p className="home-evidence-caveat">Race-day progress cannot yet be assessed from this current-fitness estimate.</p>
+                <DriverEvidence drivers={driverContributions} /><TrendEvidence series={trendSeries} />
+                <div className="home-evidence-actions"><RecoveryDataQualityLink label="Review data coverage" issue="Current-fitness details are limited by the available imported history." selectedDistanceM={selectedDistanceM} /><Link className="text-link" href="/dashboard/activities">Review training history</Link></div>
+              </> : null}
               {onlineStatus ? <details className="home-freshness"><summary>Data freshness</summary><OnlineStatusPanel status={onlineStatus} /></details> : null}
               {onlineStatusLoading ? <p className="quiet-copy" role="status">Checking data freshness…</p> : null}
-              {onlineStatusError ? <p className="quiet-copy" role="status">Freshness details are unavailable. Your approved coaching is independent.</p> : null}
-            </section>
-          ) : null}
+              {onlineStatusError ? <p className="quiet-copy" role="status">Freshness details are unavailable. Goal and coaching reads are independent.</p> : null}
+            </section> : null}
+          </section>
 
-          <section className="content-group home-group home-recent" aria-labelledby="recent-training-heading"><p className="eyebrow">Recent training</p><h2 id="recent-training-heading" className="group-heading">What changed recently</h2><HomeRecentTraining /></section>
-          <section className="content-group home-group home-next" aria-labelledby="next-action-heading"><p className="eyebrow">Next action</p><h2 id="next-action-heading" className="group-heading">What to do next</h2><TodayCoachingCard compact /></section>
+          <section className="content-group home-group home-today" aria-labelledby="today-focus-heading"><h2 id="today-focus-heading" className="group-heading">Today&apos;s focus</h2><TodayCoachingCard compact headingLevel={3} /></section>
+          <section className="content-group home-group home-activity" aria-labelledby="latest-activity-heading"><h2 id="latest-activity-heading" className="group-heading">Latest activity</h2><HomeRecentTraining /></section>
         </section>
       </main>
     </div>
@@ -212,35 +198,6 @@ function RecoveryDataQualityLink({ label, issue, selectedDistanceM }: { label: s
     });
     window.location.assign(dataQualityHref(context));
   }}>{label}</Link>;
-}
-
-function HomeReadinessContext() {
-  const [state, setState] = useState<TargetContextState>(initialTargetContextState);
-  const requestGate = useRef(createTargetRequestGate());
-
-  const loadTarget = () => {
-    const generation = requestGate.current.begin();
-    const previous = retainedTarget(state);
-    setState(targetContextLoading(previous));
-    void fetch("/api/v1/coaching/today", { cache: "no-store" }).then(async (response) => {
-      const body = await response.json().catch(() => undefined);
-      if (requestGate.current.isCurrent(generation)) setState(targetContextFromResponse(response, body, previous));
-    }).catch(() => {
-      if (requestGate.current.isCurrent(generation)) setState(targetContextFromNetworkFailure(previous));
-    });
-  };
-
-  useEffect(() => {
-    loadTarget();
-    // The initial target read is intentionally independent from outlook/freshness reads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (state.kind === "loading") return <p role="status"><strong>Target and timeframe:</strong> {state.previous ? `${state.previous.title} on ${state.previous.targetDate} · checking for an updated settled target…` : "Loading your settled target…"}</p>;
-  if (state.kind === "target") return <p><strong>Target and timeframe:</strong> {state.target.title} on {state.target.targetDate} · {state.target.countdown}. An on-track comparison is not available from this assessment.</p>;
-  if (state.kind === "absence") return <p><strong>Target and timeframe:</strong> No settled target is confirmed. An on-track comparison cannot be assessed.</p>;
-  if (state.authorizationLost) return <p role="alert"><strong>Target and timeframe:</strong> Your settled target could not be checked because this session is no longer authorized. Sign in again; no target status is being inferred.</p>;
-  return <p role="alert"><strong>Target and timeframe:</strong> {state.previous ? `${state.previous.title} on ${state.previous.targetDate} was previously confirmed, but the current target read failed.` : "Could not load your settled target."} No target status is being inferred. <button className="text-link" type="button" onClick={loadTarget}>Retry target</button></p>;
 }
 
 function DriverEvidence({ drivers }: { drivers: DashboardViewModel["driverContributions"] }) {

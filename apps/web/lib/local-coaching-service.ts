@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { calculatePlanProposalContentHash as hashPlanProposalContent } from "../../../packages/core/src/services/plan-proposal-hash.ts";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -14,8 +15,10 @@ import {
   goalDraftSchema,
   planWeekSchema,
   planProposalFileSchema,
+  anyPlanProposalSchema,
   planProposalReviewSchema,
-  planProposalSchema,
+  raceMilestoneSchema,
+  goalContextRouteDataSchema,
   reminderPreferencesSchema,
   settledGoalSchema,
   trainingPlanSchema,
@@ -27,7 +30,9 @@ import {
   type ContextNoteReference,
   type DailyBrief,
   type GoalDraft,
-  type PlanProposal,
+  type AnyPlanProposal,
+  type GoalContextRouteData,
+  type TodayScheduleKind,
   type PlanProposalReview,
   type PlannedWorkout,
   type ReminderPreferences,
@@ -135,6 +140,8 @@ export type TodayCoachingOverview = {
   goal: TodayGoalSummary | null;
   plan: TodayPlanSummary | null;
   session: CalendarSession | null;
+  todayScheduleKind: TodayScheduleKind;
+  nextWorkout: PlannedWorkout | null;
   brief: DailyBrief | null;
   message: string;
   localCue: string;
@@ -162,27 +169,7 @@ const jsonObject = (value: unknown): JsonObject => value && typeof value === "ob
 
 const sha256 = (value: unknown) => createHash("sha256").update(stableJson(value)).digest("hex");
 
-const proposalContent = (proposal: JsonObject) => ({
-  athleteId: proposal.athleteId,
-  goalId: proposal.goalId,
-  goalRevision: proposal.goalRevision,
-  routineRevision: proposal.routineRevision,
-  proposedGoal: proposal.proposedGoal,
-  goalRationale: proposal.goalRationale,
-  startsOn: proposal.startsOn,
-  endsOn: proposal.endsOn,
-  timezone: proposal.timezone,
-  weeklyStructure: proposal.weeklyStructure,
-  workouts: proposal.workouts,
-  contextArtifactId: proposal.contextArtifactId,
-  sourceHistoryFingerprint: proposal.sourceHistoryFingerprint,
-  rationale: proposal.rationale,
-  summary: proposal.summary,
-  assumptions: proposal.assumptions,
-  cautions: proposal.cautions,
-});
-
-export const calculatePlanProposalContentHash = (proposal: JsonObject) => sha256(proposalContent(proposal));
+export const calculatePlanProposalContentHash = (proposal: JsonObject) => hashPlanProposalContent(proposal);
 
 const loadCompleteHistory = (input: {
   databasePath: string;
@@ -486,6 +473,7 @@ const planSourceBody = (plan: StoredPlan) => {
         : DEFAULT_TIMEZONE,
     weeklyStructure: storedWeeks.success ? storedWeeks.data : deriveWeeklyStructure(workouts),
     workouts,
+    ...(Array.isArray(source.milestones) ? { milestones: source.milestones.map((milestone) => raceMilestoneSchema.parse(milestone)) } : {}),
     contextArtifactId: typeof source.contextArtifactId === "string" && source.contextArtifactId.trim()
       ? source.contextArtifactId
       : typeof summary.contextArtifactId === "string" && summary.contextArtifactId.trim()
@@ -566,13 +554,13 @@ const sourceProposal = (plan: StoredPlan, storedGoal?: StoredGoal | null) => {
     review: approval.review,
     contentHash: approval.contentHash,
   };
-  return planProposalSchema.parse(candidate);
+  return anyPlanProposalSchema.parse(candidate);
 };
 
-const asProposal = (plan: StoredPlan, storedGoal?: StoredGoal | null): PlanProposal => {
+const asProposal = (plan: StoredPlan, storedGoal?: StoredGoal | null): AnyPlanProposal => {
   const source = sourceProposal(plan, storedGoal);
   const summary = jsonObject(plan.summary);
-  return planProposalSchema.parse({
+  return anyPlanProposalSchema.parse({
     ...source,
     id: plan.id,
     version: plan.version,
@@ -602,12 +590,13 @@ const asTrainingPlan = (plan: StoredPlan): TrainingPlan => {
 };
 
 const buildPlanProposalReview = (input: {
-  proposal: PlanProposal;
+  proposal: AnyPlanProposal;
   goal: CoachingGoal;
   activePlan: StoredPlan | null;
   currentHistoryFingerprint: string;
 }): PlanProposalReview => {
   const stale = input.proposal.sourceHistoryFingerprint !== input.currentHistoryFingerprint;
+  const proposalMilestones = "milestones" in input.proposal ? input.proposal.milestones : [];
   if (!input.activePlan) {
     return {
       historyStatus: stale ? "stale" : "current",
@@ -621,6 +610,12 @@ const buildPlanProposalReview = (input: {
         field: "active_plan",
         change: "initial",
         summary: "No active plan exists; approving this proposal will create the first active version.",
+      }, {
+        field: "goal_milestones",
+        change: proposalMilestones.length ? "added" : "unchanged",
+        summary: proposalMilestones.length
+          ? `${proposalMilestones.length} explicit race milestone(s) will be approved with this plan.`
+          : "No intermediate race milestones are included.",
       }],
     };
   }
@@ -691,6 +686,12 @@ const buildPlanProposalReview = (input: {
         stableJson(workoutSignature(active)) === stableJson(workoutSignature(input.proposal)),
         `Session prescriptions or scheduling change across ${active.workouts.length} existing and ${input.proposal.workouts.length} proposed session(s).`,
         `All ${input.proposal.workouts.length} session prescriptions and scheduled dates are unchanged.`,
+      ),
+      comparison(
+        "goal_milestones",
+        stableJson(active.milestones ?? []) === stableJson(proposalMilestones),
+        `Approved race milestones change from ${(active.milestones ?? []).length} to ${proposalMilestones.length}. Review each date and target time.`,
+        `The approved milestone list remains unchanged at ${proposalMilestones.length}.`,
       ),
       comparison(
         "assumptions_and_cautions",
@@ -1025,7 +1026,7 @@ export class LocalCoachingService {
     if (!validation.success) {
       throw new LocalCoachingServiceError(
         "INVALID_PLAN_PROPOSAL",
-        "Plan proposal is not valid coaching-plan-proposal.v1 JSON",
+        "Plan proposal is not valid coaching-plan-proposal.v1 or coaching-plan-proposal.v2 JSON",
         validation.error.issues,
       );
     }
@@ -1072,7 +1073,7 @@ export class LocalCoachingService {
       activePlan: this.repository.loadActivePlan(),
       currentHistoryFingerprint: currentHistory.historyFingerprint,
     });
-    const reviewedProposal = planProposalSchema.parse({ ...proposal, review });
+    const reviewedProposal = anyPlanProposalSchema.parse({ ...proposal, review });
     const stored = this.run(() => this.repository.saveValidatedPlan({
       goalId: proposal.goalId,
       contextSnapshotId: context.id,
@@ -1186,6 +1187,78 @@ export class LocalCoachingService {
     return this.run(() => {
       const goal = this.repository.loadSettledGoal();
       return goal ? asSettledGoal(goal) : null;
+    });
+  }
+
+  getActiveGoalContext(): GoalContextRouteData {
+    return this.run(() => {
+      const goalSummary = (goal: SettledGoal) => ({
+        id: goal.id,
+        athleteId: goal.athleteId,
+        revision: goal.revision,
+        title: goal.title,
+        why: goal.why,
+        target: goal.target,
+      });
+      const planReference = (plan: StoredPlan) => ({
+        id: plan.id,
+        version: plan.version,
+        revision: plan.revision,
+        startsOn: plan.startDate,
+        endsOn: plan.endDate,
+        timezone: typeof jsonObject(jsonObject(plan.summary).sourceProposal).timezone === "string"
+          ? String(jsonObject(jsonObject(plan.summary).sourceProposal).timezone)
+          : DEFAULT_TIMEZONE,
+        approvalContentHash: approvalMetadata(plan).contentHash,
+      });
+      const active = this.repository.loadActivePlan();
+      if (!active) {
+        const settled = this.repository.loadSettledGoal();
+        return goalContextRouteDataSchema.parse(settled
+          ? { state: "goal_only", plan: null, goal: goalSummary(asSettledGoal(settled)), milestones: null, projection: null }
+          : { state: "no_active_plan", plan: null, goal: null, milestones: null, projection: null });
+      }
+
+      const reference = planReference(active);
+      const sourceValue = jsonObject(jsonObject(active.summary).sourceProposal);
+      const parsedSource = anyPlanProposalSchema.safeParse(sourceValue);
+      const linkedGoal = this.repository.loadGoal(active.goalId);
+      if (!parsedSource.success || !linkedGoal || !["settled", "superseded"].includes(linkedGoal.lifecycle)) {
+        return goalContextRouteDataSchema.parse({ state: "unavailable", plan: reference, goal: null, milestones: null, projection: null });
+      }
+      const source = parsedSource.data;
+      const proposalGoal = source.proposedGoal;
+      const storedGoal = asSettledGoal(linkedGoal);
+      const userFields = (value: GoalDraft | SettledGoal) => ({
+        id: value.id,
+        athleteId: value.athleteId,
+        revision: value.revision,
+        title: value.title,
+        why: value.why,
+        target: value.target,
+      });
+      const summary = jsonObject(active.summary);
+      const sourceHash = typeof sourceValue.contentHash === "string" ? sourceValue.contentHash : null;
+      const milestones = "milestones" in source ? source.milestones : [];
+      const approvedMilestones = raceMilestoneSchema.array().max(12).safeParse(milestones);
+      if (source.status !== "proposed"
+        || source.athleteId !== this.athleteId
+        || source.version !== active.version
+        || source.goalId !== active.goalId
+        || source.goalRevision !== linkedGoal.version
+        || sourceHash !== summary.contentHash
+        || sourceHash !== hashPlanProposalContent(sourceValue)
+        || stableJson(userFields(proposalGoal)) !== stableJson(userFields(storedGoal))
+        || !approvedMilestones.success) {
+        return goalContextRouteDataSchema.parse({ state: "unavailable", plan: reference, goal: null, milestones: null, projection: null });
+      }
+      return goalContextRouteDataSchema.parse({
+        state: "ready",
+        plan: reference,
+        goal: goalSummary(storedGoal),
+        milestones: approvedMilestones.data,
+        projection: null,
+      });
     });
   }
 
@@ -1306,13 +1379,16 @@ export class LocalCoachingService {
       const configuredTimezone = this.asReminderPreferences(this.repository.loadReminderPreferences())?.timezone
         ?? profile?.timezone
         ?? DEFAULT_TIMEZONE;
-      if (!isIanaTimezone(configuredTimezone)) {
+      const active = this.repository.loadActivePlan();
+      const activePlanTimezone = jsonObject(active?.summary).timezone;
+      const todayTimezone = typeof activePlanTimezone === "string" ? activePlanTimezone : configuredTimezone;
+      if (!isIanaTimezone(todayTimezone)) {
         throw new LocalCoachingServiceError("INVALID_TIMEZONE", "Today requires a valid IANA timezone");
       }
       if (input.date !== undefined && !isCalendarDate(input.date)) {
         throw new LocalCoachingServiceError("VALIDATION_ERROR", "Today date must use a real YYYY-MM-DD calendar date");
       }
-      const date = input.date ?? localDateInIanaTimezone(this.clock(), configuredTimezone);
+      const date = input.date ?? localDateInIanaTimezone(this.clock(), todayTimezone);
       const storedGoal = this.repository.loadSettledGoal();
       const goal = storedGoal ? asSettledGoal(storedGoal) : null;
       const targetDate = goal
@@ -1325,7 +1401,6 @@ export class LocalCoachingService {
         targetDate,
         countdown: buildTargetCountdown(date, targetDate),
       } : null;
-      const active = this.repository.loadActivePlan();
       const links = {
         plan: "/dashboard/plan#active-plan-heading",
         calendar: "/dashboard/calendar",
@@ -1335,12 +1410,14 @@ export class LocalCoachingService {
         const state = "no-plan" as const;
         return {
           date,
-          timezone: configuredTimezone,
+          timezone: todayTimezone,
           generatedAt,
           state,
           goal: goalSummary,
           plan: null,
           session: null,
+          todayScheduleKind: "unavailable",
+          nextWorkout: null,
           brief: null,
           message: "No active coaching plan is approved yet. Settle a goal and explicitly approve a proposal before relying on daily coaching.",
           localCue: buildDeterministicLocalCue(state),
@@ -1361,6 +1438,13 @@ export class LocalCoachingService {
       const todaySessions = calendar.filter((session) => session.effectiveDate === date);
       const upcomingSession = todaySessions.find((session) => session.status === "upcoming") ?? null;
       const skippedSession = todaySessions.find((session) => session.status === "skipped") ?? null;
+      const focusSession = upcomingSession ?? skippedSession;
+      const todayScheduleKind: TodayScheduleKind = focusSession
+        ? focusSession.kind === "rest" ? "prescribed_rest" : "prescribed_session"
+        : "unscheduled";
+      const nextWorkout = calendar
+        .filter((session) => session.kind !== "rest" && session.status !== "skipped" && session.effectiveDate > date)
+        .sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate) || left.id.localeCompare(right.id))[0] ?? null;
       const missedSession = calendar
         .filter((session) => session.kind !== "rest" && session.status === "upcoming" && session.effectiveDate < date)
         .at(-1) ?? null;
@@ -1437,12 +1521,14 @@ export class LocalCoachingService {
       });
       return {
         date,
-        timezone: configuredTimezone,
+        timezone: todayTimezone,
         generatedAt,
         state,
         goal: goalSummary,
         plan,
         session,
+        todayScheduleKind,
+        nextWorkout,
         brief,
         message,
         localCue: buildDeterministicLocalCue(state, session?.title),

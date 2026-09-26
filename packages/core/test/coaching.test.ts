@@ -31,6 +31,9 @@ import {
   standardSuccessResponseSchema,
   todayApiResponseSchema,
   todayQueryRequestSchema,
+  planProposalV1FileSchema,
+  planProposalV2FileSchema,
+  planProposalV2Schema,
   weeklyRoutineApiResponseSchema,
   weeklyRoutineUpdateRequestSchema,
   weeklyRoutineSchema,
@@ -38,6 +41,7 @@ import {
   type PlanProposal,
   type WeeklyRoutine,
 } from "../src/contracts/coaching.ts";
+import { calculatePlanProposalContentHash } from "../src/services/plan-proposal-hash.ts";
 
 const now = "2026-08-05T06:00:00.000+02:00";
 const profile: CoachingProfile = {
@@ -112,6 +116,29 @@ test("plan contracts reject duplicate workout ids, duplicate week starts, and in
   assert.equal(planProposalSchema.safeParse({ ...proposal, timezone: "Invalid/Timezone" }).success, false);
 });
 
+test("proposal v2 hashes and validates explicit milestones while v1 remains milestone-free", () => {
+  const legacy = makeProposal();
+  const legacyWithHash = { ...legacy, contentHash: calculatePlanProposalContentHash(legacy) };
+  assert.equal(planProposalSchema.safeParse(legacyWithHash).success, true);
+  assert.equal(planProposalV1FileSchema.safeParse({ schema: "coaching-plan-proposal.v1", proposal: legacyWithHash }).success, true);
+  assert.equal(planProposalV1FileSchema.safeParse({
+    schema: "coaching-plan-proposal.v1", proposal: { ...legacyWithHash, milestones: [] },
+  }).success, false);
+
+  const milestone = {
+    id: "half-marathon-checkpoint", title: "Half marathon", distanceMeters: 21_097.5,
+    targetDate: "2026-10-01", targetTimeSeconds: 7_200, eventName: "Synthetic Half",
+  };
+  const v2Content = { ...legacy, milestones: [milestone] };
+  const v2 = { ...v2Content, contentHash: calculatePlanProposalContentHash(v2Content) };
+  assert.equal(planProposalV2Schema.safeParse(v2).success, true);
+  assert.equal(planProposalV2FileSchema.safeParse({ schema: "coaching-plan-proposal.v2", proposal: v2 }).success, true);
+  assert.notEqual(v2.contentHash, calculatePlanProposalContentHash(legacy));
+  assert.equal(planProposalV2Schema.safeParse({ ...v2, milestones: [{ ...milestone, targetDate: "2026-12-01" }] }).success, false);
+  assert.equal(planProposalV2Schema.safeParse({ ...v2, milestones: [milestone, milestone] }).success, false);
+  assert.equal(planProposalV2Schema.safeParse({ ...v2, milestones: Array.from({ length: 13 }, (_, index) => ({ ...milestone, id: `milestone-${index}`, targetDate: `2026-09-${String(index + 1).padStart(2, "0")}` })) }).success, false);
+});
+
 test("shared endpoint schemas cover profile, routine, calendar, Today, and reminder payloads", () => {
   const profileRequest = {
     displayName: profile.displayName,
@@ -166,10 +193,13 @@ test("shared endpoint schemas cover profile, routine, calendar, Today, and remin
     localCue: "Start controlled and keep the session aligned with its approved purpose.",
     scheduleWarnings: [],
     stale: { isStale: false, reason: null },
+    todayScheduleKind: "prescribed_session" as const,
+    nextWorkout: null,
     links: { plan: "/dashboard/plan", calendar: "/dashboard/calendar", session: `/dashboard/calendar#session-${session.id}` },
   };
   assert.equal(todayQueryRequestSchema.safeParse({ date: workout.scheduledDate }).success, true);
   assert.equal(todayApiResponseSchema.safeParse({ data: today }).success, true);
+  assert.equal(todayApiResponseSchema.safeParse({ data: { ...today, todayScheduleKind: "unscheduled", session } }).success, false);
 
   const reminderPreferences = {
     enabled: true,

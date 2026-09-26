@@ -154,7 +154,7 @@ function CurrentWeek({
   );
 }
 
-export function TodayCoachingCard({ compact = false }: { compact?: boolean }) {
+export function TodayCoachingCard({ compact = false, headingLevel = 2 }: { compact?: boolean; headingLevel?: 2 | 3 }) {
   const [requestState, setRequestState] = useState<RequestState>("loading");
   const [payload, setPayload] = useState<JsonRecord | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -225,12 +225,14 @@ export function TodayCoachingCard({ compact = false }: { compact?: boolean }) {
     return () => { current = false; };
   }, [payload, requestState, weekRequestVersion]);
 
+  const ContextHeading = headingLevel === 3 ? "h3" : "h2";
+
   if (requestState === "loading") return <section className="today-coach-card today-coach-card--loading" role="status" aria-live="polite" aria-busy="true">
-    <div className="today-coach-main"><p className="eyebrow">Approved coaching</p><h2>Loading today&apos;s coaching context…</h2><p>Reading your explicitly approved plan.</p></div>
+    <div className="today-coach-main"><p className="eyebrow">Approved coaching</p><ContextHeading>Loading today&apos;s coaching context…</ContextHeading><p>Reading your explicitly approved plan.</p></div>
   </section>;
 
   if (requestState === "error" || !payload) return <section className="today-coach-card today-coach-card--error" role="alert">
-    <div className="today-coach-main"><p className="eyebrow">Approved coaching</p><h2>Today&apos;s coaching context is unavailable</h2><p>{errorMessage || "Refresh the approved coaching context and try again."}</p><p className="today-local-cue">No plan or session has been changed.</p></div>
+    <div className="today-coach-main"><p className="eyebrow">Approved coaching</p><ContextHeading>Today&apos;s coaching context is unavailable</ContextHeading><p>{errorMessage || "Refresh the approved coaching context and try again."}</p><p className="today-local-cue">No plan or session has been changed.</p></div>
     <div className="today-actions"><button className="button button-primary" type="button" onClick={() => setRequestVersion((value) => value + 1)}>Retry today</button><Link className="text-link" href="/dashboard/plan">Open Plan</Link></div>
   </section>;
 
@@ -243,51 +245,72 @@ export function TodayCoachingCard({ compact = false }: { compact?: boolean }) {
   const date = String(payload.date ?? "");
   const warnings = Array.isArray(payload.scheduleWarnings) ? payload.scheduleWarnings.map(String) : [];
 
-  if (state === "no-plan") return <section className="today-coach-card today-coach-card--empty" aria-labelledby="today-coaching-heading">
-    <div className="today-coach-main"><p className="eyebrow">Today · {date ? formatCoachingDate(date, timezone) : "Local date"} · {timezone}</p><h2 id="today-coaching-heading">No active coaching plan yet</h2><p>{String(payload.message ?? "Settle a goal, create a proposal with Codex, and explicitly approve it before relying on daily coaching.")}</p><p className="today-local-cue">{String(payload.localCue ?? "Today will never activate or change a plan automatically.")}</p><GoalSummary goal={goal} noPlan /></div>
+  if (state === "no-plan") return <section className={`today-coach-card today-coach-card--empty${compact ? " today-coach-card--compact" : ""}`} aria-labelledby="today-coaching-heading">
+    <div className="today-coach-main"><p className="eyebrow">Today · {date ? formatCoachingDate(date, timezone) : "Local date"} · {timezone}</p><ContextHeading id="today-coaching-heading">No active coaching plan yet</ContextHeading><p>{String(payload.message ?? "Settle a goal, create a proposal with Codex, and explicitly approve it before relying on daily coaching.")}</p>{!compact ? <><p className="today-local-cue">{String(payload.localCue ?? "Today will never activate or change a plan automatically.")}</p><GoalSummary goal={goal} noPlan /></> : null}</div>
     <div className="today-actions"><span className="status-chip">{stateLabels[state]}</span><Link className="button button-primary" href={String(links.plan ?? "/dashboard/plan")}>Start planning</Link></div>
   </section>;
 
-  const sessionStatus = String(session.status ?? "");
   const originalSession = asRecord(session.original);
   const amendments = Array.isArray(session.amendments)
     ? session.amendments.map(asRecord).filter((amendment) => typeof amendment.reason === "string")
     : [];
   const latestAmendment = amendments[amendments.length - 1];
-  const hasPrescribedSession = Boolean(session.id) && sessionStatus !== "skipped" && state !== "rest";
-  const heading = state === "rest"
+  const rawScheduleKind = payload.todayScheduleKind;
+  const scheduleKind = ["prescribed_session", "prescribed_rest", "unscheduled"].includes(String(rawScheduleKind))
+    ? String(rawScheduleKind)
+    : "unavailable";
+  const hasPrescribedSession = Boolean(session.id) && scheduleKind === "prescribed_session";
+  const nextWorkout = asRecord(payload.nextWorkout);
+  const heading = scheduleKind === "prescribed_rest"
     ? "Intentional recovery day"
+    : scheduleKind === "unscheduled"
+      ? "No session scheduled today"
+      : scheduleKind === "unavailable"
+        ? "Today’s schedule details are unavailable"
     : state === "missed"
       ? "Past session needs attention"
       : state === "skipped"
         ? "Scheduled session skipped"
         : String(session.title ?? "Today's approved session");
   const sessionDate = String(session.effectiveDate ?? session.scheduledDate ?? date);
+  const scheduleDescription = scheduleKind === "prescribed_rest"
+    ? "The approved plan prescribes rest today."
+    : scheduleKind === "unscheduled"
+      ? "No session is scheduled today. This is different from a prescribed rest day."
+      : scheduleKind === "prescribed_session"
+        ? state === "skipped" ? "A session was prescribed for today and is explicitly skipped." : "An approved session is scheduled for today."
+        : "This response does not include a verified schedule classification. Open Calendar to check today’s effective schedule.";
+  const statusLabel = scheduleKind === "prescribed_rest" ? "Prescribed rest"
+    : scheduleKind === "unscheduled" ? "Unscheduled"
+      : scheduleKind === "unavailable" ? "Schedule unavailable"
+        : stateLabels[state];
 
-  return <section className={`today-coach-card today-coach-card--${state}`} aria-labelledby="today-coaching-heading">
+  return <section className={`today-coach-card today-coach-card--${state}${compact ? " today-coach-card--compact" : ""}`} aria-labelledby="today-coaching-heading">
     <div className="today-coach-overview">
       <div className="today-coach-main">
-        <p className="eyebrow">Approved coaching · {formatCoachingDate(date, timezone)} · {timezone}</p>
-        <h2 id="today-coaching-heading">{heading}</h2>
-        <p>{String(payload.message ?? "Review the approved local plan before training.")}</p>
-        <p className="today-prescription">{hasPrescribedSession
-          ? <><strong>{amendments.length > 0 ? "Current prescription:" : "Approved prescription:"}</strong> {String(session.prescription ?? "Follow the approved prescription.")}</>
-          : state === "missed"
-            ? `Scheduled ${formatCoachingDate(sessionDate, timezone)} and still marked upcoming.`
-            : state === "skipped"
-              ? "No workout is prescribed after this explicit skip."
-              : "No workout is prescribed today."}</p>
-        {hasPrescribedSession ? <p><strong>Purpose and target:</strong> {String(session.purpose ?? "Follow the approved plan")} · {String(session.durationMinutes ?? "—")} min</p> : null}
+        <p className="eyebrow">{compact ? `Today · ${formatCoachingDate(date, timezone)}${plan.version ? ` · Plan v${String(plan.version)}` : ""}` : `Approved coaching · ${formatCoachingDate(date, timezone)} · ${timezone}`}</p>
+        <ContextHeading id="today-coaching-heading">{heading}</ContextHeading>
+        {!compact || state === "skipped" || state === "missed" || state === "stale"
+          ? <p>{String(payload.message ?? "Review the approved local plan before training.")}</p>
+          : null}
+        <p className="today-prescription"><strong>{scheduleKind === "prescribed_session" ? (amendments.length > 0 ? "Current prescription:" : "Approved prescription:") : scheduleKind === "prescribed_rest" && compact ? "Approved rest:" : "Schedule:"}</strong> {scheduleKind === "prescribed_session" && hasPrescribedSession
+          ? String(session.prescription ?? scheduleDescription)
+          : compact && scheduleKind === "prescribed_rest" ? String(session.prescription ?? "Rest is prescribed today.") : scheduleDescription}</p>
+        {compact && scheduleKind === "prescribed_rest" ? <p className="today-focus-purpose"><strong>Recovery purpose:</strong> {String(session.purpose ?? payload.message ?? "Recovery")}</p> : null}
+        {scheduleKind === "prescribed_session" && state === "missed" ? <p>Scheduled {formatCoachingDate(sessionDate, timezone)} and still marked upcoming.</p> : null}
+        {hasPrescribedSession ? <p className={compact ? "today-focus-purpose" : undefined}><strong>Purpose and target:</strong> {String(session.purpose ?? "Follow the approved plan")} · {String(session.durationMinutes ?? "—")} min</p> : null}
         {amendments.length > 0 ? <details className="today-change-history"><summary>Why this session changed ({amendments.length})</summary><p><strong>Approved source:</strong> {String(originalSession.prescription ?? "The original approved prescription remains preserved in Calendar.")}</p>{latestAmendment ? <p><strong>Latest reason:</strong> {String(latestAmendment.reason)}</p> : null}<p>No AI review is claimed. Open the session to inspect its complete change history.</p></details> : null}
-        <p className="today-local-cue"><strong>Training cue:</strong> {String(payload.localCue ?? "Follow the approved plan as written.")}</p>
+        {!compact ? <p className="today-local-cue"><strong>Training cue:</strong> {String(payload.localCue ?? "Follow the approved plan as written.")}</p> : null}
+        {compact && scheduleKind === "unavailable" ? <p className="today-local-cue">The response may predate the effective schedule fields.</p> : null}
+        {compact ? (nextWorkout.id && nextWorkout.scheduledDate ? <p className="today-next-workout"><strong>Next workout:</strong> {String(nextWorkout.title ?? "Approved session")} · {formatCoachingDate(String(nextWorkout.scheduledDate), timezone)}{nextWorkout.durationMinutes ? ` · ${String(nextWorkout.durationMinutes)} min` : ""} · <Link href={`/dashboard/calendar?date=${encodeURIComponent(String(nextWorkout.scheduledDate))}&session=${encodeURIComponent(String(nextWorkout.id))}`}>View in Calendar</Link></p> : scheduleKind === "unavailable" ? <p className="today-next-workout">Next workout details are unavailable in this response.</p> : null) : null}
         {!compact ? <GoalSummary goal={goal} /> : null}
         {!compact ? <PlanContext plan={plan} timezone={timezone} /> : null}
         {!compact && warnings.length > 0 ? <div className="today-warnings"><p className="eyebrow">Schedule warnings</p><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
       </div>
       <div className="today-meta">
-        <span className={`status-chip${state === "stale" || state === "missed" ? " status-chip--warning" : state === "skipped" ? " status-chip--muted" : " status-chip--current"}`}>{stateLabels[state]}</span>
+        <span className={`status-chip${state === "stale" || state === "missed" ? " status-chip--warning" : state === "skipped" || scheduleKind === "unscheduled" || scheduleKind === "unavailable" ? " status-chip--muted" : " status-chip--current"}`}>{statusLabel}</span>
         {session.id && links.session ? <Link id="view-today-session" ref={restoreCalendarLauncher} className="button button-primary" href={String(links.session)} onClick={openCalendar}>View session</Link> : <Link id="view-today-calendar" ref={restoreCalendarLauncher} className="button button-secondary" href={String(links.calendar ?? "/dashboard/calendar")} onClick={openCalendar}>View calendar</Link>}
-        <Link className="text-link" href={String(links.plan ?? "/dashboard/plan")}>Open active plan</Link>
+        {!compact ? <Link className="text-link" href={String(links.plan ?? "/dashboard/plan")}>Open active plan</Link> : null}
       </div>
     </div>
     {!compact ? <CurrentWeek

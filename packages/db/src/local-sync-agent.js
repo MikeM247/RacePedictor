@@ -112,10 +112,23 @@ export class LocalCloudSyncAgent {
     return { sync, source, publication };
   }
 
-  async publishApprovedPlan(plan) {
+  async publishApprovedPlan(plan, goalContext = null) {
     const token = await this.#credentialStore.load();
     if (!token) throw new Error("No paired device credential is stored");
-    return this.#client.publishApprovedPlan(token, plan);
+    const publishedPlan = await this.#client.publishApprovedPlan(token, plan);
+    if (!goalContext) return { ...publishedPlan, goalContext: { state: "unavailable" } };
+    try {
+      const publishedContext = await this.#client.publishPlanGoalContext(token, goalContext);
+      return { ...publishedPlan, goalContext: { state: "ready", ...publishedContext.data } };
+    } catch (error) {
+      return { ...publishedPlan, goalContext: { state: "pending", reasonCode: diagnosticCode(error) } };
+    }
+  }
+
+  async publishPlanGoalContext(goalContext) {
+    const token = await this.#credentialStore.load();
+    if (!token) throw new Error("No paired device credential is stored");
+    return this.#client.publishPlanGoalContext(token, goalContext);
   }
 }
 

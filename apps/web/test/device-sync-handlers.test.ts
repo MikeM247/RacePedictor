@@ -11,6 +11,7 @@ import {
   handleEnrollDevice,
   handleListDevices,
   handlePublishSecondBrainSnapshot,
+  handlePublishApprovedPlanGoalContext,
   handleRevokeDevice,
   type DeviceSyncComposition,
 } from "../lib/server/device-sync-handlers.ts";
@@ -130,6 +131,42 @@ test("device changes, acknowledgement, and selected context publication stay in 
   assert.equal((await acknowledged.json()).data.device.lastAcknowledgedCursor, "9");
   assert.equal(published.status, 201);
   assert.deepEqual(scopes, [athleteId, athleteId, athleteId]);
+});
+
+test("approved goal context publication is fenced to its authenticated athlete and paired device", async () => {
+  const scopes: string[] = [];
+  const requestBody = {
+    athleteId,
+    planId: "plan-a",
+    planVersion: 3,
+    goalId: "goal-a",
+    goalRevision: 2,
+    approvalContentHash: "b".repeat(64),
+    goal: {
+      id: "goal-a", athleteId, revision: 2, title: "Marathon target", why: "Synthetic goal",
+      target: { kind: "performance", distanceMeters: 42_195, targetDate: "2026-11-01", targetTimeSeconds: 14_400 },
+      status: "settled", createdAt: "2026-08-01T08:00:00.000Z", updatedAt: "2026-08-02T08:00:00.000Z",
+      settledAt: "2026-08-02T08:00:00.000Z", settledBy: "user",
+    },
+    milestones: [{ id: "half-a", title: "Half marathon", distanceMeters: 21_097.5, targetDate: "2026-10-01", targetTimeSeconds: 7_200 }],
+    contextHash: "c".repeat(64),
+  };
+  const composition = {
+    goalContexts: { publish: async (scope: ReturnType<typeof athleteScopeFor>, value: unknown, pairedDeviceId: string) => {
+      scopes.push(scope.athleteId);
+      assert.deepEqual(value, requestBody);
+      assert.equal(pairedDeviceId, device.id);
+      return { contextHash: requestBody.contextHash, publishedAt: "2026-08-10T08:00:00.000Z", reused: false };
+    } },
+  } as unknown as DeviceSyncComposition;
+  const response = await handlePublishApprovedPlanGoalContext(
+    { actor: deviceActor, device },
+    new Request("http://localhost/api/v1/sync/device/plan-goal-context", { method: "POST", body: JSON.stringify(requestBody) }),
+    () => composition,
+  );
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).data.contextHash, requestBody.contextHash);
+  assert.deepEqual(scopes, [athleteId]);
 });
 
 test("selected context endpoint rejects unapproved free text before persistence", async () => {

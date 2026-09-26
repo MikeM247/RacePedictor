@@ -7,6 +7,7 @@ import { RacePredictorSyncClient } from "./local-sync-client.js";
 import { LocalSyncProjectionRepository } from "./local-sync-projection.js";
 import { readSelectedSecondBrainSource } from "./obsidian-selected-context.js";
 import { runCloudActivityReviewBatch } from "./local-activity-review-cloud-worker.js";
+import { buildVerifiedLocalPlanGoalContextFromDatabase } from "./local-plan-goal-context.js";
 
 const command = process.argv[2];
 const localAppData = process.env.LOCALAPPDATA;
@@ -27,8 +28,11 @@ if (command === "enroll") {
   await credentialStore.save(token.trim());
   process.stdout.write("Device credential stored in the Windows user credential boundary.\n");
 } else {
-  if (!databasePath || !vaultPath || !baseUrl) {
-    throw new Error("RACEPREDICTOR_DATABASE_PATH, RACEPREDICTOR_OBSIDIAN_VAULT_PATH, and RACEPREDICTOR_CLOUD_URL are required");
+  const requiresVault = command === "sync" || command === "sync-and-publish" || command === "publish-context";
+  if (!databasePath || !baseUrl || (requiresVault && !vaultPath)) {
+    throw new Error(requiresVault
+      ? "RACEPREDICTOR_DATABASE_PATH, RACEPREDICTOR_OBSIDIAN_VAULT_PATH, and RACEPREDICTOR_CLOUD_URL are required"
+      : "RACEPREDICTOR_DATABASE_PATH and RACEPREDICTOR_CLOUD_URL are required");
   }
   const projection = new LocalSyncProjectionRepository({ databasePath });
   const agent = new LocalCloudSyncAgent({
@@ -36,7 +40,7 @@ if (command === "enroll") {
     credentialStore,
     client: new RacePredictorSyncClient({ baseUrl }),
     projection,
-    notePath: path.join(vaultPath, "Dashboards", "RacePredictor Cloud Sync.md"),
+    notePath: path.join(vaultPath ?? process.cwd(), "Dashboards", "RacePredictor Cloud Sync.md"),
   });
   if (command === "sync") {
     const result = await agent.sync();
@@ -74,9 +78,25 @@ if (command === "enroll") {
     const inputPath = process.argv[3];
     if (!inputPath) throw new Error("publish-plan requires one explicit approved plan JSON path");
     const plan = JSON.parse(await readFile(path.resolve(inputPath), "utf8"));
-    const result = await agent.publishApprovedPlan(plan);
+    const verified = buildVerifiedLocalPlanGoalContextFromDatabase({ databasePath, athleteId, planId: plan?.id, expectedPlan: plan });
+    const result = await agent.publishApprovedPlan(plan, verified.state === "verified" ? verified.value : null);
     process.stdout.write(`Approved plan ${result.data.plan.id} published.\n`);
+    process.stdout.write(result.goalContext.state === "ready"
+      ? `Approved goal context ${result.goalContext.contextHash} published.\n`
+      : result.goalContext.state === "pending"
+        ? `Goal context remains pending (${result.goalContext.reasonCode}); retry with publish-plan-goal-context ${plan.id}.\n`
+        : `Goal context remains unavailable because the local approved source could not be verified (${verified.reasonCode ?? "source_unverifiable"}).\n`);
+  } else if (command === "publish-plan-goal-context") {
+    const planId = process.argv[3];
+    if (!planId) throw new Error("publish-plan-goal-context requires one approved plan ID");
+    const verified = buildVerifiedLocalPlanGoalContextFromDatabase({ databasePath, athleteId, planId });
+    if (verified.state !== "verified") {
+      process.stdout.write(`Goal context remains unavailable (${verified.reasonCode}); no projection was published.\n`);
+    } else {
+      const result = await agent.publishPlanGoalContext(verified.value);
+      process.stdout.write(`Approved goal context ${result.data.contextHash} published for plan ${planId}.\n`);
+    }
   } else {
-    throw new Error("Expected enroll, sync, sync-and-publish, publish-context, or publish-plan command");
+    throw new Error("Expected enroll, sync, sync-and-publish, publish-context, publish-plan, or publish-plan-goal-context command");
   }
 }

@@ -7,6 +7,7 @@ import {
   calendarQueryRequestSchema,
   calendarRouteDataSchema,
   coachingReviewContextRouteDataSchema,
+  goalContextRouteDataSchema,
   plannedWorkoutSchema,
   todayRouteDataSchema,
   todayQueryRequestSchema,
@@ -19,6 +20,7 @@ import {
   CloudSyncCursorError,
   CalendarSessionAmendmentError,
   TrainingPlanActivationError,
+  TrainingPlanGoalContextUnavailableError,
 } from "../../../../packages/db/src/cloud/index.js";
 import type { CloudCalendarSession } from "../../../../packages/db/src/cloud/index.js";
 import { getCloudReadComposition } from "./cloud-read-composition.ts";
@@ -164,6 +166,57 @@ export async function handleCloudActivePlan(
   const plan = await safelyReadCoaching(() => getComposition().coaching.getActivePlan(requireScope(security)));
   if (!plan) throw new ApiHttpError(404, "NOT_FOUND", "No active plan was found");
   return success(plan);
+}
+
+export async function handleCloudActiveGoalContext(
+  security: SensitiveRouteContext,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  let plan;
+  try {
+    plan = await getComposition().coaching.getActivePlan(scope);
+  } catch {
+    return success({ context: goalContextRouteDataSchema.parse({
+      state: "unavailable", plan: null, goal: null, milestones: null, projection: null,
+    }) });
+  }
+  if (!plan) {
+    return success({ context: goalContextRouteDataSchema.parse({
+      state: "no_active_plan", plan: null, goal: null, milestones: null, projection: null,
+    }) });
+  }
+  const planReference = {
+    id: plan.id,
+    version: plan.version,
+    revision: plan.revision,
+    startsOn: plan.startsOn,
+    endsOn: plan.endsOn,
+    timezone: plan.timezone,
+    approvalContentHash: plan.approval.contentHash,
+  };
+  try {
+    const context = await getComposition().goalContexts.findForPlan(scope, plan);
+    if (!context) {
+      return success({ context: goalContextRouteDataSchema.parse({
+        state: "projection_pending", plan: planReference, goal: null, milestones: null, projection: null,
+      }) });
+    }
+    return success({ context: goalContextRouteDataSchema.parse({
+      state: "ready",
+      plan: planReference,
+      goal: context.goal,
+      milestones: context.milestones,
+      projection: { contextHash: context.contextHash, publishedAt: context.publishedAt },
+    }) });
+  } catch (error) {
+    if (error instanceof TrainingPlanGoalContextUnavailableError) {
+      return success({ context: goalContextRouteDataSchema.parse({
+        state: "unavailable", plan: planReference, goal: null, milestones: null, projection: null,
+      }) });
+    }
+    throw error;
+  }
 }
 
 export async function handleCloudPlanHistory(
@@ -404,7 +457,17 @@ export async function handleCloudToday(
   };
   const projected = projectCloudToday({ athleteId: scope.athleteId, plan: effectivePlan, date: parsed.data.date, generatedAt: now() });
   const effectiveSession = allSessions.find((session: { effectiveDate: string }) => session.effectiveDate === projected.date) ?? null;
-  if (!effectiveSession) return success(projected);
+  const nextWorkout = allSessions
+    .filter((session: CloudCalendarSession) => session.effectiveDate > projected.date && session.kind !== "rest" && session.status !== "skipped")
+    .sort((left: CloudCalendarSession, right: CloudCalendarSession) => left.effectiveDate.localeCompare(right.effectiveDate) || left.id.localeCompare(right.id))[0];
+  const scheduleKind = !effectiveSession
+    ? "unscheduled" as const
+    : effectiveSession.kind === "rest" ? "prescribed_rest" as const : "prescribed_session" as const;
+  if (!effectiveSession) return success(todayRouteDataSchema.parse({
+    ...projected,
+    todayScheduleKind: scheduleKind,
+    nextWorkout: nextWorkout ? toEffectiveWorkout(nextWorkout) : null,
+  }));
   const state = effectiveSession.status === "skipped"
     ? "skipped"
     : projected.state;
@@ -412,6 +475,8 @@ export async function handleCloudToday(
     ...projected,
     session: effectiveSession,
     sessionId: effectiveSession.id,
+    todayScheduleKind: scheduleKind,
+    nextWorkout: nextWorkout ? toEffectiveWorkout(nextWorkout) : null,
     state,
     status: state,
     message: state === "skipped"

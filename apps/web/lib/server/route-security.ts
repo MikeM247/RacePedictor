@@ -46,6 +46,7 @@ export function isDeviceAuthenticatedApiPath(pathname: string) {
   return pathname === "/api/v1/sync/device/changes"
     || pathname === "/api/v1/sync/device/acknowledge"
     || pathname === "/api/v1/sync/device/plans"
+    || pathname === "/api/v1/sync/device/plan-goal-context"
     || pathname === "/api/v1/sync/device/failure"
     || pathname === "/api/v1/second-brain-context/snapshots"
     || pathname === "/api/v1/sync/device/activity-reviews"

@@ -2,6 +2,8 @@ export * from "./strava-activity-mapper.ts";
 export * from "./strava-activity-client.ts";
 export * from "./strava-ingestion-service.ts";
 export * from "./online-status.ts";
+export * from "./plan-goal-context.ts";
+export * from "./plan-proposal-hash.ts";
 export * from "./cloud-dashboard.ts";
 export * from "./cloud-coaching.ts";
 export * from "./second-brain-publisher.ts";

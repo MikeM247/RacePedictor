@@ -35,6 +35,7 @@ async function mockHome(page: Page, options: {
   reviewStatus?: ReviewStatus;
   reviewData?: ReturnType<typeof review> | null;
   reviewFailure?: boolean;
+  goalState?: "ready" | "projection_pending" | "goal_only" | "no_active_plan" | "unavailable";
 } = {}) {
   const activities = options.activities ?? [latest];
   const reviewStatus = options.reviewStatus ?? "ready";
@@ -50,7 +51,26 @@ async function mockHome(page: Page, options: {
     if (options.reviewFailure) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "Review service unavailable" } }) });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { activityId: latest.id, status: reviewStatus, review: reviewData, requestId: reviewStatus === "not_requested" ? null : "f02-request", updatedAt: "2026-09-15T08:01:00.000Z", readRevision: reviewData?.revision ?? null } }) });
   });
-  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { athleteId: "f02-athlete", date: "2026-09-15", timezone: "Africa/Johannesburg", state: "rest", status: "rest", message: "Intentional recovery day.", goal: null, plan: null, session: null, localCue: "Protect recovery today.", links: { plan: "/dashboard/plan", calendar: "/dashboard/calendar", session: null } } }) }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { athleteId: "f02-athlete", date: "2026-09-15", timezone: "Africa/Johannesburg", state: "rest", status: "rest", message: "Intentional recovery day.", goal: null, plan: { id: "f02-plan", version: 3, startsOn: "2026-09-14", endsOn: "2027-04-18" }, session: { id: "f02-rest", kind: "rest", scheduledDate: "2026-09-15", effectiveDate: "2026-09-15", status: "upcoming", title: "Rest", purpose: "Recovery", prescription: "Rest or gentle mobility.", durationMinutes: 0, amendments: [] }, todayScheduleKind: "prescribed_rest", nextWorkout: null, localCue: "Protect recovery today.", links: { plan: "/dashboard/plan", calendar: "/dashboard/calendar", session: null } } }) }));
+  await page.route("**/api/v1/coaching/goal-context/active", (route) => {
+    const goal = { id: "f02-goal", athleteId: "f02-athlete", revision: 2, title: "City marathon", why: "Complete the approved marathon target", target: { kind: "performance", distanceMeters: 42_195, targetDate: "2027-04-18", targetTimeSeconds: 14_400, eventName: "City Marathon" } };
+    const plan = { id: "f02-plan", version: 3, revision: 2, startsOn: "2026-09-14", endsOn: "2027-04-18", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) };
+    const context = options.goalState === "projection_pending" ? {
+      state: "projection_pending", plan, goal: null, milestones: null, projection: null,
+    } : options.goalState === "goal_only" ? {
+      state: "goal_only", plan: null, goal, milestones: null, projection: null,
+    } : options.goalState === "no_active_plan" ? {
+      state: "no_active_plan", plan: null, goal: null, milestones: null, projection: null,
+    } : options.goalState === "unavailable" ? {
+      state: "unavailable", plan, goal: null, milestones: null, projection: null,
+    } : {
+      state: "ready", plan,
+      goal,
+      milestones: [{ id: "f02-half", title: "Half marathon", distanceMeters: 21_097.5, targetDate: "2027-02-01", targetTimeSeconds: 7_200, eventName: "February Half" }],
+      projection: { contextHash: "b".repeat(64), publishedAt: "2026-09-15T08:00:00.000Z" },
+    };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { context } }) });
+  });
 }
 
 test("F02 Home keeps three groups ordered, presents a qualified latest review, and reads without writes", async ({ page }) => {
@@ -60,9 +80,12 @@ test("F02 Home keeps three groups ordered, presents a qualified latest review, a
   await page.goto("/dashboard");
   const groups = page.locator(".home-group");
   await expect(groups).toHaveCount(3);
-  await expect(groups.nth(0)).toHaveAttribute("aria-labelledby", "race-outlook-heading");
-  await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "recent-training-heading");
-  await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "next-action-heading");
+  await expect(groups.nth(0)).toHaveAttribute("aria-labelledby", "goal-and-milestone-heading");
+  await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "today-focus-heading");
+  await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "latest-activity-heading");
+  await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Next milestone: Half marathon · February Half" })).toBeVisible();
+  await expect(page.getByText(/Race-day progress cannot yet be assessed/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
   await expect(page.getByText("This one session does not establish a target-race change.")).toBeVisible();
   await expect(page.getByText(/Goal impact cannot be assessed from the available review evidence/)).toBeVisible();
@@ -72,10 +95,10 @@ test("F02 Home keeps three groups ordered, presents a qualified latest review, a
   const sessionLink = page.getByRole("link", { name: "View full session review" });
   await expect(sessionLink).toHaveAttribute("href", /activityId=f02-latest.*returnTo=%2Fdashboard/);
   await expect(page.getByRole("link", { name: "View calendar" })).toHaveAttribute("href", "/dashboard/calendar");
-  await page.getByRole("button", { name: "View readiness" }).click();
-  await expect(page.getByRole("heading", { name: "Evidence for this outlook" })).toBeVisible();
+  await page.getByRole("button", { name: "View current-fitness details" }).click();
+  await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
   await page.getByRole("button", { name: "Back to Home" }).click();
-  await expect(page.getByRole("button", { name: "View readiness" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "View current-fitness details" })).toBeFocused();
   await Promise.all([
     page.waitForURL(/\/dashboard\/activities\?activityId=f02-latest/),
     sessionLink.click(),
@@ -125,8 +148,32 @@ test("F02 makes review failure local to Recent training while the other groups r
   await mockHome(page, { reviewFailure: true });
   await page.goto("/dashboard");
   await expect(page.getByText(/Feedback could not be checked/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "10 km prediction" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your approved goal" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Intentional recovery day" })).toBeVisible();
+});
+
+test("F02 Home reports cloud projection pending without displaying inferred goal values", async ({ page }) => {
+  await mockHome(page, { goalState: "projection_pending" });
+  await page.goto("/dashboard");
+  await expect(page.getByText(/waiting for paired-device publication/)).toBeVisible();
+  await expect(page.getByText("City marathon", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View calendar" })).toBeVisible();
+});
+
+test("F02 Home distinguishes a settled goal without a plan from unavailable cloud goal context", async ({ page }) => {
+  await mockHome(page, { goalState: "goal_only" });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
+  await expect(page.getByText(/no active approved plan with milestones/)).toBeVisible();
+  await expect(page.getByText(/Race-day progress cannot yet be assessed/)).toHaveCount(0);
+
+  await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ data: { context: { state: "unavailable", plan: null, goal: null, milestones: null, projection: null } } }),
+  }));
+  await page.reload();
+  await expect(page.getByText(/could not be verified/)).toBeVisible();
+  await expect(page.getByText("City marathon", { exact: true })).toHaveCount(0);
 });
 
 for (const [state, label] of [["suggested", "Suggested plan match — not confirmed"], ["confirmed", "Confirmed plan match"], ["ambiguous", "Plan match is uncertain"], ["unplanned", "Unplanned session"], ["none", "No planned session linked"]] as const) {
@@ -154,11 +201,57 @@ test("F02 keeps long caveats readable without horizontal overflow at contract wi
     limitations: ["This material limitation is intentionally long so that the visual check proves it wraps in the Home sequence, remains readable beside the review it qualifies, and is never hidden merely to make the default screen shorter."],
   });
   await mockHome(page, { reviewData: longReview });
-  for (const width of [320, 767, 768, 1199, 1200, 1440]) {
+  for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/dashboard");
     await expect(page.getByText(/Full review passage shown because safely shortening/)).toBeVisible();
     await expect(page.getByText(/This material limitation is intentionally long/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
+});
+
+test("F02 Home reflows without overflow at the 200% zoom effective viewport", async ({ page }) => {
+  await mockHome(page);
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Intentional recovery day" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(720);
+});
+
+test("F02 records first-screen summaries at common phone and desktop heights", async ({ page }) => {
+  await mockHome(page);
+  const review: Array<{ width: number; height: number; goalPanelBottom: number; todaySummaryBottom: number; activityIdentityBottom: number; activityTakeawayBottom: number; goalAndTodayFit: boolean; allGroupsFit: boolean }> = [];
+  for (const { width, height } of [{ width: 390, height: 844 }, { width: 1024, height: 900 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize({ width, height });
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const bottom = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector);
+        return element ? Math.ceil(element.getBoundingClientRect().bottom) : 0;
+      };
+      const goalPanelBottom = bottom(".home-goal-content--ready");
+      const todaySummaryBottom = bottom(".home-today .today-coach-card");
+      const activityIdentityBottom = bottom(".home-activity .home-session-heading");
+      const activityTakeawayBottom = bottom(".home-activity .home-review-commentary");
+      return {
+        height: window.innerHeight,
+        goalPanelBottom,
+        todaySummaryBottom,
+        activityIdentityBottom,
+        activityTakeawayBottom,
+        goalAndTodayFit: goalPanelBottom > 0 && todaySummaryBottom > 0 && todaySummaryBottom <= window.innerHeight,
+        allGroupsFit: goalPanelBottom > 0 && todaySummaryBottom > 0 && activityTakeawayBottom > 0 && activityTakeawayBottom <= window.innerHeight,
+        noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+      };
+    });
+    expect(layout.noHorizontalOverflow).toBe(true);
+    review.push({ width, height, goalPanelBottom: layout.goalPanelBottom, todaySummaryBottom: layout.todaySummaryBottom, activityIdentityBottom: layout.activityIdentityBottom, activityTakeawayBottom: layout.activityTakeawayBottom, goalAndTodayFit: layout.goalAndTodayFit, allGroupsFit: layout.allGroupsFit });
+    await test.info().attach(`home-${width}-first-screen.png`, { body: await page.screenshot(), contentType: "image/png" });
+  }
+  expect(review[0]?.goalAndTodayFit).toBe(true);
+  expect(review[1]?.allGroupsFit).toBe(true);
+  expect(review[2]?.allGroupsFit).toBe(true);
+  test.info().annotations.push({ type: "first-screen-layout", description: JSON.stringify(review) });
 });

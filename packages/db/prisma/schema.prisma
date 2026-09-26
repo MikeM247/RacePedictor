@@ -354,6 +354,7 @@ model Athlete {
   pairedDevices           PairedDevice[]
   secondBrainSnapshots    SecondBrainSnapshot[]
   trainingPlanProjections TrainingPlanProjection[]
+  trainingPlanGoalContexts TrainingPlanGoalContextProjection[]
   calendarSessions        CalendarSessionProjection[]
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
@@ -598,6 +599,7 @@ model PairedDevice {
   athlete              Athlete               @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   pairedByUser         User                  @relation(fields: [pairedByUserId], references: [id], onDelete: Restrict)
   secondBrainSnapshots SecondBrainSnapshot[]
+  goalContextProjections TrainingPlanGoalContextProjection[]
 
   @@unique([id, athleteId])
   @@unique([athleteId, deviceKeyHash])
@@ -692,11 +694,36 @@ model TrainingPlanProjection {
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
   athlete     Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   sessions    CalendarSessionProjection[]
+  goalContext TrainingPlanGoalContextProjection?
 
   @@unique([athleteId, planId])
   @@unique([athleteId, contentHash])
   @@index([athleteId, active, planVersion(sort: Desc)])
   @@map("training_plan_projections")
+}
+
+model TrainingPlanGoalContextProjection {
+  id                   String                 @id @default(cuid())
+  athleteId            String
+  planId               String
+  planVersion          Int
+  goalId               String
+  goalRevision         Int
+  approvalContentHash  String
+  goal                 Json
+  milestones           Json
+  contextHash          String
+  pairedDeviceId       String
+  publishedAt          DateTime               @db.Timestamptz(3)
+  createdAt            DateTime               @default(now()) @db.Timestamptz(3)
+  athlete              Athlete                @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  planProjection       TrainingPlanProjection @relation(fields: [athleteId, planId], references: [athleteId, planId], onDelete: Cascade)
+  pairedDevice         PairedDevice           @relation(fields: [pairedDeviceId, athleteId], references: [id, athleteId], onDelete: Restrict)
+
+  @@unique([athleteId, planId])
+  @@unique([athleteId, contextHash])
+  @@index([athleteId, publishedAt(sort: Desc)])
+  @@map("training_plan_goal_context_projections")
 }
 
 model CalendarSessionProjection {

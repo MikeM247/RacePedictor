@@ -1,6 +1,6 @@
 # Race Predictor Design Intent Contract
 
-Version 1.0 · 12 September 2026 · Binding UX direction for Luna
+Version 1.1 · 25 September 2026 · Binding UX direction
 
 ## Authority and use
 
@@ -12,14 +12,15 @@ This is the source of truth for the redesign's information architecture, present
 - Later explicit user decisions override this document and must be recorded here. Luna must not silently revise binding requirements to fit an implementation shortcut.
 - If a requirement needs unavailable data or conflicts with a domain rule, use the truthful unavailable state, record the specific gap, and continue independent work. Do not invent evidence or report the affected requirement complete.
 - Audit observations are hypotheses to verify in the current app, not instructions to recreate an assumed defect. This contract defines the desired result and does not claim the redesign is already implemented.
+- **25 September 2026 Home amendment:** [HOME_GOAL_FIRST_DESIGN_CHANGE.md](HOME_GOAL_FIRST_DESIGN_CHANGE.md) records the runner's later explicit decision. Its Goal → Today's focus → Latest activity hierarchy and phone-first Home requirements supersede the earlier Home order and space allocation in the north star, information architecture, screen specifications, and implementation backlog. Other domain, navigation, evidence, interaction, and accessibility rules here continue to apply. A current-fitness estimate is supporting detail, not the Home lead.
 
 ## 1. Product purpose
 
 **P1.** Help a runner understand what recent training means for their target race, how much to trust that assessment, and what to do next.
 
-**P2.** The default experience MUST prioritize comprehension with few choices: a short race outlook, recent-session commentary, and a clear next action. Evidence and supporting tools are available on request.
+**P2.** The default experience MUST prioritize comprehension with few choices: a short goal and milestone orientation, today's approved focus, and the latest activity. Evidence and supporting tools are available on request.
 
-**P3.** Reviewing recent training MUST be possible immediately after launch. Today's approved workout or rest MUST remain easy to find alongside it.
+**P3.** Today's approved workout or rest MUST be visible immediately after launch. Reviewing the latest activity MUST remain directly accessible on Home, including while its review is pending.
 
 ## 2. Target users
 
@@ -79,9 +80,9 @@ These questions MUST be answered through summaries and direct detail access. The
 
 ## 6. Visual hierarchy rules
 
-**V1.** Home contains exactly three persistent content groups, in reading order: **Race outlook → Recent training → Next action**. Loading, empty, and error content replace the affected group. Authentication failures may replace the page. Avoid extra alert panels; place domain warnings in the affected group.
+**V1.** Home contains exactly three persistent content groups, in reading order: **Goal and milestone → Today's focus → Latest activity**. Loading, empty, and error content replace the affected group. Authentication failures may replace the page. Avoid extra alert panels; place domain warnings in the affected group. Follow the Home amendment linked above for content and states.
 
-**V2.** Race outlook is compact. Recent training receives the main explanatory space. Next action remains a distinct, concise group. Preserve this order in the DOM and visually; do not move the groups based on feedback availability.
+**V2.** The goal and milestone header is slim, with one honest progress conclusion and one reason. Today's focus receives the main explanatory space; the latest activity is a concise preview with direct detail access. Preserve this order in the DOM and visually; do not move the groups based on feedback availability.
 
 **V3.** A primary action is the single visually emphasized filled button in the active screen or dialog. Other controls use quieter links or outlined buttons. An open dialog becomes the active interaction surface; the page behind it is inert.
 
@@ -97,7 +98,7 @@ These questions MUST be answered through summaries and direct detail access. The
 
 **C2.** A summary consists of a heading, conclusion, short supporting text, relevant state/caveat, and optional detail link. Do not nest cards solely for decoration or make an entire card clickable when it contains other controls.
 
-**C3.** Home recent training MUST show the latest recorded session by activity date, even if its review is pending. Do not substitute an older reviewed activity without labeling it. Reuse the same persisted review and evidence reference in Home, activity detail, and Calendar; do not generate separate narratives for each.
+**C3.** Home's Latest activity MUST show the latest recorded session by activity date, even if its review is pending. Do not substitute an older reviewed activity without labeling it. Reuse the same persisted review and evidence reference in Home, activity detail, and Calendar; do not generate separate narratives for each.
 
 **C4.** Show up to four key metrics before optional telemetry in activity detail: distance, duration with elapsed/moving meaning, pace, and elevation. Omit unavailable metric values or label them unavailable; do not display missing values as zero.
 
@@ -109,9 +110,9 @@ These questions MUST be answered through summaries and direct detail access. The
 
 | Surface | Default visible content | Secondary content and actions |
 |---|---|---|
-| Home: Race outlook | Race target/date, supported prediction/outlook, one reason, confidence meaning, material caveat and relevant freshness. | “View readiness” opens trend, drivers, assumptions, and evidence. No separate KPI grid or pipeline panel. |
-| Home: Recent training | Latest session identity/date; concise execution-versus-plan takeaway and goal implication; review state and material limitation. | “View session” opens full review. Other recent records live in Training. |
-| Home: Next action | Today's approved session/rest and purpose; a prioritized action when needed. | Direct schedule link. A blocking review/data action may take button priority, but must not hide today's prescription. |
+| Home: Goal and milestone | Active approved main race goal, next milestone and its target when supported; one evidence-grounded progress conclusion and reason, or a truthful inability to assess. Material caveat/freshness stays beside the claim. | “View readiness” opens prediction, uncertainty, trend, drivers, assumptions, and evidence. No separate KPI grid or pipeline panel. |
+| Home: Today's focus | Today's approved workout/rest, its purpose, what to focus on, and why it serves the goal. On a rest day, also show the next approved workout when available. | Direct schedule link. A blocking review/data action may take button priority, but must not hide today's prescription. |
+| Home: Latest activity | Latest session identity/date; concise supported planned-versus-done takeaway and goal implication, or the real pending/unavailable review state. | “View session” opens full review. Other recent records live in Training. |
 | Training | Recent-first activity list; labeled Filters and Add training controls. | Selected activity detail; pagination; Data Quality utility link. Keep list context when opening detail. |
 | Activity detail | Session identity, key metrics, Coach's review, known comparison reference/status and next-step advice. | Comparison, splits, route availability, telemetry, and evidence. Do not manufacture a map from a route-availability flag. |
 | Plan overview | Settled goal and active approved plan; local Overview / Calendar switch. | One creation/resume entry, staged proposal review, and collapsed approved history. Do not display the full creation form and history by default. |
@@ -182,7 +183,7 @@ Every data-dependent surface MUST implement applicable states below. A missing c
 
 **R2.** Wide screens use a left primary navigation rail and a content area capped at 1280px with 24px gutters. Medium and compact screens use one visible, labeled row for Home / Training / Plan and a secondary Settings utility. Compact content uses 16px gutters. No duplicate primary menus or horizontal menu scrolling.
 
-**R3.** Home groups remain in one reading sequence across widths. They may arrange content internally but MUST NOT become three dense side-by-side dashboards. Do not shrink text or hide caveats to force everything above the fold.
+**R3.** Design Home phone-first in one column with compact summaries and no horizontal scrolling. Keep the goal and today's focus fully visible in a common phone viewport, with a latest-activity preview visible if feasible at normal readable text size; viewport review must document where that is not feasible. On common desktop viewports, all three group summaries should appear before scrolling. Groups remain in one reading sequence across widths and MUST NOT become three dense side-by-side dashboards. Do not shrink text or hide material caveats to force content above the fold.
 
 **R4.** On wide screens, Training MAY use list/detail columns. Below 1200px, selected detail replaces the list view and offers Back to training with restored list context. The latest-session summary remains visible on Home without opening detail.
 
@@ -192,7 +193,7 @@ Every data-dependent surface MUST implement applicable states below. A missing c
 
 ## 13. Copy and tone rules
 
-**T1.** Speak directly, calmly, and concretely. Use runner-facing terms: Home, Training, Plan, Race outlook, Coach's review, View session, Add training, and View readiness. Use Activities only where describing records or an existing technical route.
+**T1.** Speak directly, calmly, and concretely. Use runner-facing terms: Home, Training, Plan, Today's focus, Latest activity, Coach's review, View session, Add training, and View readiness. Use Activities only where describing records or an existing technical route.
 
 **T2.** Prefer “You ran 48 minutes against the planned 45” to a generic success/failure grade. Label elapsed/moving duration correctly and do not infer effort from pace alone.
 
@@ -231,15 +232,15 @@ If an exception is necessary, document the requirement ID, concrete conflict, pr
 The redesign is complete only when the applicable checks below pass with recorded evidence. An unavailable state is acceptable when the underlying capability is absent; an unimplemented UI requirement is not.
 
 - [ ] Exactly Home / Training / Plan appear as primary navigation. Existing routes, Calendar date/session links, and authentication return paths still work.
-- [ ] Home has three compact groups in the required order, with at most one prominent action and no separate diagnostics or KPI dashboard. Latest activity is shown even while its review is pending.
+- [ ] Home has Goal and milestone → Today's focus → Latest activity in the required order, with at most one prominent action and no separate diagnostics or KPI dashboard. Today's approved workout/rest and latest activity are shown even while the activity review is pending.
 - [ ] The full latest-session review, readiness detail, and today's schedule context each open directly from Home. Back restores the originating context.
 - [ ] Available session commentary explains execution, supported goal implication, and next-step advice; material evidence limits and plan-reference uncertainty remain clear.
 - [ ] Each readiness/confidence claim is traceable to supported data and timeframe. No-goal, missing-confidence, absent-comparison, and limited-data cases are truthful.
 - [ ] End-to-end checks cover file import and partial/reused results; supported Strava queued states; plan handoff/draft resume/approval; and permitted schedule changes with reason, conflict, and confirmation.
 - [ ] Loading, empty, unavailable, pending review, error, stale, and success cases are exercised per affected surface. Failure in review or sync does not hide usable training or coaching.
-- [ ] Screens are visually inspected at 320, 390, 768, 1024, and 1440 CSS-pixel widths, plus 200% zoom. No page overflow, clipped essential text, unreachable controls, or forced mobile Calendar panning.
+- [ ] Screens are visually inspected at 320, 390, 768, 1024, and 1440 CSS-pixel widths, plus 200% zoom. Record whether common desktop viewports show all three Home summaries without scrolling, whether common phone viewports show the full goal and today's focus and a latest-activity preview where feasible, and why any viewport cannot meet that target at readable size. No page overflow, clipped essential text, unreachable controls, or forced mobile Calendar panning.
 - [ ] Keyboard journeys verify navigation, disclosures, forms, dialogs, Escape, focus containment/return, and preserved list position. Automated accessibility checks are supplemented by manual focus, status-announcement, and contrast checks.
-- [ ] Unprompted prototype or usability review checks whether the runner can identify the latest-session takeaway, race outlook and its limits, and next action within 30 seconds after content loads. This is a proposed acceptance target, not an existing measured result; record actual observations and any unresolved failure.
+- [ ] Unprompted prototype or usability review checks whether the runner can identify the main goal and milestone, today's approved focus, latest-activity takeaway or pending state, and the principal progress limitation within 30 seconds after content loads. This is a proposed acceptance target, not an existing measured result; record actual observations and any unresolved failure.
 - [ ] Applicable type/build checks and focused regression tests pass. Verification uses controlled fixtures or an authorized test environment; production data is not mutated merely to prove a flow.
 - [ ] Handoff records requirement IDs covered, routes/screens changed, screenshots and checks, missing backend evidence, and remaining exceptions. User-facing documentation is aligned. No unfinished binding requirement is reported as complete.
 

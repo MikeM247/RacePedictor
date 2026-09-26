@@ -2,6 +2,8 @@ import {
   calendarRouteDataSchema,
   todayRouteDataSchema,
   trainingPlanSchema,
+  type PlannedWorkout,
+  type TodayScheduleKind,
   type TrainingPlan,
 } from "../contracts/coaching.ts";
 
@@ -54,6 +56,8 @@ export function projectCloudToday(input: {
   plan: TrainingPlan | null;
   date?: string;
   generatedAt?: Date;
+  todayScheduleKind?: TodayScheduleKind;
+  nextWorkout?: PlannedWorkout | null;
 }) {
   const generatedAt = input.generatedAt ?? new Date();
   const plan = input.plan ? trainingPlanSchema.parse(input.plan) : null;
@@ -62,6 +66,13 @@ export function projectCloudToday(input: {
   const date = input.date ?? today;
   const workout = plan?.workouts.find((candidate) => candidate.scheduledDate === date) ?? null;
   const session = plan && workout ? toCalendarSession(plan, workout) : null;
+  const todayScheduleKind = input.todayScheduleKind ?? (!plan
+    ? "unavailable"
+    : workout?.kind === "rest" ? "prescribed_rest" : workout ? "prescribed_session" : "unscheduled");
+  const nextWorkout = input.nextWorkout === undefined
+    ? plan?.workouts.filter((candidate) => candidate.scheduledDate > date && candidate.kind !== "rest")
+      .sort((left, right) => left.scheduledDate.localeCompare(right.scheduledDate) || left.id.localeCompare(right.id))[0] ?? null
+    : input.nextWorkout;
   const state = !plan
     ? "no-plan" as const
     : workout?.kind === "rest"
@@ -95,6 +106,8 @@ export function projectCloudToday(input: {
     localCue: "This is a read-only view of the last explicitly approved structured plan.",
     scheduleWarnings: [],
     stale: { isStale: false, reason: null },
+    todayScheduleKind,
+    nextWorkout,
     links: {
       plan: "/dashboard/plan",
       calendar: "/dashboard/calendar",

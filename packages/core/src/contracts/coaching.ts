@@ -335,6 +335,15 @@ export const planProposalReviewSchema = z.object({
   materialDifferences: z.array(materialDifferenceSchema),
 }).strict();
 
+export const raceMilestoneSchema = z.object({
+  id: idSchema,
+  title: z.string().trim().min(1).max(200),
+  distanceMeters: z.number().positive().max(500_000),
+  targetDate: dateSchema,
+  targetTimeSeconds: z.number().int().positive().max(7 * 24 * 60 * 60),
+  eventName: z.string().trim().min(1).max(200).optional(),
+}).strict();
+
 const planBodyObject = z.object({
   id: idSchema,
   athleteId: idSchema,
@@ -401,7 +410,7 @@ const validatePlanBody = (plan: PlanBodyForValidation, ctx: z.RefinementCtx) => 
   }
 };
 
-export const planProposalSchema = planBodyObject.extend({
+const planProposalObject = planBodyObject.extend({
   status: z.enum(["proposed", "withdrawn"]),
   proposedGoal: goalDraftSchema,
   goalRationale: z.string().trim().min(1).max(4000),
@@ -412,7 +421,9 @@ export const planProposalSchema = planBodyObject.extend({
   sourceHistoryFingerprint: sha256Schema,
   contentHash: sha256Schema,
   review: planProposalReviewSchema.optional(),
-}).strict().superRefine((proposal, ctx) => {
+}).strict();
+
+const validatePlanProposal = (proposal: z.infer<typeof planProposalObject>, ctx: z.RefinementCtx) => {
   validatePlanBody(proposal, ctx);
   if (proposal.proposedGoal.id !== proposal.goalId) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["proposedGoal", "id"], message: "Proposed goal id must match goalId" });
@@ -423,7 +434,57 @@ export const planProposalSchema = planBodyObject.extend({
   if (proposal.proposedGoal.athleteId !== proposal.athleteId) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["proposedGoal", "athleteId"], message: "Proposed goal athlete must match athleteId" });
   }
+};
+
+export const planProposalSchema = planProposalObject.superRefine(validatePlanProposal);
+
+// Proposal v2 makes explicitly approved intermediate race targets part of the
+// immutable plan. V1 remains the schema above and keeps its original hash input.
+const planProposalV2Object = planBodyObject.extend({
+  milestones: z.array(raceMilestoneSchema).max(12),
+  status: z.enum(["proposed", "withdrawn"]),
+  proposedGoal: goalDraftSchema,
+  goalRationale: z.string().trim().min(1).max(4000),
+  rationale: z.string().trim().min(1),
+  summary: z.string().trim().min(1).max(4000),
+  assumptions: z.array(z.string().trim().min(1).max(1000)).max(30),
+  cautions: z.array(z.string().trim().min(1).max(1000)).max(30),
+  sourceHistoryFingerprint: sha256Schema,
+  contentHash: sha256Schema,
+  review: planProposalReviewSchema.optional(),
+}).strict();
+
+export const planProposalV2Schema = planProposalV2Object.superRefine((proposal, ctx) => {
+  validatePlanProposal(proposal, ctx);
+  const goalTarget = proposal.proposedGoal.target;
+  const ids = new Set<string>();
+  const dates = new Set<string>();
+  for (const [index, milestone] of proposal.milestones.entries()) {
+    if (ids.has(milestone.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "id"], message: "Milestone ids must be unique" });
+    }
+    ids.add(milestone.id);
+    if (dates.has(milestone.targetDate)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "targetDate"], message: "Milestone dates must be unique" });
+    }
+    dates.add(milestone.targetDate);
+    if (goalTarget.kind !== "performance" || milestone.targetDate > goalTarget.targetDate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "targetDate"], message: "Milestones require a performance goal and must be on or before its target date" });
+    }
+  }
 });
+
+export const anyPlanProposalSchema = z.union([planProposalV2Schema, planProposalSchema]);
+
+export const planProposalV1FileSchema = z.object({
+  schema: z.literal("coaching-plan-proposal.v1"),
+  proposal: planProposalSchema,
+}).strict();
+
+export const planProposalV2FileSchema = z.object({
+  schema: z.literal("coaching-plan-proposal.v2"),
+  proposal: planProposalV2Schema,
+}).strict();
 
 export const planApprovalMetadataSchema = z.object({
   goalRationale: z.string().trim().min(1),
@@ -436,20 +497,106 @@ export const planApprovalMetadataSchema = z.object({
   review: planProposalReviewSchema.optional(),
 }).strict();
 
+const trainingPlanBodyObject = planBodyObject.extend({ milestones: z.array(raceMilestoneSchema).max(12).optional() });
+
 export const trainingPlanSchema = z.discriminatedUnion("status", [
-  planBodyObject.extend({ approval: planApprovalMetadataSchema, status: z.literal("draft") }).strict(),
-  planBodyObject.extend({
+  trainingPlanBodyObject.extend({ approval: planApprovalMetadataSchema, status: z.literal("draft") }).strict(),
+  trainingPlanBodyObject.extend({
     approval: planApprovalMetadataSchema,
     status: z.literal("active"),
     activatedAt: z.string().datetime({ offset: true }),
     activatedBy: z.literal("user"),
   }).strict(),
-  planBodyObject.extend({
+  trainingPlanBodyObject.extend({
     approval: planApprovalMetadataSchema,
     status: z.literal("retired"),
     retiredAt: z.string().datetime({ offset: true }),
   }).strict(),
-]).superRefine(validatePlanBody);
+]).superRefine((plan, ctx) => {
+  validatePlanBody(plan, ctx);
+  if (!plan.milestones) return;
+  const ids = new Set<string>();
+  const dates = new Set<string>();
+  for (const [index, milestone] of plan.milestones.entries()) {
+    if (ids.has(milestone.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "id"], message: "Milestone ids must be unique" });
+    if (dates.has(milestone.targetDate)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "targetDate"], message: "Milestone dates must be unique" });
+    ids.add(milestone.id);
+    dates.add(milestone.targetDate);
+  }
+});
+
+export const trainingPlanGoalContextPublishRequestSchema = z.object({
+  athleteId: idSchema,
+  planId: idSchema,
+  planVersion: revisionSchema,
+  goalId: idSchema,
+  goalRevision: revisionSchema,
+  approvalContentHash: sha256Schema,
+  goal: settledGoalSchema,
+  milestones: z.array(raceMilestoneSchema).max(12),
+  contextHash: sha256Schema,
+}).strict().superRefine((value, ctx) => {
+  if (value.goal.id !== value.goalId || value.goal.revision !== value.goalRevision || value.goal.athleteId !== value.athleteId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["goal"], message: "Goal snapshot identity must match its plan context" });
+  }
+  const ids = new Set<string>();
+  const dates = new Set<string>();
+  for (const [index, milestone] of value.milestones.entries()) {
+    if (ids.has(milestone.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "id"], message: "Milestone ids must be unique" });
+    if (dates.has(milestone.targetDate)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "targetDate"], message: "Milestone dates must be unique" });
+    ids.add(milestone.id);
+    dates.add(milestone.targetDate);
+    if (value.goal.target.kind !== "performance" || milestone.targetDate > value.goal.target.targetDate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["milestones", index, "targetDate"], message: "Milestones require a performance goal and must be on or before its target date" });
+    }
+  }
+});
+
+export const goalContextPlanReferenceSchema = z.object({
+  id: idSchema,
+  version: revisionSchema,
+  revision: revisionSchema,
+  startsOn: dateSchema,
+  endsOn: dateSchema,
+  timezone: ianaTimezoneSchema,
+  approvalContentHash: sha256Schema,
+}).strict();
+
+export const goalContextGoalSchema = settledGoalSchema.pick({
+  id: true,
+  athleteId: true,
+  revision: true,
+  title: true,
+  why: true,
+  target: true,
+}).strict();
+
+export const goalContextProjectionMetadataSchema = z.object({
+  contextHash: sha256Schema,
+  publishedAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export const goalContextStateSchema = z.enum(["ready", "goal_only", "no_active_plan", "projection_pending", "unavailable"]);
+export const goalContextRouteDataSchema = z.object({
+  state: goalContextStateSchema,
+  plan: goalContextPlanReferenceSchema.nullable(),
+  goal: goalContextGoalSchema.nullable(),
+  milestones: z.array(raceMilestoneSchema).max(12).nullable(),
+  projection: goalContextProjectionMetadataSchema.nullable(),
+}).strict().superRefine((value, ctx) => {
+  if (value.state === "ready" && (!value.plan || !value.goal || value.milestones === null)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["state"], message: "Ready goal context requires a plan, goal, and milestone list" });
+  }
+  if (value.state === "projection_pending" && (!value.plan || value.goal || value.milestones !== null || value.projection)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["state"], message: "Pending context must identify its plan without implying missing goal details" });
+  }
+  if (value.state === "goal_only" && (!value.goal || value.plan || value.milestones !== null)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["state"], message: "Goal-only context requires a goal and no plan" });
+  }
+  if (value.state === "no_active_plan" && (value.plan || value.goal || value.milestones !== null)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["state"], message: "No-active-plan context cannot assert cloud goal absence" });
+  }
+});
 
 export const contextNoteReferenceSchema = z.object({
   kind: z.enum(["running_context", "weekly_reflections", "activity_notes"]),
@@ -563,10 +710,7 @@ export const contextPublishRequestSchema = z.object({
   }).strict(),
 }).strict();
 
-export const planProposalFileSchema = z.object({
-  schema: z.literal("coaching-plan-proposal.v1"),
-  proposal: planProposalSchema,
-}).strict();
+export const planProposalFileSchema = z.discriminatedUnion("schema", [planProposalV1FileSchema, planProposalV2FileSchema]);
 
 export const proposalDecisionRequestSchema = z.object({
   decision: z.enum(["approve", "reject"]),
@@ -593,7 +737,8 @@ export const contextPublishRouteDataSchema = contextPublicationResultSchema.exte
   goal: goalDraftSchema,
 }).strict();
 
-export const proposalImportRouteDataSchema = z.object({ proposal: planProposalSchema }).strict();
+export const proposalImportRouteDataSchema = z.object({ proposal: anyPlanProposalSchema }).strict();
+export const goalContextRouteSchema = z.object({ context: goalContextRouteDataSchema }).strict();
 export const planHistoryRouteDataSchema = z.object({ plans: z.array(trainingPlanSchema) }).strict();
 export const activatePlanRequestSchema = z.object({
   expectedActivePlanId: idSchema.nullable(),
@@ -605,7 +750,7 @@ export const planActivationRouteDataSchema = z.object({
 }).strict();
 export const currentContextRouteDataSchema = z.object({ context: coachingContextEnvelopeSchema.nullable() }).strict();
 export const coachingReviewContextRouteDataSchema = z.object({ context: coachingReviewContextSchema.nullable() }).strict();
-export const latestProposalRouteDataSchema = z.object({ proposal: planProposalSchema.nullable() }).strict();
+export const latestProposalRouteDataSchema = z.object({ proposal: anyPlanProposalSchema.nullable() }).strict();
 
 export const coachingProfileUpdateRequestSchema = coachingProfileSchema.pick({
   displayName: true,
@@ -723,6 +868,7 @@ export const calendarEditRouteDataSchema = z.object({
 
 export const todayQueryRequestSchema = z.object({ date: dateSchema.optional() }).strict();
 export const todayCoachingStateSchema = z.enum(["no-plan", "rest", "upcoming", "skipped", "missed", "stale"]);
+export const todayScheduleKindSchema = z.enum(["prescribed_session", "prescribed_rest", "unscheduled", "unavailable"]);
 export const todayRouteDataSchema = z.object({
   athleteId: idSchema,
   date: dateSchema,
@@ -752,6 +898,8 @@ export const todayRouteDataSchema = z.object({
   localCue: z.string().trim().min(1),
   scheduleWarnings: z.array(z.string()),
   stale: z.object({ isStale: z.boolean(), reason: z.string().trim().min(1).nullable() }).strict(),
+  todayScheduleKind: todayScheduleKindSchema.optional(),
+  nextWorkout: plannedWorkoutSchema.nullable().optional(),
   links: z.object({ plan: z.string().min(1), calendar: z.string().min(1), session: z.string().min(1).nullable() }).strict(),
 }).strict().superRefine((today, ctx) => {
   if (today.status !== today.state) {
@@ -759,6 +907,15 @@ export const todayRouteDataSchema = z.object({
   }
   if ((today.plan?.version ?? null) !== today.planVersion) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["planVersion"], message: "Plan version must match the Today plan" });
+  }
+  if (today.todayScheduleKind === "prescribed_session" && (!today.session || today.session.kind === "rest")) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["todayScheduleKind"], message: "A prescribed session requires a non-rest session" });
+  }
+  if (today.todayScheduleKind === "prescribed_rest" && today.session?.kind !== "rest") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["todayScheduleKind"], message: "A prescribed rest requires an explicit rest session" });
+  }
+  if (today.todayScheduleKind === "unscheduled" && today.session) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["todayScheduleKind"], message: "An unscheduled date cannot have a current session" });
   }
 });
 
@@ -847,6 +1004,12 @@ export const weeklyRoutineApiResponseSchema = standardSuccessResponseSchema(week
 export const calendarApiResponseSchema = standardSuccessResponseSchema(calendarRouteDataSchema);
 export const calendarEditApiResponseSchema = standardSuccessResponseSchema(calendarEditRouteDataSchema);
 export const todayApiResponseSchema = standardSuccessResponseSchema(todayRouteDataSchema);
+export const goalContextApiResponseSchema = standardSuccessResponseSchema(goalContextRouteSchema);
+export const trainingPlanGoalContextPublishApiResponseSchema = standardSuccessResponseSchema(z.object({
+  contextHash: sha256Schema,
+  publishedAt: z.string().datetime({ offset: true }),
+  reused: z.boolean(),
+}).strict());
 export const reminderPreferencesApiResponseSchema = standardSuccessResponseSchema(reminderPreferencesRouteDataSchema);
 export const reminderHandoffApiResponseSchema = standardSuccessResponseSchema(reminderHandoffRouteDataSchema);
 export const reminderExternalStatusApiResponseSchema = standardSuccessResponseSchema(reminderExternalStatusRouteDataSchema);
@@ -855,7 +1018,7 @@ export const proposalDecisionRouteDataSchema = z.discriminatedUnion("decision", 
   z.object({
     proposalId: idSchema,
     decision: z.literal("reject"),
-    proposal: planProposalSchema,
+    proposal: anyPlanProposalSchema,
     plan: trainingPlanSchema.nullable(),
   }).strict(),
   z.object({
@@ -887,6 +1050,12 @@ export type RoutineDay = z.infer<typeof routineDaySchema>;
 export type WeeklyRoutine = z.infer<typeof weeklyRoutineSchema>;
 export type PlannedWorkout = z.infer<typeof plannedWorkoutSchema>;
 export type PlanProposal = z.infer<typeof planProposalSchema>;
+export type PlanProposalV2 = z.infer<typeof planProposalV2Schema>;
+export type AnyPlanProposal = z.infer<typeof anyPlanProposalSchema>;
+export type RaceMilestone = z.infer<typeof raceMilestoneSchema>;
+export type GoalContextRouteData = z.infer<typeof goalContextRouteDataSchema>;
+export type TrainingPlanGoalContextPublishRequest = z.infer<typeof trainingPlanGoalContextPublishRequestSchema>;
+export type TodayScheduleKind = z.infer<typeof todayScheduleKindSchema>;
 export type TrainingPlan = z.infer<typeof trainingPlanSchema>;
 export type SessionAmendment = z.infer<typeof sessionAmendmentSchema>;
 export type SessionAmendmentField = z.infer<typeof sessionAmendmentFieldSchema>;
@@ -966,7 +1135,7 @@ export function assertPlanCanActivate(input: {
   activePlanId?: string;
   replacingPlanId?: string;
 }): void {
-  const proposal = planProposalSchema.parse(input.proposal);
+  const proposal = anyPlanProposalSchema.parse(input.proposal);
   const goal = goalSchema.parse(input.goal);
   if (proposal.status !== "proposed") throw new Error("Only proposed plans can be activated");
   if (!input.approvedByUser) throw new Error("Explicit user approval is required");

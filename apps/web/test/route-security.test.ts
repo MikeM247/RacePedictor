@@ -75,13 +75,14 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("sync/device/changes/route.ts", apiRoot).href,
     new URL("sync/device/acknowledge/route.ts", apiRoot).href,
     new URL("sync/device/plans/route.ts", apiRoot).href,
+    new URL("sync/device/plan-goal-context/route.ts", apiRoot).href,
     new URL("sync/device/failure/route.ts", apiRoot).href,
     new URL("second-brain-context/snapshots/route.ts", apiRoot).href,
     new URL("sync/device/activity-reviews/route.ts", apiRoot).href,
     new URL("sync/device/activity-reviews/publish/route.ts", apiRoot).href,
   ]);
   const internalRoutes = new Set([new URL("internal/reconciliation/route.ts", apiRoot).href]);
-  assert.equal(routeFiles.length, 47, "route inventory changed; classify every new route explicitly");
+  assert.equal(routeFiles.length, 49, "route inventory changed; classify every new route explicitly");
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;
@@ -216,6 +217,7 @@ test("only exact self-authenticated device routes bypass the browser-session bou
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/changes"), true);
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/acknowledge"), true);
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/plans"), true);
+  assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/plan-goal-context"), true);
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/failure"), true);
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/second-brain-context/snapshots"), true);
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/changes/probe"), false);

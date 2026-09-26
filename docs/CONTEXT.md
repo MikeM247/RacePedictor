@@ -74,8 +74,9 @@ If any planning doc (`ROADMAP.md`, `PRODUCT_EPICS_EXECUTION_PLAN.md`, `PRODUCT.m
 The analytics dashboard and ingestion pipeline above are the data foundation for a **local-first digital coach for one athlete**. Where older v1 language is narrower, this section and `docs/product/PHASE_1_DIGITAL_COACH_BACKLOG.md` define the current target.
 
 - AI goal/plan conversation occurs in Codex using the athlete's Second Brain; the app does not embed chat in Phase 1.
+- Every new or changed primary goal and its race milestones follow `docs/GOAL_UPDATE_PROCESS.md`: use current context and selected Second Brain evidence, return a complete proposal v2, require explicit owner approval, and publish the approved goal context before treating it as online Home data.
 - The app owns canonical history plus the explicitly settled goal, active versioned plan, effective calendar, and reminder preferences.
-- Codex consumes `coaching-context.v1` and returns a validated `coaching-plan-proposal.v1` draft/proposal; import never activates it.
+- Codex consumes `coaching-context.v1` and returns a validated `coaching-plan-proposal.v1` or `.v2` draft/proposal; new or changed race milestones use v2. Import never activates a proposal. Follow `docs/GOAL_UPDATE_PROCESS.md` for goal changes.
 - History enters through manual bounded CSV or single-activity GPX upload with validation and dedupe.
 - Calendar changes require a reason and preserve the approved prescription plus revision/audit history. Future sessions may be amended, rescheduled, skipped, or restored; a past session may only be recorded as skipped. This does not imply a reviewed or completed workout.
 - Today works in-app. Daily reminder preference defaults to 06:30 `Africa/Johannesburg`, is configurable, and is handed off separately to a recurring Codex automation.

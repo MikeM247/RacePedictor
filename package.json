@@ -23,6 +23,7 @@
     "db:publish:obsidian": "npm run db:publish:obsidian --workspace @racepredictor/db --",
     "db:refresh:local": "npm run db:refresh:local --workspace @racepredictor/db --",
     "sync:local": "npm run db:sync:local --workspace @racepredictor/db --",
+    "coaching:export-active-plan": "npm run coaching:export-active-plan --workspace @racepredictor/web --",
     "activity-review:local": "npm run db:activity-review:local --workspace @racepredictor/db --",
     "sync:local:install": "npm run db:install-sync-task --workspace @racepredictor/db --",
     "db:test:local-analytics": "npm run db:test:local-analytics --workspace @racepredictor/db",

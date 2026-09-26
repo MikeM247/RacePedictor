@@ -16,6 +16,7 @@
     "test:e2e:online": "playwright test --config playwright.online.config.ts",
     "test:e2e:auth": "playwright test --config playwright.auth.config.ts",
     "coaching:propose-goal-structure": "node --experimental-strip-types scripts/propose-goal-structure.ts",
+    "coaching:export-active-plan": "node --experimental-strip-types scripts/export-active-plan.ts",
     "coaching:today": "node --experimental-strip-types scripts/read-today-coaching.ts"
   },
   "dependencies": {

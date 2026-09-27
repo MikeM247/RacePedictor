@@ -37,7 +37,7 @@ A delayed Strava `deauthorization` webhook could arrive after a successful recon
 
 The initial fresh import after reconnect reported `STRAVA_PAYLOAD_INVALID_LAPS_LAP_INDEX_TOO_SMALL`. Strava returned a zero-indexed lap, while the application required a positive index. The lap validation now accepts nonnegative indexes and still rejects negative or fractional values. The importer also accepts activities without metric splits, which Strava provides for runs. A 10-minute OAuth state expired while the owner was on Strava's login page; a fresh connection request after sign-in succeeded.
 
-After the lap fix was deployed, a new bounded import saved the recent activities. On 2026-09-27, the ten activities dated September 10–27 in Strava's My Activities list had matching provider IDs in Training, including the September 26 Lunch Run and September 27 Morning Run. The 90-day batch then paused at the Strava read window with a saved checkpoint. This confirms the reported recent-workout gap is closed; it does not claim the full historical batch has finished.
+After the lap fix was deployed, a new bounded import saved the recent activities. On 2026-09-27, the ten activities dated September 10–27 in Strava's My Activities list had matching provider IDs in Training, including the September 26 Lunch Run and September 27 Morning Run. The 90-day batch then paused at the Strava read window with a saved checkpoint. The owner-scoped **Continue import** action resumed that same job after its eligible time, and it finished at 10:55:17 in the browser's local time. Training still showed the matching workouts after completion. This confirms the reported recent-workout gap is closed.
 
 ## Incident record checklist
 

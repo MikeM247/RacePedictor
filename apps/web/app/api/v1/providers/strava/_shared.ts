@@ -18,6 +18,7 @@ export interface StravaRouteComposition {
   enqueueBackfill?: (scope: AthleteScope, request: StravaBackfillRequest) => Promise<{ jobId: string; reused: boolean }>;
   enqueueInitialBackfill?: (scope: AthleteScope) => Promise<{ jobId: string; reused: boolean }>;
   listRecentBackfills?: (scope: AthleteScope) => Promise<readonly StravaBackfillJobSummary[]>;
+  resumeDueBackfill?: (scope: AthleteScope, jobId: string) => Promise<"scheduled" | "not_found" | "not_due">;
 }
 
 export type GetStravaRouteComposition = () => StravaRouteComposition;
@@ -29,6 +30,7 @@ export const defaultStravaRouteComposition: GetStravaRouteComposition = () => {
     enqueueBackfill: (scope, request) => getStravaIngestionComposition().enqueueBackfill(scope, request),
     enqueueInitialBackfill: (scope) => getStravaIngestionComposition().enqueueInitialBackfill(scope),
     listRecentBackfills: (scope) => new PrismaStravaIngestionJobRepository({ prisma: connection.prisma }).listRecentBackfills(scope),
+    resumeDueBackfill: (scope, jobId) => getStravaIngestionComposition().resumeDueBackfill(scope, jobId),
   };
 };
 

@@ -235,6 +235,25 @@ export function OnlineSyncSettings() {
     }
   }
 
+  async function resumeDueStravaImport(jobId: string) {
+    setStravaBusy(true);
+    setStravaMessage("Continuing the saved Strava import…");
+    try {
+      await request("/api/v1/providers/strava/backfill/resume", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      setStravaMessage("The saved Strava import is continuing. Track its status below.");
+      await loadBackfills();
+    } catch (error) {
+      setStravaMessage(error instanceof Error ? error.message : "The saved import could not be continued.");
+      await loadBackfills();
+    } finally {
+      setStravaBusy(false);
+    }
+  }
+
   async function pair(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !displayName.trim() || deviceMutationBusy || deviceState !== "ready") return;
@@ -322,6 +341,9 @@ export function OnlineSyncSettings() {
               {backfills.length > 0 ? <ol className="strava-import-list">{backfills.map((job) => <li className="strava-import-card" key={job.jobId}>
                 <div className="strava-import-card-heading"><strong>Requested {formatDate(job.createdAt)}</strong><span className="status-chip">{backfillStatusLabel(job)}</span></div>
                 <p>{backfillStatusMessage(job)}</p>
+                {strava?.displayStatus === "connected" && job.status === "queued" && Date.parse(job.availableAt) <= Date.now()
+                  ? <button className="button button-secondary" disabled={stravaBusy} type="button" onClick={() => void resumeDueStravaImport(job.jobId)}>Continue import</button>
+                  : null}
                 {job.status === "completed" ? <Link className="text-link" href="/dashboard/activities">Check Training</Link> : null}
               </li>)}</ol> : null}
               <p className="field-help">A finished import means processing ended. Confirm the missing workouts in Training; queue status alone cannot confirm each activity was accepted.</p>

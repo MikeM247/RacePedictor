@@ -95,6 +95,19 @@ function buildComposition() {
       schedule(queued.jobId);
       return queued;
     },
+    async resumeDueBackfill(scope: AthleteScope, jobId: string) {
+      if ((await connection.service.status(scope)).displayStatus !== "connected") {
+        return "not_due" as const;
+      }
+      const recent = await jobs.listRecentBackfills(scope);
+      const job = recent.find((candidate) => candidate.jobId === jobId);
+      if (!job) return "not_found" as const;
+      if (job.status !== "queued" || Date.parse(job.availableAt) > now().getTime()) {
+        return "not_due" as const;
+      }
+      schedule(jobId);
+      return "scheduled" as const;
+    },
   });
 }
 

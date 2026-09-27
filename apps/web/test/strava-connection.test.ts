@@ -8,6 +8,7 @@ import { StravaConnectionError } from "../../../packages/core/src/use-cases/stra
 import { POST as defaultConnect } from "../app/api/v1/providers/strava/connect/route.ts";
 import {
   handleStravaBackfill,
+  handleStravaBackfillResume,
   handleStravaBackfillStatus,
   handleStravaCallback,
   handleStravaConnect,
@@ -355,6 +356,42 @@ test("owner can revisit saved Strava import status within the active athlete sco
   );
   assert.equal(receivedAthlete, "athlete-a");
   assert.deepEqual((await response.json()).data, { jobs });
+});
+
+test("owner can resume only a due import in the active athlete scope", async () => {
+  let receivedAthlete: string | null = null;
+  let receivedJob: string | null = null;
+  const composition = () => ({
+    redirectUri,
+    service: mockService(),
+    async resumeDueBackfill(scope: AthleteScope, jobId: string): Promise<"scheduled" | "not_found" | "not_due"> {
+      receivedAthlete = scope.athleteId;
+      receivedJob = jobId;
+      return jobId === "due-job" ? "scheduled" : "not_found";
+    },
+  });
+  const response = await handleStravaBackfillResume(
+    authenticated(),
+    new Request("https://race.example/api/v1/providers/strava/backfill/resume", {
+      method: "POST", body: JSON.stringify({ jobId: "due-job" }),
+    }),
+    composition,
+  );
+  assert.equal(response.status, 202);
+  assert.equal(receivedAthlete, "athlete-a");
+  assert.equal(receivedJob, "due-job");
+  assert.deepEqual((await response.json()).data, { jobId: "due-job", status: "queued" });
+
+  await assert.rejects(
+    handleStravaBackfillResume(
+      authenticated(),
+      new Request("https://race.example/api/v1/providers/strava/backfill/resume", {
+        method: "POST", body: JSON.stringify({ jobId: "other-job" }),
+      }),
+      composition,
+    ),
+    (error: unknown) => (error as { status?: number }).status === 404,
+  );
 });
 
 test("cloud-disabled local mode never initializes Strava provider configuration", { concurrency: false }, async () => {

@@ -15,7 +15,8 @@ This guide covers the online Race Predictor Training workspace. Imported workout
 2. Open **Settings → Connections**. If the status is **Action required**, use **Reconnect Strava** and complete authorization in Strava. If it says **Connected**, keep that connection and continue.
 3. Select **Import last 90 days** once if a recent import is not already queued. Use **Refresh status** to follow the newest request. Repeated requests do not repair a failed payload and can consume Strava's read budget.
 4. If the newest request says **Needs attention**, record its **diagnostic code** and request time. A code beginning `STRAVA_PAYLOAD_INVALID_` identifies the response stage and field that could not be validated. Share the code, not your password, authorization URL, token, or raw provider response.
-5. If the request finishes, return to **Training** and check the previously missing workouts individually. A finished job only confirms that processing ended. If an activity remains missing, report its date and the job status for further investigation.
+5. **Waiting to retry** means the import checkpoint was saved and the job cannot be claimed before the displayed time. That time is an eligibility threshold, not a promised execution time. After it passes, use **Continue import** for that saved request, or let the next scheduled recovery run resume it. Do not queue repeated imports to bypass the rate window.
+6. If the request finishes, return to **Training** and check the previously missing workouts individually. A finished job only confirms that processing ended. If an activity remains missing, report its date and the job status for further investigation.
 
 Disconnecting and reconnecting is appropriate when the connection says **Action required** or Strava access has been revoked. A validation failure such as `STRAVA_PAYLOAD_INVALID` requires a code fix and a new import after deployment; reconnecting alone will reproduce it.
 
@@ -34,7 +35,9 @@ A delayed Strava `deauthorization` webhook could arrive after a successful recon
 
 ## 2026-09-27 import incident
 
-The initial fresh import after reconnect reported `STRAVA_PAYLOAD_INVALID_LAPS_LAP_INDEX_TOO_SMALL`. Strava returned a zero-indexed lap, while the application required a positive index. The lap validation now accepts nonnegative indexes and still rejects negative or fractional values. The importer also accepts activities without metric splits, which Strava provides for runs. Re-run one bounded import after deployment, then confirm the missing September workouts in Training. A 10-minute OAuth state can expire while the owner is on Strava's login page; start a fresh connection request after signing in rather than revisiting an expired callback URL.
+The initial fresh import after reconnect reported `STRAVA_PAYLOAD_INVALID_LAPS_LAP_INDEX_TOO_SMALL`. Strava returned a zero-indexed lap, while the application required a positive index. The lap validation now accepts nonnegative indexes and still rejects negative or fractional values. The importer also accepts activities without metric splits, which Strava provides for runs. A 10-minute OAuth state expired while the owner was on Strava's login page; a fresh connection request after sign-in succeeded.
+
+After the lap fix was deployed, a new bounded import saved the recent activities. On 2026-09-27, the ten activities dated September 10–27 in Strava's My Activities list had matching provider IDs in Training, including the September 26 Lunch Run and September 27 Morning Run. The 90-day batch then paused at the Strava read window with a saved checkpoint. This confirms the reported recent-workout gap is closed; it does not claim the full historical batch has finished.
 
 ## Incident record checklist
 

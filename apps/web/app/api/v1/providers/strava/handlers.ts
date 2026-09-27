@@ -3,6 +3,7 @@ import {
   providerAuthorizationRequestSchema,
 } from "../../../../../../../packages/core/src/contracts/providers.ts";
 import { stravaBackfillRequestSchema } from "../../../../../../../packages/core/src/contracts/strava.ts";
+import { z } from "zod";
 import { ApiHttpError, success } from "../../../../../lib/server/api-response.ts";
 import type { SensitiveRouteContext } from "../../../../../lib/server/route-security.ts";
 import {
@@ -14,6 +15,7 @@ import {
 } from "./_shared.ts";
 
 const callbackKeys = ["state", "code", "scope", "error"] as const;
+const resumeBackfillSchema = z.object({ jobId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u) }).strict();
 
 function callbackInput(request: Request) {
   const parameters = new URL(request.url).searchParams;
@@ -103,6 +105,25 @@ export async function handleStravaBackfillStatus(
     const list = getComposition().listRecentBackfills;
     if (!list) throw new ApiHttpError(503, "CONFIGURATION_ERROR", "Strava import status is unavailable");
     return success({ jobs: await list(scope) });
+  } catch (error) {
+    translateStravaRouteError(error);
+  }
+}
+
+export async function handleStravaBackfillResume(
+  security: SensitiveRouteContext,
+  request: Request,
+  getComposition: GetStravaRouteComposition = defaultStravaRouteComposition,
+) {
+  try {
+    const scope = requireStravaAthleteScope(security);
+    const { jobId } = resumeBackfillSchema.parse(await readJsonBody(request));
+    const resume = getComposition().resumeDueBackfill;
+    if (!resume) throw new ApiHttpError(503, "CONFIGURATION_ERROR", "Strava import recovery is unavailable");
+    const outcome = await resume(scope, jobId);
+    if (outcome === "not_found") throw new ApiHttpError(404, "NOT_FOUND", "Import request was not found");
+    if (outcome === "not_due") throw new ApiHttpError(409, "CONFLICT", "Import is not ready to continue");
+    return success({ jobId, status: "queued" }, 202);
   } catch (error) {
     translateStravaRouteError(error);
   }

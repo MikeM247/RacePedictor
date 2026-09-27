@@ -73,6 +73,7 @@ test("strict minimized fixtures contain only canonical inputs and no credentials
 
   assert.equal(stravaActivityDetailSchema.safeParse({ ...detailFixture, description: "private prose" }).success, false);
   assert.equal(stravaLapsSchema.safeParse([{ ...lapsFixture[0], name: "personal lap name" }]).success, false);
+  assert.equal(stravaLapsSchema.safeParse([{ ...lapsFixture[0], lap_index: -1 }]).success, false);
   assert.equal(stravaStreamSetSchema.safeParse({ ...streamsFixture, watts: streamsFixture.cadence }).success, false);
   assert.equal(stravaActivitySummaryPageSchema.safeParse([{ ...summaryFixture[0], kudos_count: 42 }]).success, false);
 

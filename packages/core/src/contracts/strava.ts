@@ -46,7 +46,7 @@ export const stravaActivityDetailSchema = z.object({
 
 export const stravaLapSchema = z.object({
   id: providerIdSchema,
-  lap_index: z.number().int().positive(),
+  lap_index: nonNegativeInteger,
   elapsed_time: nonNegativeInteger,
   moving_time: nonNegativeInteger,
   distance: nonNegativeNumber,

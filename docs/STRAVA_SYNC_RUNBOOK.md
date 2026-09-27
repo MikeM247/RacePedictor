@@ -32,6 +32,10 @@ Disconnecting and reconnecting is appropriate when the connection says **Action 
 
 A delayed Strava `deauthorization` webhook could arrive after a successful reconnect and previously cleared the new credentials. The connection repository now applies a deauthorization only when its event time is at or after the current connection time. This protects a new connection; a connection already revoked before deployment still requires owner authorization.
 
+## 2026-09-27 import incident
+
+The initial fresh import after reconnect reported `STRAVA_PAYLOAD_INVALID_LAPS_LAP_INDEX_TOO_SMALL`. Strava returned a zero-indexed lap, while the application required a positive index. The lap validation now accepts nonnegative indexes and still rejects negative or fractional values. The importer also accepts activities without metric splits, which Strava provides for runs. Re-run one bounded import after deployment, then confirm the missing September workouts in Training. A 10-minute OAuth state can expire while the owner is on Strava's login page; start a fresh connection request after signing in rather than revisiting an expired callback URL.
+
 ## Incident record checklist
 
 Record the latest Strava workout date, latest Training workout date, connection state, newest import request time and status, diagnostic code, production release, code change, verification result, and whether subsequent automatic delivery worked. Do not include credentials, authorization query parameters, raw provider payloads, or private activity details in a shared incident record.

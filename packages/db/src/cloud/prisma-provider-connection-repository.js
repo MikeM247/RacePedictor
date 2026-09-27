@@ -158,7 +158,31 @@ export class PrismaProviderConnectionRepository {
   }
 
   async revoke(scope, provider, occurredAt) {
-    return this.#clear(scope, provider, "revoked", occurredAt, "PROVIDER_DEAUTHORIZED");
+    const athleteId = assertAthleteScope(scope);
+    const eventAt = new Date(occurredAt);
+    if (Number.isNaN(eventAt.getTime())) throw new Error("Provider deauthorization time is invalid");
+    await this.#prisma.providerConnection.updateMany({
+      where: {
+        athleteId,
+        provider,
+        OR: [{ connectedAt: null }, { connectedAt: { lte: eventAt } }],
+      },
+      data: {
+        providerAthleteId: null,
+        status: "revoked",
+        grantedScopes: null,
+        credentialCiphertext: null,
+        credentialIv: null,
+        credentialAuthTag: null,
+        credentialKeyVersion: null,
+        credentialExpiresAt: null,
+        lastErrorCode: "PROVIDER_DEAUTHORIZED",
+        updatedAt: eventAt,
+      },
+    });
+    const row = await this.#prisma.providerConnection.findUnique({ where: { athleteId_provider: { athleteId, provider } } });
+    if (!row) throw new Error("Provider connection is unavailable");
+    return statusProjection(row);
   }
 
   async #clear(scope, provider, status, occurredAt, lastErrorCode) {

@@ -6,6 +6,7 @@ import {
   CredentialEnvelopeCrypto,
   InMemoryProviderConnectionRepository,
   InMemoryProviderOAuthAttemptRepository,
+  PrismaProviderConnectionRepository,
 } from "../src/cloud/index.js";
 
 const occurredAt = "2026-08-10T12:00:00.000Z";
@@ -117,6 +118,60 @@ test("disconnect and provider deauthorization clear credentials but retain truth
   assert.equal(revoked.status, "revoked");
   assert.equal(revoked.displayStatus, "action_required");
   assert.equal(revoked.lastErrorCode, "PROVIDER_DEAUTHORIZED");
+});
+
+test("delayed deauthorization cannot clear a newer Strava connection", async () => {
+  const { connections } = repositories();
+  const scope = athleteScopeFor(actor("owner-a", "athlete-a"));
+  await connections.saveCredentials(scope, "strava", {
+    providerAthleteId: "strava-athlete-a",
+    accessToken: "new-access",
+    refreshToken: "new-refresh",
+    expiresAt,
+    scopes: ["activity:read_all"],
+    contactedAt: "2026-08-10T12:10:00.000Z",
+  });
+
+  const unchanged = await connections.revoke(scope, "strava", "2026-08-10T12:05:00.000Z");
+  assert.equal(unchanged.status, "connected");
+  assert.equal((await connections.getCredentials(scope, "strava")).refreshToken, "new-refresh");
+
+  const revoked = await connections.revoke(scope, "strava", "2026-08-10T12:11:00.000Z");
+  assert.equal(revoked.status, "revoked");
+  assert.equal(await connections.getCredentials(scope, "strava"), null);
+});
+
+test("Prisma deauthorization fences a newer connection in the write condition", async () => {
+  const scope = athleteScopeFor(actor("owner-a", "athlete-a"));
+  const row = {
+    athleteId: "athlete-a", provider: "strava", providerAthleteId: "strava-athlete-a",
+    status: "connected", connectedAt: new Date("2026-08-10T12:10:00.000Z"),
+    lastProviderContactAt: null, lastSyncedAt: null, lastEventReceivedAt: null,
+    lastErrorCode: null, updatedAt: new Date("2026-08-10T12:10:00.000Z"),
+  };
+  const writes = [];
+  const prisma = { providerConnection: {
+    async updateMany(input) {
+      writes.push(input);
+      if (row.connectedAt > input.where.OR[1].connectedAt.lte) return { count: 0 };
+      Object.assign(row, input.data);
+      return { count: 1 };
+    },
+    async findUnique() { return { ...row }; },
+  } };
+  const connections = new PrismaProviderConnectionRepository({ prisma, credentialCrypto: {} });
+
+  const unchanged = await connections.revoke(scope, "strava", "2026-08-10T12:05:00.000Z");
+  assert.equal(unchanged.status, "connected");
+  assert.equal(row.providerAthleteId, "strava-athlete-a");
+  assert.deepEqual(writes[0].where, {
+    athleteId: "athlete-a", provider: "strava",
+    OR: [{ connectedAt: null }, { connectedAt: { lte: new Date("2026-08-10T12:05:00.000Z") } }],
+  });
+
+  const revoked = await connections.revoke(scope, "strava", "2026-08-10T12:11:00.000Z");
+  assert.equal(revoked.status, "revoked");
+  assert.equal(row.providerAthleteId, null);
 });
 
 test("OAuth state is actor-bound, expires, and can be consumed only once", async () => {

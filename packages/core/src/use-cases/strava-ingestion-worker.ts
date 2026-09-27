@@ -101,7 +101,7 @@ export class StravaIngestionJobProcessor {
 
     try {
       if (job.event.kind === "athlete_deauthorization") {
-        await this.#dependencies.connections.deauthorize(scope);
+        await this.#dependencies.connections.deauthorize(scope, job.event.occurredAt);
         await this.#dependencies.jobs.markCompleted({
           job,
           occurredAt: this.#dependencies.now().toISOString(),

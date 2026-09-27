@@ -259,7 +259,7 @@ test("provider deauthorization clears credentials and exposes an actionable revo
     code: "code",
     scope: "activity:read_all",
   }, "https://race.example/api/v1/providers/strava/callback");
-  const revoked = await h.service.deauthorize(athleteScope);
+  const revoked = await h.service.deauthorize(athleteScope, "2026-08-10T12:01:00.000Z");
   assert.equal(revoked.status, "revoked");
   assert.equal(revoked.lastErrorCode, "PROVIDER_DEAUTHORIZED");
   assert.equal(await h.connections.getCredentials(athleteScope, "strava"), null);

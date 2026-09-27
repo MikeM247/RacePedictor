@@ -167,6 +167,9 @@ export class InMemoryProviderConnectionRepository {
   }
 
   async revoke(scope, provider, occurredAt) {
+    if (Number.isNaN(Date.parse(occurredAt))) throw new Error("Provider deauthorization time is invalid");
+    const current = this.#records.get(recordKey(assertAthleteScope(scope), provider));
+    if (current?.connectedAt && Date.parse(current.connectedAt) > Date.parse(occurredAt)) return project(current);
     return this.#clear(scope, provider, "revoked", occurredAt, "PROVIDER_DEAUTHORIZED");
   }
 

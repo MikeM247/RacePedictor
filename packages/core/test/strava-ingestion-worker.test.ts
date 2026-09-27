@@ -94,6 +94,7 @@ test("deauthorization clears only the claimed athlete connection and marks the e
   assert.equal(harness.credentials.has("athlete-a"), false);
   assert.equal(harness.credentials.get("athlete-b"), "encrypted-b");
   assert.deepEqual(harness.deauthorizationScopes[0].actor.permittedAthleteIds, ["athlete-a"]);
+  assert.deepEqual(harness.deauthorizationTimes, [baseTime]);
   assert.equal(harness.ingestionCalls.length, 0);
   assert.equal(harness.jobs.records.get("job-deauth")?.status, "completed");
 });
@@ -233,6 +234,7 @@ function createHarness(options: { maxAttempts?: number } = {}) {
   const outcomes: StravaIngestionOutcome[] = [];
   const ingestionCalls: Array<{ scope: AthleteScope; event: unknown }> = [];
   const deauthorizationScopes: AthleteScope[] = [];
+  const deauthorizationTimes: string[] = [];
   const backfillCalls: Array<{ scope: AthleteScope; request: unknown }> = [];
   const reconciliationCalls: Array<{ scope: AthleteScope; request: unknown }> = [];
   const batchOutcomes: import("../src/services/strava-ingestion-service.ts").StravaBatchResult[] = [];
@@ -264,8 +266,9 @@ function createHarness(options: { maxAttempts?: number } = {}) {
       },
     },
     connections: {
-      async deauthorize(scope) {
+      async deauthorize(scope, occurredAt) {
         deauthorizationScopes.push(scope);
+        deauthorizationTimes.push(occurredAt);
         credentials.delete(scope.athleteId);
         return {
           athleteId: scope.athleteId,
@@ -291,6 +294,7 @@ function createHarness(options: { maxAttempts?: number } = {}) {
     outcomes,
     ingestionCalls,
     deauthorizationScopes,
+    deauthorizationTimes,
     backfillCalls,
     reconciliationCalls,
     batchOutcomes,

@@ -69,7 +69,7 @@ export interface StravaConnectionService {
   status(scope: AthleteScope): Promise<ProviderConnectionStatus>;
   refresh(scope: AthleteScope): Promise<ProviderConnectionStatus>;
   disconnect(scope: AthleteScope): Promise<ProviderDisconnectResult>;
-  deauthorize(scope: AthleteScope): Promise<ProviderConnectionStatus>;
+  deauthorize(scope: AthleteScope, occurredAt: string): Promise<ProviderConnectionStatus>;
 }
 
 const PROVIDER = "strava" as const;
@@ -319,8 +319,8 @@ export function createStravaConnectionService(
       }
     },
 
-    async deauthorize(scope) {
-      return dependencies.connections.revoke(scope, PROVIDER, dependencies.now().toISOString());
+    async deauthorize(scope, occurredAt) {
+      return dependencies.connections.revoke(scope, PROVIDER, occurredAt);
     },
   };
 }

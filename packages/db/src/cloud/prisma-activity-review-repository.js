@@ -93,6 +93,15 @@ export class PrismaActivityReviewRepository {
 
   async claim(scope, deviceId, limit = 5, activityId = null) {
     const athleteId = assertAthleteScope(scope);
+    if (activityId) {
+      const existing = await this.#prisma.activityReviewRequest.findFirst({
+        where: { athleteId, activityId, status: "processing", lockedBy: deviceId, leaseToken: { not: null } },
+        select: { id: true, activityId: true, leaseToken: true },
+      });
+      if (existing?.leaseToken) {
+        return { items: [{ requestId: existing.id, activityId: existing.activityId, status: "processing", leaseToken: existing.leaseToken }] };
+      }
+    }
     const now = new Date();
     const candidates = await this.#prisma.activityReviewRequest.findMany({
       where: {

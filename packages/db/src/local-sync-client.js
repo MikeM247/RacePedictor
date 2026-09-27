@@ -1,6 +1,6 @@
 import { syncChangesResponseSchema } from "../../core/src/contracts/sync.ts";
 import { secondBrainContextPublishApiResponseSchema } from "../../core/src/contracts/second-brain-context.ts";
-import { activityReviewClaimResponseSchema, activityCoachReviewSchema } from "../../core/src/contracts/activity-review.ts";
+import { activityReviewClaimResponseSchema, activityCoachReviewArtifactSchema } from "../../core/src/contracts/activity-review.ts";
 import { trainingPlanGoalContextPublishApiResponseSchema } from "../../core/src/contracts/coaching.ts";
 
 export class RacePredictorSyncClient {
@@ -73,7 +73,7 @@ export class RacePredictorSyncClient {
 
   async publishActivityReview(token, artifact) {
     return this.#request(token, new URL("/api/v1/sync/device/activity-reviews/publish", this.#baseUrl), {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...activityCoachReviewSchema.parse(artifact), requestId: artifact.requestId, leaseToken: artifact.leaseToken, expectedActivityRevision: artifact.expectedActivityRevision }),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(activityCoachReviewArtifactSchema.parse(artifact)),
     });
   }
 

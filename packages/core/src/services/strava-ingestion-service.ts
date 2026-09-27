@@ -490,7 +490,7 @@ function retry(diagnosticCode: string, retryAt: string): StravaIngestionFailure 
 
 function classifyClientFailure(error: unknown, attempt: number, now: Date): StravaIngestionFailure {
   if (error instanceof StravaAuthenticationFailure) return terminal("STRAVA_REAUTH_REQUIRED");
-  if (error instanceof StravaActivityPayloadError) return terminal("STRAVA_PAYLOAD_INVALID");
+  if (error instanceof StravaActivityPayloadError) return terminal(error.diagnosticCode);
   if (error instanceof StravaActivityClientError) {
     if (error.status === 401) return terminal("STRAVA_REAUTH_REQUIRED");
     if (error.status === 429) {

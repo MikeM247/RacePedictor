@@ -4,6 +4,7 @@ import {
   projectStravaLaps,
   projectStravaStreamSet,
 } from "../contracts/strava.ts";
+import { ZodError } from "zod";
 import {
   StravaActivityClientError,
   StravaActivityPayloadError,
@@ -44,7 +45,7 @@ export class ProjectingStravaActivityClient implements StravaActivityClient {
 
   async fetchActivityDetail(input: { accessToken: string; providerActivityId: string }) {
     const response = await this.#request(input.accessToken, `/activities/${encodeURIComponent(input.providerActivityId)}`);
-    return this.#project(response, projectStravaActivityDetail);
+    return this.#project(response, projectStravaActivityDetail, "DETAIL");
   }
 
   async fetchActivityLaps(input: { accessToken: string; providerActivityId: string }) {
@@ -52,7 +53,7 @@ export class ProjectingStravaActivityClient implements StravaActivityClient {
       input.accessToken,
       `/activities/${encodeURIComponent(input.providerActivityId)}/laps`,
     );
-    return this.#project(response, projectStravaLaps);
+    return this.#project(response, projectStravaLaps, "LAPS");
   }
 
   async fetchActivityStreams(input: Parameters<StravaActivityClient["fetchActivityStreams"]>[0]) {
@@ -61,7 +62,7 @@ export class ProjectingStravaActivityClient implements StravaActivityClient {
       `/activities/${encodeURIComponent(input.providerActivityId)}/streams`,
       { keys: input.keys.join(","), key_by_type: "true" },
     );
-    return this.#project(response, projectStravaStreamSet);
+    return this.#project(response, projectStravaStreamSet, "STREAMS");
   }
 
   async listActivities(input: Parameters<StravaActivityClient["listActivities"]>[0]) {
@@ -71,7 +72,7 @@ export class ProjectingStravaActivityClient implements StravaActivityClient {
       page: String(input.page),
       per_page: String(input.perPage),
     });
-    return projectJson(response.body, projectStravaActivitySummaryPage);
+    return projectJson(response.body, projectStravaActivitySummaryPage, "SUMMARY");
   }
 
   async #request(
@@ -94,9 +95,9 @@ export class ProjectingStravaActivityClient implements StravaActivityClient {
     });
   }
 
-  #project<T>(response: StravaTransportResponse, project: (payload: unknown) => T): StravaPayload<T> {
+  #project<T>(response: StravaTransportResponse, project: (payload: unknown) => T, stage: PayloadStage): StravaPayload<T> {
     return {
-      data: projectJson(response.body, project),
+      data: projectJson(response.body, project, stage),
       rawBody: response.body,
       capturedAt: this.#now().toISOString(),
       contentType: "application/json",
@@ -104,12 +105,26 @@ export class ProjectingStravaActivityClient implements StravaActivityClient {
   }
 }
 
-function projectJson<T>(body: Uint8Array, project: (payload: unknown) => T): T {
+type PayloadStage = "DETAIL" | "LAPS" | "STREAMS" | "SUMMARY";
+
+function projectJson<T>(body: Uint8Array, project: (payload: unknown) => T, stage: PayloadStage): T {
   try {
     return project(JSON.parse(new TextDecoder().decode(body)) as unknown);
-  } catch {
-    throw new StravaActivityPayloadError();
+  } catch (error) {
+    throw new StravaActivityPayloadError(undefined, payloadDiagnosticCode(error, stage));
   }
+}
+
+function payloadDiagnosticCode(error: unknown, stage: PayloadStage): string {
+  if (error instanceof SyntaxError) return `STRAVA_PAYLOAD_INVALID_${stage}_JSON`;
+  if (error instanceof ZodError) {
+    const issue = error.issues[0];
+    const field = issue?.path.filter((part): part is string => typeof part === "string")
+      .map((part) => part.toUpperCase().replace(/[^A-Z0-9]+/g, "_"))
+      .join("_") || "ROOT";
+    return `STRAVA_PAYLOAD_INVALID_${stage}_${field}_${issue?.code.toUpperCase() ?? "SCHEMA"}`.slice(0, 80);
+  }
+  return `STRAVA_PAYLOAD_INVALID_${stage}_PROJECTION`;
 }
 
 function retryAtFrom(headers: Readonly<Record<string, string | undefined>>, now: Date): string | null {

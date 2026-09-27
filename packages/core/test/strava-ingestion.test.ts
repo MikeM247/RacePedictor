@@ -126,6 +126,37 @@ test("concrete client projects extra live fields while raw bytes remain untouche
   );
 });
 
+test("payload failures identify the response and schema field without retaining provider values", async () => {
+  const invalidDetail = { ...detailFixture, splits_metric: undefined, description: "private provider prose" };
+  const detailClient = new ProjectingStravaActivityClient({
+    transport: { async request() { return { status: 200, headers: {}, body: bytes(invalidDetail) }; } },
+    now: () => new Date(capturedAt),
+  });
+  await assert.rejects(
+    detailClient.fetchActivityDetail({ accessToken: "test-token", providerActivityId: detailFixture.id }),
+    (error: unknown) => {
+      assert.ok(error instanceof StravaActivityPayloadError);
+      assert.equal(error.diagnosticCode, "STRAVA_PAYLOAD_INVALID_DETAIL_SPLITS_METRIC_INVALID_TYPE");
+      assert.doesNotMatch(error.diagnosticCode, /private provider prose/u);
+      return true;
+    },
+  );
+
+  const invalidSummary = { ...summaryFixture[0], private: undefined };
+  const summaryClient = new ProjectingStravaActivityClient({
+    transport: { async request() { return { status: 200, headers: {}, body: bytes([invalidSummary]) }; } },
+    now: () => new Date(capturedAt),
+  });
+  await assert.rejects(
+    summaryClient.listActivities({ accessToken: "test-token", afterEpochSeconds: 1, beforeEpochSeconds: 2, page: 1, perPage: 30 }),
+    (error: unknown) => {
+      assert.ok(error instanceof StravaActivityPayloadError);
+      assert.equal(error.diagnosticCode, "STRAVA_PAYLOAD_INVALID_SUMMARY_PRIVATE_INVALID_TYPE");
+      return true;
+    },
+  );
+});
+
 test("mapper deterministically creates the existing canonical Activity shape and manual-import dedupe hash", () => {
   const input = {
     athleteId: scope.athleteId,
@@ -360,6 +391,17 @@ test("429, 5xx, partial fetch, malformed payload, and raw storage failures are c
   assert.deepEqual(await malformed.service.ingest(scope, event()), {
     state: "terminal",
     diagnosticCode: "STRAVA_PAYLOAD_INVALID",
+    retryAt: null,
+  });
+
+  const malformedProviderResponse = createHarness();
+  malformedProviderResponse.client.failures.detail.push(new StravaActivityPayloadError(
+    undefined,
+    "STRAVA_PAYLOAD_INVALID_DETAIL_SPLITS_METRIC_INVALID_TYPE",
+  ));
+  assert.deepEqual(await malformedProviderResponse.service.ingest(scope, event()), {
+    state: "terminal",
+    diagnosticCode: "STRAVA_PAYLOAD_INVALID_DETAIL_SPLITS_METRIC_INVALID_TYPE",
     retryAt: null,
   });
 

@@ -31,9 +31,12 @@ export class StravaActivityClientError extends Error {
 }
 
 export class StravaActivityPayloadError extends Error {
-  constructor(message = "Strava payload could not be projected") {
+  readonly diagnosticCode: string;
+
+  constructor(message = "Strava payload could not be projected", diagnosticCode = "STRAVA_PAYLOAD_INVALID") {
     super(message);
     this.name = "StravaActivityPayloadError";
+    this.diagnosticCode = diagnosticCode;
   }
 }
 

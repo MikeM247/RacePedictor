@@ -6,6 +6,7 @@ import { PairedDeviceError } from "../../../packages/core/src/use-cases/paired-d
 import { createSyntheticTestActor } from "../lib/server/auth.ts";
 import { createDeviceRouteWrapper } from "../lib/server/device-route-security.ts";
 import {
+  handleClaimActivityReviews,
   handleDeviceAcknowledge,
   handleDeviceChanges,
   handleEnrollDevice,
@@ -58,6 +59,29 @@ test("device route authentication is non-disclosing and forwards only the authen
   }));
   assert.equal(tokenSeen, "rpd1.device_local123.secret_secret_secret_secret_123");
   assert.deepEqual(await allowed.json(), { athleteId });
+});
+
+test("device can claim only the requested activity review without claiming other queued workouts", async () => {
+  const claims: Array<{ athleteId: string; deviceId: string; limit: number; activityId: string | null }> = [];
+  const composition = {
+    activityReviews: { claim: async (scope: ReturnType<typeof athleteScopeFor>, deviceId: string, limit: number, activityId: string | null) => {
+      claims.push({ athleteId: scope.athleteId, deviceId, limit, activityId });
+      return { items: [{ requestId: "review-request-a", activityId, leaseToken: "lease-a", status: "processing" }] };
+    } },
+  } as unknown as DeviceSyncComposition;
+  const security = { actor: deviceActor, device };
+  const response = await handleClaimActivityReviews(
+    security,
+    new Request("http://localhost/api/v1/sync/device/activity-reviews?limit=1&activityId=activity_strava_123"),
+    () => composition,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(claims, [{ athleteId, deviceId: device.id, limit: 1, activityId: "activity_strava_123" }]);
+  await assert.rejects(
+    () => handleClaimActivityReviews(security, new Request("http://localhost/api/v1/sync/device/activity-reviews?activityId=../../other"), () => composition),
+    (error: unknown) => error instanceof Error && "status" in error && error.status === 400,
+  );
+  assert.equal(claims.length, 1);
 });
 
 test("owner pair/list/revoke handlers are athlete-scoped and return a device token only at enrollment", async () => {

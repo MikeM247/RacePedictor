@@ -91,11 +91,16 @@ export class PrismaActivityReviewRepository {
     return activityCoachReviewSchema.parse(toReview(row));
   }
 
-  async claim(scope, deviceId, limit = 5) {
+  async claim(scope, deviceId, limit = 5, activityId = null) {
     const athleteId = assertAthleteScope(scope);
     const now = new Date();
     const candidates = await this.#prisma.activityReviewRequest.findMany({
-      where: { athleteId, status: { in: ["queued", "retry_wait"] }, availableAt: { lte: now } },
+      where: {
+        athleteId,
+        ...(activityId ? { activityId } : {}),
+        status: { in: ["queued", "retry_wait"] },
+        availableAt: { lte: now },
+      },
       orderBy: [{ availableAt: "asc" }, { id: "asc" }], take: Math.min(Math.max(Number(limit) || 5, 1), 20),
     });
     const items = [];

@@ -204,9 +204,14 @@ export async function handleClaimActivityReviews(
   request: Request,
   getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
 ) {
-  const limit = Number(new URL(request.url).searchParams.get("limit") ?? 5);
+  const params = new URL(request.url).searchParams;
+  const limit = Number(params.get("limit") ?? 5);
   if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new ApiHttpError(400, "VALIDATION_ERROR", "Review claim limit is invalid");
-  return success(await getComposition().activityReviews.claim(athleteScopeFor(security.actor), security.device.id, limit));
+  const activityId = params.get("activityId");
+  if (activityId !== null && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/u.test(activityId)) {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "Review activity ID is invalid");
+  }
+  return success(await getComposition().activityReviews.claim(athleteScopeFor(security.actor), security.device.id, limit, activityId));
 }
 
 export async function handlePublishActivityReview(

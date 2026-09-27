@@ -125,7 +125,7 @@ export class PrismaActivityReviewRepository {
   listLatest(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, limit?: number): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityCoachReviewSummary[]>;
   reconcileRecent(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, options?: { windowHours?: number; now?: Date }): Promise<number>;
   queue(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string): Promise<{ activityId: string; requestId: string; status: import("../../../core/src/contracts/activity-review.ts").ActivityReviewRequestStatus; reused: boolean; updatedAt: string } | null>;
-  claim(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, deviceId: string, limit?: number): Promise<{ items: Array<{ requestId: string; activityId: string; status: "processing"; leaseToken: string }> }>;
+  claim(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, deviceId: string, limit?: number, activityId?: string | null): Promise<{ items: Array<{ requestId: string; activityId: string; status: "processing"; leaseToken: string }> }>;
   publish(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, artifact: import("../../../core/src/contracts/activity-review.ts").ActivityCoachReviewArtifact, deviceId: string): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityCoachReview>;
 }
 

@@ -64,9 +64,10 @@ export class RacePredictorSyncClient {
     ));
   }
 
-  async claimActivityReviews(token, limit = 5) {
+  async claimActivityReviews(token, limit = 5, activityId = null) {
     const url = new URL("/api/v1/sync/device/activity-reviews", this.#baseUrl);
     url.searchParams.set("limit", String(limit));
+    if (activityId) url.searchParams.set("activityId", activityId);
     return activityReviewClaimResponseSchema.parse(await this.#request(token, url, { method: "GET" }));
   }
 

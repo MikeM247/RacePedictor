@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  activityCoachReviewArtifactSchema,
   activityCoachReviewSchema,
   activityCoachReviewSummarySchema,
   activityReviewRequestStatusSchema,
@@ -75,11 +76,12 @@ export class PrismaActivityReviewRepository {
 
   async publish(scope, artifact, deviceId) {
     const athleteId = assertAthleteScope(scope);
-    const parsed = activityCoachReviewSchema.parse(artifact);
+    const { requestId, leaseToken, expectedActivityRevision: _expectedActivityRevision, ...review } = activityCoachReviewArtifactSchema.parse(artifact);
+    const parsed = activityCoachReviewSchema.parse(review);
     if (parsed.athleteId !== athleteId) throw new Error("Review crosses athlete scope");
-    const request = await this.#prisma.activityReviewRequest.findUnique({ where: { id_athleteId: { id: artifact.requestId, athleteId } } });
+    const request = await this.#prisma.activityReviewRequest.findUnique({ where: { id_athleteId: { id: requestId, athleteId } } });
     if (!request) throw new Error("Activity review request was not found");
-    if (request.status !== "processing" || request.lockedBy !== deviceId || request.leaseToken !== artifact.leaseToken) throw new Error("Activity review lease is invalid");
+    if (request.status !== "processing" || request.lockedBy !== deviceId || request.leaseToken !== leaseToken) throw new Error("Activity review lease is invalid");
     const row = await this.#prisma.activityCoachReview.upsert({
       where: { athleteId_activityId_revision: { athleteId, activityId: parsed.activityId, revision: parsed.revision } },
       update: {},

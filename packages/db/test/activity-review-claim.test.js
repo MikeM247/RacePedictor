@@ -87,7 +87,40 @@ test("local sync client validates and sends the full review artifact including i
       return { ok: true, json: async () => ({ data: { review: sent } }) };
     },
   });
-  const artifact = {
+  const artifact = sampleArtifact();
+  await client.publishActivityReview("device-token", artifact);
+  assert.deepEqual(sent, artifact);
+});
+
+test("repository publishes the full artifact under the matching device lease", async () => {
+  const actor = buildActorContext({
+    userId: "device:device_test", permittedAthleteIds: ["athlete-a"], activeAthleteId: "athlete-a",
+    requestId: "request-test", credentialKind: "device",
+  });
+  let created;
+  let settled;
+  const repository = new PrismaActivityReviewRepository({
+    prisma: {
+      activityReviewRequest: {
+        async findUnique() {
+          return { id: "request-1", status: "processing", lockedBy: "device_test", leaseToken: "lease-1" };
+        },
+        async update({ data }) { settled = data.status; },
+      },
+      activityCoachReview: {
+        async upsert({ create }) { created = create; return create; },
+      },
+    },
+  });
+  const result = await repository.publish(athleteScopeFor(actor), sampleArtifact(), "device_test");
+  assert.equal(result.headline, "A good easy run");
+  assert.equal(created.requestId, "request-1");
+  assert.equal(Object.hasOwn(created, "leaseToken"), false);
+  assert.equal(settled, "ready");
+});
+
+function sampleArtifact() {
+  return {
     id: "review-1", athleteId: "athlete-a", activityId: "activity-target", revision: 1,
     inputFingerprint: "a".repeat(64), headline: "A good easy run", assessment: "Matched the plan.", nextStep: "Rest tomorrow.",
     comparison: {
@@ -101,6 +134,4 @@ test("local sync client validates and sends the full review artifact including i
     model: "manual review", promptVersion: "v1", requestId: "request-1", leaseToken: "lease-1",
     expectedActivityRevision: 1,
   };
-  await client.publishActivityReview("device-token", artifact);
-  assert.deepEqual(sent, artifact);
-});
+}

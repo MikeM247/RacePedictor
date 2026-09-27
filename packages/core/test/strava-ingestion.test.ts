@@ -112,6 +112,12 @@ test("concrete client projects extra live fields while raw bytes remain untouche
   assert.deepEqual(requests, [{ path: `/activities/${detailFixture.id}`, query: undefined }]);
 
   assert.deepEqual(projectStravaActivityDetail(providerResponse), detailFixture);
+  assert.deepEqual(
+    projectStravaActivityDetail({ ...providerResponse, sport_type: "Ride", splits_metric: undefined }).splits_metric,
+    [],
+    "Strava only supplies metric splits for runs",
+  );
+  assert.deepEqual(projectStravaActivityDetail({ ...providerResponse, splits_metric: null }).splits_metric, []);
   assert.deepEqual(projectStravaLaps(lapsFixture.map((lap) => ({ ...lap, name: "Provider lap" }))), lapsFixture);
   assert.deepEqual(projectStravaStreamSet({ ...streamsFixture, watts: streamsFixture.cadence }), streamsFixture);
   assert.deepEqual(projectStravaActivitySummaryPage(summaryFixture.map((item) => ({ ...item, kudos_count: 9 }))), summaryFixture);
@@ -127,7 +133,7 @@ test("concrete client projects extra live fields while raw bytes remain untouche
 });
 
 test("payload failures identify the response and schema field without retaining provider values", async () => {
-  const invalidDetail = { ...detailFixture, splits_metric: undefined, description: "private provider prose" };
+  const invalidDetail = { ...detailFixture, splits_metric: "invalid", description: "private provider prose" };
   const detailClient = new ProjectingStravaActivityClient({
     transport: { async request() { return { status: 200, headers: {}, body: bytes(invalidDetail) }; } },
     now: () => new Date(capturedAt),

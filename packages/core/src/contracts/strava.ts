@@ -174,19 +174,21 @@ export function projectStravaActivityDetail(providerPayload: unknown): StravaAct
   const map = source.map === null || source.map === undefined
     ? source.map
     : { summary_polyline: asRecord(source.map).summary_polyline ?? null };
-  const splits = Array.isArray(source.splits_metric)
-    ? source.splits_metric.map((value) => {
-        const split = asRecord(value);
-        return pick(split, [
-          "split",
-          "distance",
-          "elapsed_time",
-          "moving_time",
-          "elevation_difference",
-          "average_speed",
-        ] as const);
-      })
-    : source.splits_metric;
+  const splits = source.splits_metric == null
+    ? []
+    : Array.isArray(source.splits_metric)
+      ? source.splits_metric.map((value) => {
+          const split = asRecord(value);
+          return pick(split, [
+            "split",
+            "distance",
+            "elapsed_time",
+            "moving_time",
+            "elevation_difference",
+            "average_speed",
+          ] as const);
+        })
+      : source.splits_metric;
   return stravaActivityDetailSchema.parse(compact({
     ...pick(source, [
       "id",

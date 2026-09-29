@@ -54,9 +54,8 @@ test("F03 reuses the same persisted review, qualification, and evidence on Home,
 
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto("/dashboard/calendar?date=2026-09-15");
-  await page.getByRole("button", { name: "Weeks" }).click();
   const day = page.locator(".calendar-day").filter({ hasText: "F03 recorded run" });
-  await day.getByRole("button", { name: /View details for/ }).click();
+  await day.click();
   const dialog = page.getByRole("dialog", { name: "Run details" });
   await expect(dialog.getByRole("heading", { name: "A controlled recorded run." })).toBeVisible();
   await expect(dialog.getByText("Suggested plan match — not confirmed", { exact: false })).toBeVisible();

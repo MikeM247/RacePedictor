@@ -50,6 +50,7 @@ export const activitySummarySchema = z.object({
   elapsedTimeS: z.number().int().nonnegative(),
   avgPaceSecPerKm: z.number().nonnegative(),
   elevationGainM: z.number().nonnegative(),
+  calories: z.number().nonnegative().nullable().optional(),
   hrAvailable: z.boolean(),
   cadenceAvailable: z.boolean(),
 });

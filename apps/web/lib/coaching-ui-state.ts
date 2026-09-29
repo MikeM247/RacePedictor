@@ -34,6 +34,7 @@ export type CalendarActivityView = {
   elapsedTimeSeconds: number;
   averagePaceSecondsPerKm: number;
   elevationGainMeters: number;
+  calories: number | null;
 };
 
 export type CalendarSessionOriginal = {
@@ -91,6 +92,13 @@ export type CalendarWindowRange = CalendarWeekRange & {
   weeks: CalendarWeekRange[];
 };
 
+export type CalendarMonthRange = CalendarWeekRange & {
+  month: string;
+  monthLabel: string;
+  weeks: CalendarWeekRange[];
+  dates: string[];
+};
+
 function shiftCalendarDate(date: string, days: number): string {
   const parsed = new Date(`${date}T00:00:00.000Z`);
   parsed.setUTCDate(parsed.getUTCDate() + days);
@@ -108,6 +116,30 @@ export function calendarWindowRange(date: string): CalendarWindowRange {
     return { from: weekFrom, to: shiftCalendarDate(weekFrom, 6) };
   });
   return { from, to: weeks[weeks.length - 1].to, weeks };
+}
+
+/** Returns the complete Monday-first grid for the month containing date. */
+export function calendarMonthRange(date: string, timezone = "Africa/Johannesburg"): CalendarMonthRange {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Invalid calendar date");
+  const month = date.slice(0, 7);
+  const first = `${month}-01`;
+  const firstWeek = weekRange(first).from;
+  const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0));
+  const last = lastDay.toISOString().slice(0, 10);
+  const lastWeek = weekRange(last).to;
+  const dates: string[] = [];
+  const weeks: CalendarWeekRange[] = [];
+  let cursor = firstWeek;
+  while (cursor <= lastWeek) {
+    const to = shiftCalendarDate(cursor, 6);
+    weeks.push({ from: cursor, to });
+    for (let i = 0; i < 7; i += 1) dates.push(shiftCalendarDate(cursor, i));
+    cursor = shiftCalendarDate(cursor, 7);
+  }
+  const monthLabel = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: timezone }).format(
+    new Date(`${first}T12:00:00.000Z`),
+  );
+  return { from: firstWeek, to: lastWeek, month, monthLabel, weeks, dates };
 }
 
 export function formatCoachingDate(date: string, timezone = "Africa/Johannesburg"): string {
@@ -236,6 +268,7 @@ export function normalizeCalendarActivities(payload: unknown): CalendarActivityV
       elapsedTimeSeconds: Number(item.elapsedTimeS ?? 0),
       averagePaceSecondsPerKm: Number(item.avgPaceSecPerKm ?? 0),
       elevationGainMeters: Number(item.elevationGainM ?? 0),
+      calories: typeof item.calories === "number" ? item.calories : null,
     }];
   });
 }

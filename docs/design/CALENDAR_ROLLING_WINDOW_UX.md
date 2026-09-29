@@ -1,5 +1,7 @@
 # Rolling calendar and activity information — UX proposal
 
+> Superseded by the implemented month calendar. Retained as historical design context; see `docs/design/screens.md` and `docs/UI_UX_SPEC.md` for the current behavior.
+
 Status: design only; implementation has not started. Prepared 2026-09-08 using the ux-ui-designer skill, before the accompanying architecture plan.
 
 References: [screen source of truth](screens.md), [shared UX specification](../UI_UX_SPEC.md), [visual guidelines](../UI_GUIDELINES.md), [implementation plan](../plans/CALENDAR_ROLLING_WINDOW_IMPLEMENTATION_PLAN.md).

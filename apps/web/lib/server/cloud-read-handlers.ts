@@ -311,7 +311,7 @@ export async function handleCloudCalendar(
   const { timezone } = await listCloudCalendarPlanContext(composition, scope);
   const activityRead = await listCloudCalendarActivitiesSafely(composition, scope, parsed.data, timezone);
   try {
-    return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions, historicalSessions: [], activities: activityRead.activities, activitiesReadStatus: activityRead.status }));
+    return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions, historicalSessions: [], activities: activityRead.activities, activitiesReadStatus: activityRead.status, timezone }));
   } catch (error) {
     reportCalendarSupplementFailure("calendar response projection", error);
     return success(calendarRouteDataSchema.parse({
@@ -320,6 +320,7 @@ export async function handleCloudCalendar(
       historicalSessions: [],
       activities: [],
       activitiesReadStatus: "unavailable",
+      timezone,
     }));
   }
 }

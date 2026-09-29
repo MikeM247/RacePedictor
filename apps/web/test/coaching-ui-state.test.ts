@@ -4,6 +4,7 @@ import {
   canAmendFutureSession,
   canRecordPastSessionSkip,
   calendarWindowRange,
+  calendarMonthRange,
   changeHistoryLabel,
   externalAutomationStatusLabel,
   formatAdjustmentCue,
@@ -33,6 +34,17 @@ test("shows the selected week and three following weeks in the calendar window",
       { from: "2026-09-28", to: "2026-10-04" },
     ],
   });
+});
+
+test("builds a complete Monday-first month grid including adjacent dates", () => {
+  const range = calendarMonthRange("2026-10-08");
+  assert.equal(range.month, "2026-10");
+  assert.equal(range.weeks.length, 5);
+  assert.equal(range.from, "2026-09-28");
+  assert.equal(range.to, "2026-11-01");
+  assert.equal(range.dates.length, 35);
+  assert.equal(range.dates[0], "2026-09-28");
+  assert.equal(range.dates.at(-1), "2026-11-01");
 });
 
 test("normalizes API sessions while preserving prescribed dates and revision", () => {

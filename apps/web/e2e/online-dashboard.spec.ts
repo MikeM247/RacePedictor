@@ -204,16 +204,12 @@ test("online Plan selects an approved version while Calendar remains prescriptio
   await page.getByRole("button", { name: "Confirm activation" }).click();
   await expect(page.getByRole("alertdialog", { name: "Make coaching version 1.0.0 active?" })).toContainText("Home and Calendar use this approved version.");
 
-  // Compact layouts intentionally default to Agenda. Keep this source-of-
-  // authority check in the explicit Weeks layout instead of asking for a
-  // control that is not rendered below the responsive breakpoint.
+  // The Calendar is a single month overview at every supported width.
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto("/dashboard/calendar?date=2026-08-10");
-  await page.getByRole("button", { name: "Weeks" }).click();
-  const pastDay = page.locator(".calendar-day").filter({ hasText: "Scheduled plan available in details" });
-  await expect(pastDay).toContainText("No run recorded");
-  await pastDay.getByRole("button", { name: /View details for/ }).click();
-  const pastDetails = page.getByRole("dialog", { name: "Calendar details" });
+  const pastDay = page.locator(".calendar-day").filter({ hasText: "Cloud easy run" });
+  await pastDay.click();
+  const pastDetails = page.getByRole("dialog", { name: "Plan details" });
   await expect(pastDetails.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
   await expect(pastDetails.getByText("Past sessions can only be recorded as skipped. The approved source remains unchanged.")).toBeVisible();
   await expectAxeClean(page, "F03 Calendar details dialog");
@@ -347,9 +343,9 @@ test("online Calendar records a past session as skipped without changing its app
   });
 
   await page.goto(`/dashboard/calendar?date=${pastDate}`);
-  const pastDay = page.locator(".calendar-day").filter({ hasText: "Scheduled plan available in details" });
-  await pastDay.getByRole("button", { name: /View details for/ }).click();
-  const details = page.getByRole("dialog", { name: "Calendar details" });
+  const pastDay = page.locator(".calendar-day").filter({ hasText: "Thursday hilly run" });
+  await pastDay.click();
+  const details = page.getByRole("dialog", { name: "Plan details" });
   let card = details.locator("#session-run-past");
   await expect(card.getByText("Past sessions can only be recorded as skipped.")).toBeVisible();
   await expect(card.getByRole("button", { name: "Amend session" })).toHaveCount(0);
@@ -360,7 +356,7 @@ test("online Calendar records a past session as skipped without changing its app
 
   await expect(page.getByRole("status").filter({ hasText: "approved source remains unchanged" })).toBeVisible();
   await pastDay.getByRole("button", { name: /View details for/ }).click();
-  card = page.getByRole("dialog", { name: "Calendar details" }).locator("#session-run-past");
+  card = page.getByRole("dialog", { name: "Plan details" }).locator("#session-run-past");
   await expect(card).toContainText("run · skipped");
   await expect(card.getByText("Approved source prescription")).toBeVisible();
   await card.getByText("Change history (1)").click();

@@ -39,6 +39,7 @@ const toSummary = (row) => ({
   elapsedTimeS: row.elapsedTimeS,
   avgPaceSecPerKm: row.avgPaceSecPerKm,
   elevationGainM: row.elevationGainM,
+  calories: row.calories === null || row.calories === undefined ? null : Number(row.calories),
   hrAvailable: row.avgHrBpm !== null || row.maxHrBpm !== null,
   cadenceAvailable: row.avgCadenceSpm !== null || row.maxCadenceSpm !== null,
 });
@@ -101,6 +102,7 @@ export const listLocalActivities = ({
         local_occurred_at AS localOccurredAt, sport, distance_m AS distanceM,
         elapsed_time_s AS elapsedTimeS, avg_pace_sec_per_km AS avgPaceSecPerKm,
         elevation_gain_m AS elevationGainM, avg_hr_bpm AS avgHrBpm,
+        calories,
         max_hr_bpm AS maxHrBpm, avg_cadence_spm AS avgCadenceSpm,
         max_cadence_spm AS maxCadenceSpm
       FROM activities

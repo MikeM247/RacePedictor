@@ -97,6 +97,7 @@ function toSummary(row) {
     elapsedTimeS: row.elapsedTimeS,
     avgPaceSecPerKm: Number(row.avgPaceSecPerKm),
     elevationGainM: Number(row.elevationGainM),
+    calories: nullableNumber(row.calories),
     hrAvailable: Boolean(row.hrAvailable),
     cadenceAvailable: Boolean(row.cadenceAvailable),
   };

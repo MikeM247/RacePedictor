@@ -23,7 +23,7 @@ async function getCalendar(request: Request) {
         localDate: localDateForCalendar(activity.occurredAt, timezone),
       }))
       .filter((activity) => activity.localDate >= from && activity.localDate <= to);
-    return calendarRouteDataSchema.parse({ from, to, sessions, historicalSessions: [], activities, activitiesReadStatus: "available" });
+    return calendarRouteDataSchema.parse({ from, to, sessions, historicalSessions: [], activities, activitiesReadStatus: "available", timezone });
   });
 }
 

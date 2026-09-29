@@ -1,6 +1,6 @@
 # Rolling calendar and Activity record — architecture and execution plan
 
-Status: proposed, not implemented. Prepared 2026-09-08 with the architect skill after the [UX design](../design/CALENDAR_ROLLING_WINDOW_UX.md).
+Status: superseded by the implemented month calendar. Prepared 2026-09-08 with the architect skill after the [UX design](../design/CALENDAR_ROLLING_WINDOW_UX.md).
 
 ## Problem Framing
 

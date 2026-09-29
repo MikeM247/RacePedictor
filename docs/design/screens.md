@@ -43,8 +43,9 @@ The former Overview purpose evolves into Today. Planning conversation is launche
 
 ### Calendar
 
-- Default to a rolling four-week Monday–Sunday view with Agenda as the compact alternative; the first row is the week containing today on a normal visit.
-- Scroll within the focused Calendar region, or use Page Up/Page Down, to replace one week at a time. Do not show previous, today, or next navigation buttons.
+- Default to a complete Monday–Sunday month grid. Previous/next controls, a month/year picker, and Today navigate the month; Page Up/Page Down changes month while the grid is focused.
+- Show active-plan sessions and recorded running activities together in each date cell, using violet planned and lime recorded treatments. Selecting a date opens the full activity and plan detail dialog.
+- Desktop uses a weekly totals rail and monthly summary. “Full width” means the available content area beside the standard application sidebar; the sidebar remains in its shared left position. Compact layouts use a weekly totals selector and monthly summary beneath the grid; the month overview does not require vertical scrolling at supported default viewports.
 - Each date has an information control. It opens active-plan details for future dates. For today and past dates, it shows each full Activity record first, then the currently active plan's scheduled session context.
 - Calendar includes sessions from the current active plan only. Retired plan versions remain available on Plan.
 - Reschedule, skip, and restore require confirmation and have keyboard-accessible alternatives to drag-and-drop.

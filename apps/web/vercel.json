@@ -4,5 +4,12 @@
     "deploymentEnabled": {
       "codex/home-calendar-redesign": false
     }
-  }
+  },
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/v1/internal/reconciliation",
+      "schedule": "0 3 * * *"
+    }
+  ]
 }

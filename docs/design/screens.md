@@ -1,5 +1,7 @@
 # Phase 1 Digital Coach Screens
 
+> **4 October 2026 redesign amendment:** follow the latest owner amendment in DESIGN_INTENT_CONTRACT.md and [the mobile month handoff](../plans/CALENDAR_MOBILE_MONTH_IMPLEMENTATION.md). Primary navigation is Home/Calendar; Settings exposes supporting management/history/import/recovery. Navigation uses the existing logo without duplicate app-name text. Calendar uses the Monday-first month grid at every width: desktop at 1200px and above retains the selected-day sidebar, while smaller widths open the complete date-specific Day details dialog on day taps. Compact cells show the first planned and recorded distance/duration or N/A with accurate +N; every record remains available in full detail. The old compact week/date selector and agenda are replaced. Month/scroll position, adjacent dates, Today, saved timezone, totals, deep links, focus, history and permitted actions remain. Vertical scrolling is allowed at narrow widths and zoom; no full-screen-fit requirement may clip content or shrink detail prose.
+
 > Redesign authority: [DESIGN_INTENT_CONTRACT.md](DESIGN_INTENT_CONTRACT.md) now governs redesign navigation, presentation, interaction, and UX acceptance where this specification differs. Retain the domain behavior and data/approval boundaries documented here. The historical specification below remains a reference for existing functionality.
 
 This is the Phase 1 screen and state source of truth. `docs/UI_UX_SPEC.md` defines shared UX behavior and `docs/UI_GUIDELINES.md` defines visual rules.

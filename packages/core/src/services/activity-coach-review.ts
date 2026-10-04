@@ -20,7 +20,7 @@ export type ReviewSession = {
 };
 
 export type ReviewFacts = {
-  activity: Pick<ActivityDetail, "id" | "athleteId" | "sport" | "occurredAt" | "localOccurredAt" | "distanceM" | "elapsedTimeS" | "avgPaceSecPerKm" | "elevationGainM" | "avgHrBpm" | "splits">;
+  activity: Pick<ActivityDetail, "id" | "athleteId" | "sport" | "occurredAt" | "localOccurredAt" | "distanceM" | "elapsedTimeS" | "movingTimeS" | "avgPaceSecPerKm" | "elevationGainM" | "elevationLossM" | "avgHrBpm" | "maxHrBpm" | "avgCadenceSpm" | "maxCadenceSpm" | "avgPowerW" | "maxPowerW" | "calories" | "splits">;
   session: ReviewSession | null;
   matchState: ActivityReviewComparison["matchState"];
   limitations: string[];

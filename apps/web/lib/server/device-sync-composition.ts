@@ -8,6 +8,8 @@ import {
   PrismaTrainingPlanGoalContextRepository,
   PrismaOperationalUsageRepository,
   PrismaActivityReviewRepository,
+  PrismaAthleteFeedbackRepository,
+  PrismaCloudActivityRepository,
 } from "../../../../packages/db/src/cloud/index.js";
 import { assertServerRuntime } from "./server-runtime.ts";
 
@@ -27,6 +29,8 @@ function buildComposition() {
     goalContexts: new PrismaTrainingPlanGoalContextRepository({ prisma }),
     usage: new PrismaOperationalUsageRepository({ prisma }),
     activityReviews: new PrismaActivityReviewRepository({ prisma }),
+    athleteFeedback: new PrismaAthleteFeedbackRepository({ prisma }),
+    activities: new PrismaCloudActivityRepository({ prisma }),
   });
 }
 

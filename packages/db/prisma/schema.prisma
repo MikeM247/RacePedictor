@@ -151,6 +151,7 @@ model Activity {
   weeklyFeaturesAsLongest WeeklyFeature[]           @relation("WeeklyFeatureLongestRun")
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
+  athleteFeedback         ActivityAthleteFeedback[]
 
   @@unique([id, athleteId])
   @@unique([athleteId, dedupeHash])
@@ -358,6 +359,7 @@ model Athlete {
   calendarSessions        CalendarSessionProjection[]
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
+  athleteFeedback         ActivityAthleteFeedback[]
 
   @@map("athletes")
 }
@@ -632,6 +634,9 @@ model ActivityReviewRequest {
   id              String                     @id @default(cuid())
   athleteId       String
   activityId      String
+  activityRevision Int?
+  inputFingerprint String?
+  planComparison  Json?
   status          ActivityReviewRequestStatus @default(queued)
   attemptCount    Int                        @default(0)
   availableAt     DateTime                   @default(now()) @db.Timestamptz(3)
@@ -639,6 +644,10 @@ model ActivityReviewRequest {
   lockedBy        String?
   leaseToken      String?
   lastErrorCode   String?
+  providerRequestId String?
+  providerInputTokens Int?
+  providerOutputTokens Int?
+  providerLatencyMs Int?
   requestedAt     DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime                   @updatedAt @db.Timestamptz(3)
   athlete         Athlete                    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
@@ -668,6 +677,7 @@ model ActivityCoachReview {
   publishedAt        DateTime              @db.Timestamptz(3)
   model              String
   promptVersion      String
+  provenance          String                @default("legacy_combined")
   createdAt          DateTime              @default(now()) @db.Timestamptz(3)
   athlete            Athlete               @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   activity           Activity              @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
@@ -678,6 +688,30 @@ model ActivityCoachReview {
   @@index([athleteId, publishedAt(sort: Desc)])
   @@index([athleteId, activityId, revision(sort: Desc)])
   @@map("activity_coach_reviews")
+}
+
+model ActivityAthleteFeedback {
+  id                 String   @id @default(cuid())
+  athleteId          String
+  activityId         String
+  revision           Int
+  activityRevision   Int
+  headline           String
+  summary            String
+  model              String
+  artifactId         String
+  artifactHash       String
+  approvedAt         DateTime @db.Timestamptz(3)
+  publishedAt        DateTime @db.Timestamptz(3)
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  athlete            Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity           Activity @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, activityId, revision])
+  @@unique([id, athleteId])
+  @@unique([athleteId, activityId, artifactId])
+  @@index([athleteId, activityId, revision(sort: Desc)])
+  @@map("activity_athlete_feedback")
 }
 
 model TrainingPlanProjection {

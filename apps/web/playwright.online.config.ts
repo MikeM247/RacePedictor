@@ -7,7 +7,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["online-dashboard.spec.ts", "redesign-coverage.spec.ts", "redesign-home.spec.ts", "redesign-readiness.spec.ts", "f08-recovery.spec.ts", "redesign-training-detail.spec.ts", "redesign-review-consistency.spec.ts", "redesign-responsive.spec.ts", "redesign-accessibility.spec.ts"],
+  testMatch: ["home-calendar-companion.spec.ts", "online-dashboard.spec.ts", "redesign-coverage.spec.ts", "redesign-home.spec.ts", "redesign-readiness.spec.ts", "f08-recovery.spec.ts", "redesign-training-detail.spec.ts", "redesign-review-consistency.spec.ts", "redesign-responsive.spec.ts", "redesign-accessibility.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -24,7 +24,7 @@ export default defineConfig({
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
     cwd: path.join(e2eRepositoryRoot, "apps", "web"),
     url: baseURL,
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.RACEPREDICTOR_E2E_REUSE_SERVER === "1",
     timeout: 120_000,
     env: {
       ...process.env,

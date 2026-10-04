@@ -117,16 +117,41 @@ export class PrismaCloudActivityRepository {
     to?: string | null;
   }): Promise<ActivitiesListResponse>;
   findById(scope: AthleteScope, activityId: string): Promise<ActivityDetail | null>;
+  currentRevision(scope: AthleteScope, activityId: string): Promise<number>;
+}
+
+export class CloudActivityImportError extends Error {
+  readonly code: string;
+  readonly httpStatus: number;
+}
+export class PrismaCloudActivityImportRepository {
+  constructor(input: { prisma: unknown; objects: unknown });
+  initiate(scope: AthleteScope, input: { filename: string; contentType: string; sizeBytes: number; checksumSha256: string; idempotencyKey?: string | null }): Promise<{ importId: string; uploadKey: string; expiresInSeconds: number; url: string; headers: Record<string, string> }>;
+  complete(scope: AthleteScope, input: { importId: string; filename: string; contentType: string; sizeBytes: number; checksumSha256: string; utcOffset?: string }): Promise<import("../../../core/src/contracts/imports.ts").ImportUploadResponse>;
+  importMultipart(scope: AthleteScope, input: { filename: string; contentType: string; body: Uint8Array; utcOffset?: string; idempotencyKey?: string | null }): Promise<import("../../../core/src/contracts/imports.ts").ImportUploadResponse>;
 }
 
 export class PrismaActivityReviewRepository {
   constructor(input: { prisma: unknown });
   get(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityCoachReviewResponse["data"]>;
+  planComparison(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string): Promise<unknown | null>;
   listLatest(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, limit?: number): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityCoachReviewSummary[]>;
+  listForActivity(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string, limit?: number): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityCoachReview[]>;
   reconcileRecent(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, options?: { windowHours?: number; now?: Date }): Promise<number>;
   queue(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string): Promise<{ activityId: string; requestId: string; status: import("../../../core/src/contracts/activity-review.ts").ActivityReviewRequestStatus; reused: boolean; updatedAt: string } | null>;
   claim(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, deviceId: string, limit?: number, activityId?: string | null): Promise<{ items: Array<{ requestId: string; activityId: string; status: "processing"; leaseToken: string }> }>;
   publish(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, artifact: import("../../../core/src/contracts/activity-review.ts").ActivityCoachReviewArtifact, deviceId: string): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityCoachReview>;
+  markFailure(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, requestId: string, deviceId: string, code: string, retry?: boolean): Promise<void>;
+  markReady(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, requestId: string, deviceId: string): Promise<void>;
+  recordProviderResult(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, requestId: string, deviceId: string, metadata: { requestId?: string | null; inputTokens?: number | null; outputTokens?: number | null; latencyMs?: number | null }): Promise<void>;
+  recordInputSnapshot(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, requestId: string, deviceId: string, input: { activityRevision: number; inputFingerprint: string; planComparison?: unknown }): Promise<void>;
+}
+
+export class AthleteFeedbackConflictError extends Error {}
+export class PrismaAthleteFeedbackRepository {
+  constructor(input: { prisma: unknown });
+  get(scope: AthleteScope, activityId: string): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedback | null>;
+  publish(scope: AthleteScope, artifact: import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedbackArtifact): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedback | null>;
 }
 
 export class PrismaCloudDashboardRepository {
@@ -280,6 +305,7 @@ export class PrismaOperationalUsageRepository {
 export class PrismaReconciliationScopeRepository {
   constructor(input: { prisma: unknown });
   listConnectedAthleteIds(limit: number): Promise<readonly string[]>;
+  listAthleteIds(limit: number): Promise<readonly string[]>;
 }
 
 export class PrismaIdentityRepository implements IdentityRepository {

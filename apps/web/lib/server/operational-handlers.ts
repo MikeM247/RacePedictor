@@ -12,7 +12,9 @@ export async function handleScheduledReconciliation(
 ) {
   const composition = getComposition();
   await composition.usage.recordInvocation();
-  return success(await composition.reconciliation.run({ workerId: `cron:${randomUUID()}`, maxAthletes: 25, maxJobs: 25 }));
+  const reconciliation = await composition.reconciliation.run({ workerId: `cron:${randomUUID()}`, maxAthletes: 25, maxJobs: 25 });
+  const coachFeedback = composition.coachFeedback?.run ? await composition.coachFeedback.run(25) : [];
+  return success({ ...reconciliation, coachFeedback });
 }
 
 export async function handleOperationalStatus(

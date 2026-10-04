@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { coachingFixtures, fixturePlan } from "./coaching-fixtures.ts";
+import { assertHomeLayout } from "./home-layout-assertions.ts";
 
 const overview = {
   fetchStatus: "success",
@@ -84,14 +85,14 @@ test("F02 Home keeps three groups ordered, presents a qualified latest review, a
   await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "today-focus-heading");
   await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "latest-activity-heading");
   await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Next milestone: Half marathon · February Half" })).toBeVisible();
-  await expect(page.getByText(/Race-day progress cannot yet be assessed/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "View milestone in Plan: Half marathon" })).toContainText("Half marathon · February Half");
+  await expect(page.getByText("No race-day assessment.", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
   await expect(page.getByText("This one session does not establish a target-race change.")).toBeVisible();
-  await expect(page.getByText(/Goal impact cannot be assessed from the available review evidence/)).toBeVisible();
-  await expect(page.getByText(/Plan version 2/)).toBeVisible();
+  await expect(page.getByText("Plan adherence", { exact: true })).toBeVisible();
+  await expect(page.locator(".home-activity")).not.toContainText("Plan version 2");
   await expect(page.getByText("Heart-rate data was not supplied.")).toBeVisible();
-  await expect(page.getByText("This advisory review does not change your approved prescription.")).toBeVisible();
+  await expect(page.getByText("Performance", { exact: true })).toBeVisible();
   const sessionLink = page.getByRole("link", { name: "View full session review" });
   await expect(sessionLink).toHaveAttribute("href", /activityId=f02-latest.*returnTo=%2Fdashboard/);
   await expect(page.getByRole("link", { name: "View calendar" })).toHaveAttribute("href", "/dashboard/calendar");
@@ -139,23 +140,23 @@ test("F02 keeps the newest pending activity instead of substituting an older rev
   await mockHome(page, { activities: [older, latest], reviewStatus: "queued", reviewData: null });
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
-  await expect(page.getByText("Review queued", { exact: true })).toBeVisible();
+  await expect(page.getByText("No takeaway available yet.", { exact: true })).toBeVisible();
   await expect(page.getByText("Older reviewed run", { exact: true })).toHaveCount(0);
-  await expect(page.getByText(/Goal impact cannot be assessed without sufficient review evidence/)).toBeVisible();
+  await expect(page.getByText("No takeaway available yet.", { exact: true })).toBeVisible();
 });
 
 test("F02 makes review failure local to Recent training while the other groups remain usable", async ({ page }) => {
   await mockHome(page, { reviewFailure: true });
   await page.goto("/dashboard");
-  await expect(page.getByText(/Feedback could not be checked/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Your approved goal" })).toBeVisible();
+  await expect(page.getByText(/Takeaway unavailable/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your goal" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Intentional recovery day" })).toBeVisible();
 });
 
 test("F02 Home reports cloud projection pending without displaying inferred goal values", async ({ page }) => {
   await mockHome(page, { goalState: "projection_pending" });
   await page.goto("/dashboard");
-  await expect(page.getByText(/waiting for paired-device publication/)).toBeVisible();
+  await expect(page.getByText(/Goal details are not available yet/)).toBeVisible();
   await expect(page.getByText("City marathon", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
   await expect(page.getByRole("link", { name: "View calendar" })).toBeVisible();
@@ -165,7 +166,7 @@ test("F02 Home distinguishes a settled goal without a plan from unavailable clou
   await mockHome(page, { goalState: "goal_only" });
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
-  await expect(page.getByText(/no active approved plan with milestones/)).toBeVisible();
+  await expect(page.getByText(/No active plan. Adherence and performance are not assessed/)).toBeVisible();
   await expect(page.getByText(/Race-day progress cannot yet be assessed/)).toHaveCount(0);
 
   await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({
@@ -180,8 +181,10 @@ for (const [state, label] of [["suggested", "Suggested plan match — not confir
   test(`F02 preserves the ${state} match qualification`, async ({ page }) => {
     await mockHome(page, { reviewData: review(state) });
     await page.goto("/dashboard");
-    await expect(page.getByText(label, { exact: false })).toBeVisible();
-    await expect(page.getByText(/does not establish race readiness/)).toBeVisible();
+    if (state !== "confirmed") await expect(page.getByText(/planned.session.*(link|confirmed)/i)).toBeVisible();
+    await page.getByRole("link", { name: /View full session review/ }).click();
+    await expect(page.locator(".activity-review-context strong").filter({ hasText: label })).toBeVisible();
+    await expect(page.locator(".activity-review-context").filter({ hasText: /does not establish race readiness/ })).toBeVisible();
   });
 }
 
@@ -190,8 +193,10 @@ for (const [state, label] of [["not_requested", "No review requested"], ["queued
     const data = state === "ready" ? review() : null;
     await mockHome(page, { reviewStatus: state, reviewData: data });
     await page.goto("/dashboard");
-    await expect(page.getByText(label, { exact: true })).toBeVisible();
-    if (state !== "ready") await expect(page.getByText(/Goal impact cannot be assessed without sufficient review evidence/)).toBeVisible();
+    await expect(page.locator(".home-activity")).not.toContainText(label);
+    await page.getByRole("link", { name: /View (full session review|latest session)/ }).click();
+    await expect(page.locator(".activity-coach-review")).toContainText(state === "not_requested" ? "No review has been requested" : state === "retry_wait" ? "retry" : state === "attention" ? "attention" : state === "ready" ? "Reviewed:" : label);
+    if (state !== "ready") await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
   });
 }
 
@@ -204,7 +209,8 @@ test("F02 keeps long caveats readable without horizontal overflow at contract wi
   for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/dashboard");
-    await expect(page.getByText(/Full review passage shown because safely shortening/)).toBeVisible();
+    await expect(page.getByText(/A short takeaway is unavailable/)).toBeVisible();
+    await page.getByRole("link", { name: /View full session review/ }).click();
     await expect(page.getByText(/This material limitation is intentionally long/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
@@ -219,39 +225,13 @@ test("F02 Home reflows without overflow at the 200% zoom effective viewport", as
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(720);
 });
 
-test("F02 records first-screen summaries at common phone and desktop heights", async ({ page }) => {
+test("F02 verifies readable ordered summaries and actual viewport fit at phone and desktop heights", async ({ page }) => {
   await mockHome(page);
-  const review: Array<{ width: number; height: number; goalPanelBottom: number; todaySummaryBottom: number; activityIdentityBottom: number; activityTakeawayBottom: number; goalAndTodayFit: boolean; allGroupsFit: boolean }> = [];
-  for (const { width, height } of [{ width: 390, height: 844 }, { width: 1024, height: 900 }, { width: 1440, height: 900 }]) {
-    await page.setViewportSize({ width, height });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1024, height: 900 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
-    const layout = await page.evaluate(() => {
-      const bottom = (selector: string) => {
-        const element = document.querySelector<HTMLElement>(selector);
-        return element ? Math.ceil(element.getBoundingClientRect().bottom) : 0;
-      };
-      const goalPanelBottom = bottom(".home-goal-content--ready");
-      const todaySummaryBottom = bottom(".home-today .today-coach-card");
-      const activityIdentityBottom = bottom(".home-activity .home-session-heading");
-      const activityTakeawayBottom = bottom(".home-activity .home-review-commentary");
-      return {
-        height: window.innerHeight,
-        goalPanelBottom,
-        todaySummaryBottom,
-        activityIdentityBottom,
-        activityTakeawayBottom,
-        goalAndTodayFit: goalPanelBottom > 0 && todaySummaryBottom > 0 && todaySummaryBottom <= window.innerHeight,
-        allGroupsFit: goalPanelBottom > 0 && todaySummaryBottom > 0 && activityTakeawayBottom > 0 && activityTakeawayBottom <= window.innerHeight,
-        noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
-      };
-    });
-    expect(layout.noHorizontalOverflow).toBe(true);
-    review.push({ width, height, goalPanelBottom: layout.goalPanelBottom, todaySummaryBottom: layout.todaySummaryBottom, activityIdentityBottom: layout.activityIdentityBottom, activityTakeawayBottom: layout.activityTakeawayBottom, goalAndTodayFit: layout.goalAndTodayFit, allGroupsFit: layout.allGroupsFit });
-    await test.info().attach(`home-${width}-first-screen.png`, { body: await page.screenshot(), contentType: "image/png" });
+    await expect(page.getByRole("heading", { name: latest.title, exact: true })).toBeVisible();
+    await assertHomeLayout(page, test.info(), "home-rest-day");
   }
-  expect(review[0]?.goalAndTodayFit).toBe(true);
-  expect(review[1]?.allGroupsFit).toBe(true);
-  expect(review[2]?.allGroupsFit).toBe(true);
-  test.info().annotations.push({ type: "first-screen-layout", description: JSON.stringify(review) });
 });

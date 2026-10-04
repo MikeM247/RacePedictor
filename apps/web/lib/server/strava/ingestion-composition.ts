@@ -16,6 +16,7 @@ import { CloudEnvironmentError, readCloudEnvironment } from "../cloud-environmen
 import { assertServerRuntime } from "../server-runtime.ts";
 import { FetchStravaActivityTransport } from "./activity-transport.ts";
 import { getStravaConnectionComposition } from "./composition.ts";
+import { runCloudCoachFeedbackBatch } from "../activity-coach-worker.ts";
 
 assertServerRuntime("strava/ingestion-composition");
 
@@ -66,10 +67,11 @@ function buildComposition() {
     createLeaseToken: () => randomUUID(),
   });
 
-  const schedule = (jobId: string) => {
+  const schedule = (jobId: string, athleteId?: string) => {
     const invocationId = `vercel:${randomUUID()}`;
     after(async () => {
       await processor.processJob(jobId, invocationId);
+      if (athleteId) await runCloudCoachFeedbackBatch({ athleteId, limit: 5 });
     });
   };
 
@@ -79,7 +81,7 @@ function buildComposition() {
     schedule,
     async enqueueBackfill(scope: AthleteScope, request: StravaBackfillRequest) {
       const queued = await processor.enqueueBackfill(scope, request);
-      schedule(queued.jobId);
+      schedule(queued.jobId, scope.athleteId);
       return queued;
     },
     async enqueueInitialBackfill(scope: AthleteScope) {
@@ -92,7 +94,7 @@ function buildComposition() {
         maxPages: 5,
         maxActivities: 150,
       });
-      schedule(queued.jobId);
+      schedule(queued.jobId, scope.athleteId);
       return queued;
     },
     async resumeDueBackfill(scope: AthleteScope, jobId: string) {

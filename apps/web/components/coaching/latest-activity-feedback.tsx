@@ -14,7 +14,7 @@ export function LatestActivityFeedback() {
   }, []);
   if (!review) return null;
   return <section className="latest-activity-feedback state-panel" aria-labelledby="latest-activity-feedback-title">
-    <div><p className="eyebrow">Latest workout feedback</p><h2 id="latest-activity-feedback-title">{review.headline}</h2><p>{review.nextStep}</p></div>
+    <div><p className="eyebrow">Latest AI coach feedback</p><h2 id="latest-activity-feedback-title">{review.headline}</h2><p>{review.nextStep}</p></div>
     <a className="button button-secondary" href={`/dashboard/activities?activityId=${encodeURIComponent(review.activityId)}#coach-review-${encodeURIComponent(review.activityId)}`}>Read feedback</a>
   </section>;
 }

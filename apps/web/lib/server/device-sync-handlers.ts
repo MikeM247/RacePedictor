@@ -6,7 +6,11 @@ import {
   syncFailureRequestSchema,
 } from "../../../../packages/core/src/contracts/sync.ts";
 import { secondBrainContextSnapshotSchema } from "../../../../packages/core/src/contracts/second-brain-context.ts";
-import { activityCoachReviewArtifactSchema } from "../../../../packages/core/src/contracts/activity-review.ts";
+import {
+  activityAthleteFeedbackArtifactSchema,
+  activityCoachReviewArtifactSchema,
+} from "../../../../packages/core/src/contracts/activity-review.ts";
+import { AthleteFeedbackConflictError } from "../../../../packages/db/src/cloud/index.js";
 import {
   trainingPlanGoalContextPublishRequestSchema,
   trainingPlanSchema,
@@ -225,6 +229,42 @@ export async function handlePublishActivityReview(
     return success({ review: await getComposition().activityReviews.publish(athleteScopeFor(security.actor), parsed.data, security.device.id) }, 201);
   } catch (error) {
     if (error instanceof Error && /lease/i.test(error.message)) throw new ApiHttpError(409, "CONFLICT", "The activity review lease is no longer valid");
+    throw error;
+  }
+}
+
+export async function handleActivityFeedbackContext(
+  security: AuthenticatedDevice,
+  activityId: string,
+  getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
+) {
+  const scope = athleteScopeFor(security.actor);
+  const activity = await getComposition().activities.findById(scope, decodeURIComponent(activityId));
+  if (!activity) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
+  const [activityRevision, coach, athlete, planComparison] = await Promise.all([
+    getComposition().activities.currentRevision(scope, activity.id),
+    getComposition().activityReviews.get(scope, activity.id),
+    getComposition().athleteFeedback.get(scope, activity.id),
+    typeof getComposition().activityReviews.planComparison === "function" ? getComposition().activityReviews.planComparison(scope, activity.id) : null,
+  ]);
+  return success({ activity, activityRevision, planComparison, coachFeedback: coach, athleteFeedback: athlete });
+}
+
+export async function handlePublishAthleteFeedback(
+  security: AuthenticatedDevice,
+  request: Request,
+  getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
+) {
+  const parsed = activityAthleteFeedbackArtifactSchema.safeParse(await readJson(request));
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Athlete feedback artifact is invalid");
+  try {
+    const feedback = await getComposition().athleteFeedback.publish(athleteScopeFor(security.actor), parsed.data);
+    if (!feedback) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
+    return success({ feedback }, 201);
+  } catch (error) {
+    if (error instanceof AthleteFeedbackConflictError || (error instanceof Error && /stale|scope/i.test(error.message))) {
+      throw new ApiHttpError(409, "CONFLICT", "Athlete feedback is stale or conflicts with a newer publication");
+    }
     throw error;
   }
 }

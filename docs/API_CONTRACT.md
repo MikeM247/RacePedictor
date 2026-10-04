@@ -230,3 +230,11 @@ All new endpoints remain additive under `/api/v1`, require an authenticated acto
 Cloud authorization errors add stable `UNAUTHENTICATED` and `FORBIDDEN` codes; provider and durable-work failures use non-secret `RATE_LIMITED`, `UNAVAILABLE`, and `CONFLICT` outcomes as applicable. Provider/device tokens and raw-object keys are never returned by status or dashboard contracts. A short-lived raw-object access result may be created only after current athlete authorization.
 
 Scheduled reconciliation is bounded to 25 connected athletes and 25 claimed jobs per invocation. Each athlete receives one stable 48-hour reconciliation request with at most three pages and 90 activities. The handler records invocation usage before work; a hard-stop guardrail returns a successful paused result with no new work rather than deleting or bypassing durable state.
+
+## Separate activity feedback contracts
+
+`GET /api/v1/activities/:activityId/feedback` returns independent `coachFeedback`, `athleteFeedback`, and `legacyReviews` values. Coach feedback is generated from recorded metrics and an approved plan snapshot; athlete feedback is an owner-approved local artifact. A missing athlete value is presented as `Athlete feedback has not been provided.`. `GET /api/v1/activities/:activityId/legacy-reviews` exposes preserved mixed reviews without populating either current field.
+
+`POST /api/v1/activities/:activityId/coach-review` queues or retries cloud generation and returns `202`. `GET /api/v1/sync/device/activities/:activityId/feedback-context` supplies the exact activity revision and current feedback to a paired device. `POST /api/v1/sync/device/athlete-feedback/publish` accepts a hash-validated approved artifact and uses activity and athlete-feedback revisions for idempotent publication; stale or competing artifacts return `409`.
+
+Online upload clients should use `POST /api/v1/imports/upload/initiate` to obtain a short-lived athlete-scoped R2 PUT URL and required headers, then `POST /api/v1/imports/upload/complete` with the checksum and immutable import identity. The legacy multipart endpoint remains available for smaller uploads and uses the same cloud normalizer. Uploads are limited to 15 MiB, and CSV normalization is bounded to 100 rows per batch.

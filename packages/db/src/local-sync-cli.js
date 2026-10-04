@@ -6,7 +6,6 @@ import { LocalCloudSyncAgent } from "./local-sync-agent.js";
 import { RacePredictorSyncClient } from "./local-sync-client.js";
 import { LocalSyncProjectionRepository } from "./local-sync-projection.js";
 import { readSelectedSecondBrainSource } from "./obsidian-selected-context.js";
-import { runCloudActivityReviewBatch } from "./local-activity-review-cloud-worker.js";
 import { buildVerifiedLocalPlanGoalContextFromDatabase } from "./local-plan-goal-context.js";
 
 const command = process.argv[2];
@@ -55,15 +54,6 @@ if (command === "enroll") {
       process.stdout.write(snapshot
         ? `Selected Second Brain revision ${snapshot.revision} published.\n`
         : "Selected Second Brain context is unchanged.\n");
-    }
-    if (result.sync.status === "fulfilled" && result.publication.status === "fulfilled" && process.env.OPENAI_API_KEY) {
-      const reviewResult = await runCloudActivityReviewBatch({
-        databasePath,
-        athleteId,
-        token: await credentialStore.load(),
-        client: new RacePredictorSyncClient({ baseUrl }),
-      });
-      process.stdout.write(`Activity coach review job: ${JSON.stringify(reviewResult)}\n`);
     }
     if (result.sync.status === "rejected" || result.source.status === "rejected" || result.publication.status === "rejected") {
       throw new Error("Local sync-and-publish did not complete; inspect the local sync status for the failed direction");

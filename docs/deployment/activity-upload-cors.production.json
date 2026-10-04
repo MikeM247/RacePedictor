@@ -1,0 +1,15 @@
+[
+  {
+    "AllowedOrigins": ["https://racepedictor.vercel.app"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": [
+      "Content-Type",
+      "x-amz-meta-racepredictor-athlete-id",
+      "x-amz-meta-racepredictor-provider",
+      "x-amz-meta-racepredictor-checksum-sha256",
+      "x-amz-meta-racepredictor-captured-at"
+    ],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]

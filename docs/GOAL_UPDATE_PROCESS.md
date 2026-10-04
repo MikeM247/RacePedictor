@@ -12,7 +12,7 @@ For online Home, the paired device must also publish the approved plan and its v
 
 ## 1. Assemble the evidence
 
-Before drafting, read this guide, the current approved plan, the latest `coaching-context.v1.json`, and the Second Brain notes the owner selected for this planning conversation. Use these sources in this order:
+Before drafting, read this guide, the current approved plan, the latest `coaching-context.v1.json`, and the Second Brain notes the owner selected for this planning conversation. For running-plan updates, include the Second Brain's `Running Context.md` when it contains current goals, constraints, health guidance, or training preferences. That note links back to this guide. Use these sources in this order:
 
 1. The owner's current, explicit decisions about the goal and intended outcomes.
 2. The current approved plan and validated activity history for training context.

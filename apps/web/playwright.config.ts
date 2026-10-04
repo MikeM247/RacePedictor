@@ -34,7 +34,7 @@ export default defineConfig({
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
     cwd: path.join(e2eRepositoryRoot, "apps", "web"),
     url: baseURL,
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.RACEPREDICTOR_E2E_REUSE_SERVER === "1",
     timeout: 120_000,
     env: {
       ...process.env,

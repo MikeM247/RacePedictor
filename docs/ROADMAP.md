@@ -8,6 +8,17 @@ This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning sour
 - [~] In progress
 - [x] Done
 
+## Product Enhancement — Home and Calendar training companion
+
+- [x] P01–P02 baseline/data inspection and approved design-authority amendment
+- [x] P03–P04 qualified Home summaries and Home/Calendar primary navigation
+- [x] P05–P06 desktop month/day overview and compact week/agenda with independent records and retained details/actions
+- [x] P10 first-release automated regression, visual measurements and handoff record
+- [ ] Owner final visual/comprehension acceptance and subsequently authorized deployment
+- [ ] P07–P09 optional narrative/assessment capability gate; no enrichment implementation authorized
+
+Execution scope and evidence: [Home/Calendar implementation](plans/HOME_CALENDAR_REDESIGN_IMPLEMENTATION.md). The presentation introduces no schema migration, matching engine or analytical assessment capability.
+
 ## Product Phase 1 — Local Digital Coach
 
 - [x] P1.0 Decision/docs gate: backlog, ADR, contracts, screens, and progress source of truth

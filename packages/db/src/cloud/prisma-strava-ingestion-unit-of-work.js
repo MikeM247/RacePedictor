@@ -197,6 +197,20 @@ async function upsertActivity(context, input) {
       recordedAt: new Date(input.providerCapturedAt),
     },
   });
+  if (transaction.activityReviewRequest && ["run", "trail_run", "treadmill_run"].includes(input.activity.sport)) {
+    await transaction.activityReviewRequest.upsert({
+      where: { athleteId_activityId: { athleteId, activityId: input.activity.id } },
+      update: { status: "queued", availableAt: new Date(), activityRevision: revision, inputFingerprint: null, lastErrorCode: null },
+      create: {
+        id: `activity_review_request_${input.activity.id}`,
+        athleteId,
+        activityId: input.activity.id,
+        activityRevision: revision,
+        status: "queued",
+        availableAt: new Date(),
+      },
+    });
+  }
   return { activity: input.activity, revision, created: !existing, changed: true };
 }
 

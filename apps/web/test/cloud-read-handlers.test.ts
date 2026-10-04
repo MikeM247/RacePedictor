@@ -4,6 +4,8 @@ import { trainingPlanSchema } from "../../../packages/core/src/contracts/coachin
 import { buildCoachingReviewContext } from "../../../packages/core/src/services/coaching-review-context.ts";
 import { buildActorContext } from "../../../packages/core/src/contracts/auth.ts";
 import { ApiHttpError } from "../lib/server/api-response.ts";
+import { activityFeedbackResponseSchema } from "../../../packages/core/src/contracts/activity-review.ts";
+import { readActivityFeedbackResponse } from "../lib/activities-api-client.ts";
 import {
   CalendarSessionAmendmentError,
   TrainingPlanActivationError,
@@ -12,6 +14,7 @@ import type { CloudCalendarSession } from "../../../packages/db/src/cloud/index.
 import { createSyntheticTestActor } from "../lib/server/auth.ts";
 import {
   handleCloudActivities,
+  handleCloudActivityFeedback,
   handleCloudActivePlan,
   handleCloudActiveGoalContext,
   handleCloudCalendar,
@@ -43,6 +46,51 @@ const ownerSecurity: SensitiveRouteContext = {
   }),
 };
 const now = new Date("2026-08-10T06:00:00.000Z");
+
+test("cloud activity feedback uses one contract envelope accepted by the client", async () => {
+  const activityId = "activity-a";
+  const athleteFeedback = {
+    id: "feedback-a", athleteId: "athlete-a", activityId, revision: 1, activityRevision: 1,
+    headline: "Approved athlete reflection", summary: "The effort felt comfortable.",
+    model: "test-model", artifactId: "artifact-a", artifactHash: "a".repeat(64),
+    approvedAt: now.toISOString(), publishedAt: now.toISOString(),
+  };
+  const review = {
+    id: "review-a", athleteId: "athlete-a", activityId, revision: 1, inputFingerprint: "b".repeat(64),
+    headline: "Steady recorded effort", assessment: "The recorded distance was 5 km.", nextStep: "Review the next planned session.",
+    comparison: { matchState: "none" as const, planId: null, sessionId: null, planVersion: null, sessionTitle: null,
+      plannedDurationMinutes: null, actualDurationMinutes: 30, plannedDistanceMeters: null, actualDistanceMeters: 5000,
+      plannedIntensityRpe: null, actualPerceivedEffort: null, interpretation: "No applicable plan session." },
+    evidence: [], limitations: [], generatedAt: now.toISOString(), publishedAt: now.toISOString(),
+    model: "test-model", promptVersion: "test.v1", provenance: "legacy_combined" as const,
+  };
+  for (const populated of [false, true]) {
+    const calls: Array<[string, string, string]> = [];
+    const data = {
+      activityId,
+      coachFeedback: { activityId, status: populated ? "ready" as const : "not_requested" as const,
+        review: populated ? review : null, requestId: populated ? "request-a" : null,
+        updatedAt: populated ? now.toISOString() : null, readRevision: populated ? 1 : null },
+      athleteFeedback: populated ? athleteFeedback : null,
+      legacyReviews: populated ? [review] : [],
+    };
+    const composition = {
+      activityReviews: {
+        get: async (scope: { athleteId: string }, id: string) => { calls.push(["coach", scope.athleteId, id]); return data.coachFeedback; },
+        listForActivity: async (scope: { athleteId: string }, id: string) => { calls.push(["legacy", scope.athleteId, id]); return data.legacyReviews; },
+      },
+      athleteFeedback: {
+        get: async (scope: { athleteId: string }, id: string) => { calls.push(["athlete", scope.athleteId, id]); return data.athleteFeedback; },
+      },
+    } as unknown as CloudReadComposition;
+    const response = await handleCloudActivityFeedback(security, "%61ctivity-a", () => composition);
+    assert.equal(response.status, 200);
+    assert.deepEqual(activityFeedbackResponseSchema.parse(await response.clone().json()), { data });
+    assert.deepEqual(await readActivityFeedbackResponse(response), data);
+    assert.deepEqual(calls.sort(), [["athlete", "athlete-a", activityId], ["coach", "athlete-a", activityId], ["legacy", "athlete-a", activityId]]);
+  }
+});
+
 const parsedPlan = trainingPlanSchema.parse({
   id: "plan-a", athleteId: "athlete-a", goalId: "goal-a", goalRevision: 1, routineRevision: 1,
   version: 1, revision: 2, startsOn: "2026-08-10", endsOn: "2026-08-16", timezone: "Africa/Johannesburg",

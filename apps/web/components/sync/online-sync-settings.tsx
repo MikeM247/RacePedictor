@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation.tsx";
+import { TrainingTools } from "../dashboard/training-tools";
 import "../dashboard/dashboard.css";
 import "../coaching/coaching-ui.css";
 import { safeRecoveryPath } from "../../lib/recovery-context";
@@ -311,6 +312,7 @@ export function OnlineSyncSettings() {
         </header>
         {returnTo !== "/dashboard/settings" ? <div className="coach-actions"><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></div> : null}
         <section className="coaching-content coaching-content--settings">
+          <TrainingTools />
           <SettingsGroup name="connections" title="Connections" open={settingsGroup === "connections"} onToggle={setSettingsGroup}>
           <section className="coach-panel settings-panel settings-panel--connections" aria-labelledby="strava-heading">
             <div className="coach-panel-heading">

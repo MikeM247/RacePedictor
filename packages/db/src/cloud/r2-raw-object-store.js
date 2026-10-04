@@ -82,8 +82,8 @@ export class R2RawObjectStore {
     return persisted;
   }
 
-  async head(scope, key) {
-    assertRawObjectKey(scope, key);
+  async head(scope, key, provider = providerForKey(key)) {
+    assertRawObjectKey(scope, key, provider);
     let response;
     try {
       response = await this.#client.send(new HeadObjectCommand({ Bucket: this.#bucket, Key: key }));
@@ -98,7 +98,7 @@ export class R2RawObjectStore {
   }
 
   async createPresignedGet(scope, { key, expiresInSeconds }) {
-    assertRawObjectKey(scope, key);
+    assertRawObjectKey(scope, key, providerForKey(key));
     if (!Number.isInteger(expiresInSeconds) || expiresInSeconds < 1 || expiresInSeconds > MAX_SIGNED_GET_SECONDS) {
       throw new Error("Raw object access expiry must be between 1 and 900 seconds");
     }
@@ -112,8 +112,30 @@ export class R2RawObjectStore {
     return signed;
   }
 
-  async readImmutableForReplay(scope, key) {
-    assertRawObjectKey(scope, key);
+  async createPresignedPut(scope, { key, contentType, contentLength, checksumSha256, expiresInSeconds = 600 }) {
+    assertRawObjectKey(scope, key, "uploads");
+    if (typeof contentType !== "string" || contentType.length === 0 || contentType.length > 200) throw new Error("Upload content type is invalid");
+    if (!Number.isInteger(contentLength) || contentLength < 1 || contentLength > 15 * 1024 * 1024) throw new Error("Upload size is invalid");
+    if (typeof checksumSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(checksumSha256)) throw new Error("Upload checksum is invalid");
+    if (!Number.isInteger(expiresInSeconds) || expiresInSeconds < 1 || expiresInSeconds > 900) throw new Error("Upload URL expiry is invalid");
+    const capturedAt = new Date().toISOString();
+    const signed = await this.#presign(
+      this.#client,
+      new PutObjectCommand({
+        Bucket: this.#bucket,
+        Key: key,
+        ContentType: contentType,
+        ContentLength: contentLength,
+        Metadata: encodeMetadata({ athleteId: scope.athleteId, provider: "uploads", checksumSha256, capturedAt }),
+      }),
+      { expiresIn: expiresInSeconds },
+    );
+    assertPrivateR2SignedUrl(signed, expiresInSeconds);
+    return { url: signed, headers: { "content-type": contentType, "content-length": String(contentLength), "x-amz-meta-racepredictor-athlete-id": scope.athleteId, "x-amz-meta-racepredictor-provider": "uploads", "x-amz-meta-racepredictor-checksum-sha256": checksumSha256, "x-amz-meta-racepredictor-captured-at": capturedAt } };
+  }
+
+  async readImmutableForReplay(scope, key, provider = "strava") {
+    assertRawObjectKey(scope, key, provider);
     const metadata = await this.head(scope, key);
     if (!metadata) return null;
     const response = await this.#client.send(new GetObjectCommand({ Bucket: this.#bucket, Key: key }));
@@ -218,4 +240,8 @@ function isNotFound(error) {
 
 function isPreconditionFailed(error) {
   return error?.name === "PreconditionFailed" || error?.$metadata?.httpStatusCode === 412;
+}
+
+function providerForKey(key) {
+  return typeof key === "string" && key.includes("/providers/uploads/") ? "uploads" : "strava";
 }

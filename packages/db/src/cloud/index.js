@@ -7,6 +7,7 @@ export { PrismaStravaIngestionJobRepository } from "./prisma-strava-ingestion-jo
 export { PrismaStravaIngestionUnitOfWork } from "./prisma-strava-ingestion-unit-of-work.js";
 export { StravaCredentialAdapter } from "./strava-credential-adapter.js";
 export { R2RawObjectStore } from "./r2-raw-object-store.js";
+export { CloudActivityImportError, PrismaCloudActivityImportRepository } from "./prisma-cloud-activity-import-repository.js";
 export { InMemorySecondBrainSnapshotRepository } from "./in-memory-second-brain-snapshot-repository.js";
 export { InMemorySyncRepository } from "./in-memory-sync-repository.js";
 export { InMemoryProviderConnectionRepository } from "./in-memory-provider-connection-repository.js";
@@ -32,5 +33,6 @@ export { PrismaTrainingPlanProjectionActivator, TrainingPlanActivationError } fr
 export { PrismaCalendarSessionAmendmentRepository, CalendarSessionAmendmentError } from "./prisma-calendar-session-amendment-repository.js";
 export { PrismaOperationalUsageRepository } from "./prisma-operational-usage-repository.js";
 export { PrismaActivityReviewRepository } from "./prisma-activity-review-repository.js";
+export { AthleteFeedbackConflictError, PrismaAthleteFeedbackRepository } from "./prisma-athlete-feedback-repository.js";
 export { PrismaReconciliationScopeRepository } from "./prisma-reconciliation-scope-repository.js";
 export { PrismaIdentityRepository } from "./prisma-identity-repository.js";

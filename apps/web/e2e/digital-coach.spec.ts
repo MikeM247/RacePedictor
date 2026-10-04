@@ -750,7 +750,7 @@ test("Calendar deep links reveal a prescribed session outside the current week a
   await page.goto(`/dashboard/calendar?date=${sessionDate}&session=session_deep_link#session-session_deep_link`);
   await expect(page.getByRole("region", { name: "September 2026 training calendar" })).toBeVisible();
   await expect(page.locator(".calendar-day")).toHaveCount(35);
-  const emptyDay = page.getByRole("button", { name: "View details for 15 Sept 2026" });
+  const emptyDay = page.locator('.calendar-day[aria-label^="Select 15 Sept 2026"]');
   await expect(emptyDay).not.toContainText("PLANNED");
   await expect(emptyDay).not.toContainText("RECORDED");
   const panelHeights = await page.locator(".calendar-week-row").first().locator(".calendar-day").evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().height)));
@@ -762,7 +762,7 @@ test("Calendar deep links reveal a prescribed session outside the current week a
   await expect(card).toContainText("Approved source prescription");
   await expect(card).toContainText("Current target: 8 km · 50 min · RPE 5");
   await expect(page.getByText("Schedule context needs review", { exact: true })).toBeVisible();
-  await expect(detail.getByRole("button", { name: "Close details" })).toBeFocused();
+  await expect(card).toBeFocused();
   await detail.getByRole("button", { name: "Close details" }).click();
   const calendar = page.getByRole("region", { name: "September 2026 training calendar" });
   await calendar.focus();
@@ -814,10 +814,11 @@ test("Calendar shows full recorded runs before current active-plan context", asy
 
   await page.goto(`/dashboard/calendar?date=${date}`);
   await expect(page.locator(".calendar-day")).toHaveCount(42);
-  const emptyRecordedDay = page.getByRole("button", { name: "View details for 14 Aug 2026" });
+  const emptyRecordedDay = page.getByRole("button", { name: /Select 14 Aug 2026/ });
   await expect(emptyRecordedDay).not.toContainText("PLANNED");
   await expect(emptyRecordedDay).not.toContainText("RECORDED");
-  await page.getByRole("button", { name: "View details for 13 Aug 2026" }).click();
+  await page.getByRole("button", { name: /Select 13 Aug 2026/ }).click();
+  await page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View activity: Morning Run" }).click();
   const detail = page.getByRole("dialog", { name: "Run details" });
   await expect(detail.getByRole("heading", { name: "Morning Run" })).toBeVisible();
   await expect(detail.getByRole("heading", { name: "Run at a glance" })).toBeVisible();
@@ -850,10 +851,10 @@ test("Calendar recovers from errors, marks today, and warns before conflicting o
   await expect(page.getByRole("alert").filter({ hasText: "Synthetic calendar outage" })).toContainText("Synthetic calendar outage");
   calendarFails = false;
   await page.getByRole("button", { name: "Retry calendar" }).click();
-  const todayCell = page.locator(".calendar-day").filter({ hasText: "Today easy run" });
+  const todayCell = page.locator(`#calendar-day-${today}`);
   await expect(todayCell).toBeVisible();
   await todayCell.click();
-  let planDetail = page.getByRole("dialog", { name: "Plan details" });
+  let planDetail = page.getByRole("dialog", { name: /^Day details/ });
   const todayCard = planDetail.locator("#session-session_today");
   await expect(todayCard).toBeVisible();
   await expect(planDetail.getByText("Today", { exact: true })).toBeVisible();
@@ -861,9 +862,10 @@ test("Calendar recovers from errors, marks today, and warns before conflicting o
   await expect(todayCard).toContainText("Past and current-day sessions are read-only");
   await planDetail.getByRole("button", { name: "Close details" }).click();
 
-  const tomorrowCell = page.locator(".calendar-day").filter({ hasText: "Tomorrow strength" });
+  // Adjacent-month dates remain tappable without changing the visible month.
+  const tomorrowCell = page.locator(`#calendar-day-${tomorrow}`);
   await tomorrowCell.click();
-  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  planDetail = page.getByRole("dialog", { name: /^Day details/ });
   const tomorrowCard = planDetail.locator("#session-session_tomorrow");
   await tomorrowCard.getByLabel("Move to date").fill(addDays(today, 2));
   const reviewMoveButton = tomorrowCard.getByRole("button", { name: "Review move" });
@@ -875,7 +877,7 @@ test("Calendar recovers from errors, marks today, and warns before conflicting o
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await tomorrowCell.click();
-  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  planDetail = page.getByRole("dialog", { name: /^Day details/ });
   const conflictingTomorrowCard = planDetail.locator("#session-session_tomorrow");
   await conflictingTomorrowCard.getByLabel("Move to date").fill(addDays(today, 2));
   await conflictingTomorrowCard.getByRole("button", { name: "Review move" }).click();
@@ -888,7 +890,7 @@ test("Calendar recovers from errors, marks today, and warns before conflicting o
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
   await tomorrowCell.click();
-  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  planDetail = page.getByRole("dialog", { name: /^Day details/ });
   const reopenedTomorrowCard = planDetail.locator("#session-session_tomorrow");
   await reopenedTomorrowCard.getByLabel("Move to date").fill(addDays(planEnd, 1));
   await reopenedTomorrowCard.getByRole("button", { name: "Review move" }).click();
@@ -927,7 +929,8 @@ test("Calendar saves a reasoned future-session amendment and preserves its appro
 
   await page.goto(`/dashboard/calendar?date=${sessionDate}`);
   const sessionDay = page.locator(".calendar-day").filter({ hasText: "Approved aerobic run" });
-  const sessionDetailButton = sessionDay;
+  await sessionDay.click();
+  const sessionDetailButton = page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View planned session: Approved aerobic run" });
   await sessionDetailButton.click();
   let planDetail = page.getByRole("dialog", { name: "Plan details" });
   let card = planDetail.locator("#session-session_reasoned_amendment");

@@ -154,7 +154,7 @@ function CurrentWeek({
   );
 }
 
-export function TodayCoachingCard({ compact = false, headingLevel = 2 }: { compact?: boolean; headingLevel?: 2 | 3 }) {
+export function TodayCoachingCard({ compact = false, headingLevel = 2, onTimezone }: { compact?: boolean; headingLevel?: 2 | 3; onTimezone?: (timezone: string) => void }) {
   const [requestState, setRequestState] = useState<RequestState>("loading");
   const [payload, setPayload] = useState<JsonRecord | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -184,6 +184,10 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2 }: { compa
   }
 
   useEffect(() => {
+    if (typeof payload?.timezone === "string") onTimezone?.(payload.timezone);
+  }, [payload, onTimezone]);
+
+  useEffect(() => {
     let current = true;
     setRequestState("loading");
     setErrorMessage("");
@@ -203,7 +207,7 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2 }: { compa
   useEffect(() => {
     const plan = asRecord(payload?.plan);
     const date = String(payload?.date ?? "");
-    if (requestState !== "success" || !plan.id || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    if (compact || requestState !== "success" || !plan.id || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       setWeekState("idle");
       setWeekSessions([]);
       setWeekError("");
@@ -223,12 +227,12 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2 }: { compa
       setWeekState("error");
     });
     return () => { current = false; };
-  }, [payload, requestState, weekRequestVersion]);
+  }, [compact, payload, requestState, weekRequestVersion]);
 
   const ContextHeading = headingLevel === 3 ? "h3" : "h2";
 
   if (requestState === "loading") return <section className="today-coach-card today-coach-card--loading" role="status" aria-live="polite" aria-busy="true">
-    <div className="today-coach-main"><p className="eyebrow">Approved coaching</p><ContextHeading>Loading today&apos;s coaching context…</ContextHeading><p>Reading your explicitly approved plan.</p></div>
+    <div className="today-coach-main"><ContextHeading>Loading today&apos;s focus…</ContextHeading></div>
   </section>;
 
   if (requestState === "error" || !payload) return <section className="today-coach-card today-coach-card--error" role="alert">
@@ -284,6 +288,23 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2 }: { compa
     : scheduleKind === "unscheduled" ? "Unscheduled"
       : scheduleKind === "unavailable" ? "Schedule unavailable"
         : stateLabels[state];
+
+  if (compact) return <section className={`today-coach-card today-coach-card--compact today-coach-card--${state}`} aria-labelledby="today-coaching-heading">
+    <div className="today-coach-main">
+      <ContextHeading id="today-coaching-heading">{heading}</ContextHeading>
+      <p className="metadata"><time dateTime={date}>{formatCoachingDate(date, timezone)}</time> · {statusLabel}{amendments.length > 0 ? " · Amended" : ""}</p>
+      {scheduleKind === "prescribed_session" || scheduleKind === "prescribed_rest" ? <>
+        <p className="today-prescription">{String(session.prescription ?? "Prescription unavailable; open Calendar.")}</p>
+        <p className="today-focus-purpose"><strong>Purpose:</strong> {String(session.purpose ?? "Purpose not supplied.")}{hasPrescribedSession && session.durationMinutes && !String(session.prescription ?? "").includes(String(session.durationMinutes)) ? ` · ${String(session.durationMinutes)} min` : ""}</p>
+      </> : <p>{scheduleDescription}</p>}
+      {state === "stale" || state === "missed" || state === "skipped" ? <p className="home-inline-status" role="status">{String(payload.message ?? statusLabel)}</p> : null}
+      {warnings.map((warning) => <p className="home-inline-status" role="status" key={warning}>{warning}</p>)}
+      {Array.isArray(session.warnings) ? session.warnings.map((warning) => <p className="home-inline-status" role="status" key={String(warning)}>{String(warning)}</p>) : null}
+      {Array.isArray(session.cautions) && session.cautions.length > 0 ? <p className="home-session-caveat"><strong>Cautions:</strong> {session.cautions.map(String).join("; ")}</p> : null}
+      {nextWorkout.id && nextWorkout.scheduledDate && !hasPrescribedSession ? <p className="today-next-workout"><strong>Next workout:</strong> {String(nextWorkout.title)} · {formatCoachingDate(String(nextWorkout.scheduledDate), timezone)}</p> : null}
+    </div>
+    <div className="today-meta">{session.id && links.session ? <Link id="view-today-session" ref={restoreCalendarLauncher} className="text-link" href={String(links.session)} onClick={openCalendar}>View session →</Link> : <Link id="view-today-calendar" ref={restoreCalendarLauncher} className="text-link" href={String(links.calendar ?? "/dashboard/calendar")} onClick={openCalendar}>View calendar →</Link>}</div>
+  </section>;
 
   return <section className={`today-coach-card today-coach-card--${state}${compact ? " today-coach-card--compact" : ""}`} aria-labelledby="today-coaching-heading">
     <div className="today-coach-overview">

@@ -83,6 +83,16 @@ export class PrismaCloudActivityRepository {
     });
     return row ? activityDetailSchema.parse(toDetail(row)) : null;
   }
+
+  async currentRevision(scope, activityId) {
+    const athleteId = assertAthleteScope(scope);
+    const row = await this.#prisma.activityRevision.findFirst({
+      where: { athleteId, activityId },
+      orderBy: { revisionNumber: "desc" },
+      select: { revisionNumber: true },
+    });
+    return row?.revisionNumber ?? 0;
+  }
 }
 
 function toSummary(row) {

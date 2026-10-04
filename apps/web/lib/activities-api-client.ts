@@ -6,6 +6,7 @@ import {
   activityCoachReviewResponseDataSchema,
   activityCoachReviewSummaryListResponseDataSchema,
   activityReviewRequestResponseDataSchema,
+  activityFeedbackResponseDataSchema,
 } from "../../../packages/core/src/contracts/activity-review.ts";
 
 type ResponseSchema<T> = {
@@ -37,6 +38,10 @@ export function readActivityDetailResponse(response: Response) {
 
 export function readActivityCoachReviewResponse(response: Response) {
   return readApiData(response, activityCoachReviewResponseDataSchema);
+}
+
+export function readActivityFeedbackResponse(response: Response) {
+  return readApiData(response, activityFeedbackResponseDataSchema);
 }
 
 export async function readActivityCoachReviewForActivityResponse(response: Response, activityId: string) {

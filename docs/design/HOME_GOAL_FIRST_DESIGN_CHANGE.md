@@ -2,6 +2,8 @@
 
 Decision date: 25 September 2026. Status: approved design direction for architecture and implementation planning; no UI implementation is authorized by this document alone.
 
+> **3 October 2026 follow-up:** the owner approved Home/Calendar as the two primary destinations and subsequently authorized the presentation implementation in [the execution plan](../plans/HOME_CALENDAR_REDESIGN_EXECUTION_PLAN.md). This supersedes this document's Home/Training/Plan acceptance wording and dense first-screen fit expectations. Goal + milestone → Today's focus → Latest activity remains the hierarchy. Readable type, spacious cards, separate adherence/performance states and complete detail access govern the release. Missing narrative/assessment evidence remains explicitly unavailable; optional capability stories P07–P09 are not implemented by the presentation authorization.
+
 ## Authority and scope
 
 This records the runner's later explicit Home decision. It amends [DESIGN_INTENT_CONTRACT.md](DESIGN_INTENT_CONTRACT.md) V1–V2, its Home layout rows, and R3. Wherever [UX_NORTH_STAR.md](UX_NORTH_STAR.md), [INFORMATION_ARCHITECTURE_AND_USER_FLOWS.md](INFORMATION_ARCHITECTURE_AND_USER_FLOWS.md) F01, or [SCREEN_SPECIFICATIONS.md](SCREEN_SPECIFICATIONS.md) Screen 2 specifies **Race outlook → Recent training → Next action**, use **Goal and milestone → Today's focus → Latest activity** instead. The revised binding contract records this precedence. Other rules in those documents remain applicable, including three primary destinations, direct detail access, truthful unavailable states, and explicit plan authority.

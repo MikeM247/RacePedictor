@@ -97,6 +97,9 @@ test("F08 restores a selected Training assessment, filters, position and focus w
   await expect(page.getByLabel("Search activities")).toHaveValue("F08 recovery");
   await expect(page.getByRole("button", { name: /F08 recovery run/ })).toBeFocused();
   expect(uploads).toBe(1);
-  expect(writes).toEqual([{ method: "POST", path: "/api/v1/imports/upload", body: expect.any(String) }]);
+  expect(writes).toEqual([
+    { method: "POST", path: "/api/v1/imports/upload/initiate", body: expect.any(String) },
+    { method: "POST", path: "/api/v1/imports/upload", body: expect.any(String) },
+  ]);
   expect(cursorReads.filter((cursor) => cursor === "f08_next")).toHaveLength(2);
 });

@@ -5,9 +5,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   goalContextApiResponseSchema,
+  activePlanApiResponseSchema,
   type GoalContextRouteData,
+  type TrainingPlan,
 } from "../../../../packages/core/src/contracts/coaching.ts";
 import { formatCoachingDate } from "../../lib/coaching-ui-state";
+import { approvedPlanSupport, shortCompleteNarrative } from "../../lib/home-summary";
+import { relativeCalendarLabel } from "../../lib/calendar-display";
 
 type ReadState = "loading" | "ready" | "error";
 
@@ -35,14 +39,8 @@ function GoalTarget({ context }: { context: GoalContextRouteData }) {
   if (!goal) return null;
   const target = goal.target;
   return <article className="home-goal-target">
-    <p className="eyebrow">Main approved goal</p>
     <h3>{goal.title}</h3>
-    {target.kind === "performance" ? <dl className="home-goal-facts home-goal-facts--performance">
-      <div><dt>Distance</dt><dd>{distanceLabel(target.distanceMeters)}</dd></div>
-      <div><dt>Race date</dt><dd><time dateTime={target.targetDate}>{target.targetDate}</time></dd></div>
-      <div><dt>Target time</dt><dd>{target.targetTimeSeconds ? timeLabel(target.targetTimeSeconds) : "No target time approved"}</dd></div>
-      {target.eventName ? <div><dt>Event</dt><dd>{target.eventName}</dd></div> : null}
-    </dl> : <dl className="home-goal-facts home-goal-facts--consistency">
+    {target.kind === "performance" ? <p className="home-target-line">{distanceLabel(target.distanceMeters)} · <time dateTime={target.targetDate}>{formatCoachingDate(target.targetDate, context.plan?.timezone ?? "Africa/Johannesburg")}</time> · {target.targetTimeSeconds ? `Target ${timeLabel(target.targetTimeSeconds)}` : "No target time approved"}{target.eventName && target.eventName.toLocaleLowerCase() !== goal.title.toLocaleLowerCase() ? ` · ${target.eventName}` : ""}</p> : <dl className="home-goal-facts home-goal-facts--consistency">
       <div><dt>Consistency target</dt><dd>{target.sessionsPerWeek} sessions and {target.minimumMinutesPerWeek} minutes per week</dd></div>
       <div><dt>Target period</dt><dd><time dateTime={target.startsOn}>{target.startsOn}</time> – <time dateTime={target.endsOn}>{target.endsOn}</time></dd></div>
     </dl>}
@@ -51,7 +49,7 @@ function GoalTarget({ context }: { context: GoalContextRouteData }) {
 
 function Milestones({ context }: { context: GoalContextRouteData }) {
   if (context.state !== "ready" || context.milestones === null) return null;
-  if (context.milestones.length === 0) return <p className="home-goal-state">No intermediate race milestone is included in this approved plan.</p>;
+  if (context.milestones.length === 0) return <div className="home-milestone"><p className="eyebrow">Next milestone</p><p>No milestone approved yet.</p></div>;
   const timezone = context.plan?.timezone ?? "UTC";
   const today = localDateInTimezone(timezone);
   const nextMilestone = [...context.milestones]
@@ -59,48 +57,68 @@ function Milestones({ context }: { context: GoalContextRouteData }) {
     .sort((left, right) => left.targetDate.localeCompare(right.targetDate))[0];
   return <div className="home-goal-milestones" role="group" aria-label="Next approved race milestone">
     {nextMilestone ? <article className="home-milestone">
-      <h4>Next milestone: {nextMilestone.title}{nextMilestone.eventName ? ` · ${nextMilestone.eventName}` : ""}</h4>
-      <dl className="home-milestone-facts">
-        <div><dt>Distance</dt><dd>{distanceLabel(nextMilestone.distanceMeters)}</dd></div>
-        <div><dt>Target time</dt><dd>{timeLabel(nextMilestone.targetTimeSeconds)}</dd></div>
-        <div><dt>Target date</dt><dd><time dateTime={nextMilestone.targetDate}>{formatCoachingDate(nextMilestone.targetDate, timezone)}</time></dd></div>
-      </dl>
+      <p className="eyebrow">Next milestone · {relativeCalendarLabel(nextMilestone.targetDate, today)}</p>
+      <h4><Link href="/dashboard/plan" aria-label={`View milestone in Plan: ${nextMilestone.title}`}>{nextMilestone.title}{nextMilestone.eventName && nextMilestone.eventName !== nextMilestone.title ? ` · ${nextMilestone.eventName}` : ""} →</Link></h4>
+      <p className="home-target-line">{distanceLabel(nextMilestone.distanceMeters)} · Target {timeLabel(nextMilestone.targetTimeSeconds)} · <time dateTime={nextMilestone.targetDate}>{formatCoachingDate(nextMilestone.targetDate, timezone)}</time></p>
+      <p className="quiet-copy">Purpose and outcome unavailable.</p>
     </article> : <p className="home-goal-state">No future milestone is scheduled. Earlier milestone completion is unconfirmed.</p>}
   </div>;
 }
 
-function GoalContextContent({ context, readinessAction }: { context: GoalContextRouteData; readinessAction: ReactNode }) {
+function GoalNarrative({ label, text }: { label: string; text: string | null }) {
+  const short = shortCompleteNarrative(text);
+  if (short) return <p className="home-goal-narrative"><strong>{label}:</strong> {short}</p>;
+  if (text) return <details className="home-narrative-detail"><summary>{label}</summary><p>{text}</p></details>;
+  return <p className="quiet-copy">{label}: explanation unavailable.</p>;
+}
+
+function GoalContextContent({ context, readinessAction, support }: { context: GoalContextRouteData; readinessAction: ReactNode; support: string | null }) {
   switch (context.state) {
     case "ready":
       return <div className="home-goal-content home-goal-content--ready">
-        <GoalTarget context={context} />
+        <div className="home-goal-main"><GoalTarget context={context} />
+        <GoalNarrative label="Why" text={context.goal?.why ?? null} />
+        <GoalNarrative label="Plan" text={support} />
+        <dl className="home-progress-summaries">
+          <div><dt>Plan adherence</dt><dd>Unassessed; links unconfirmed.</dd></div>
+          <div><dt>Performance</dt><dd>{context.goal?.target.kind === "performance" ? "No race-day assessment." : "No compatible assessment."}</dd></div>
+        </dl></div>
         <Milestones context={context} />
-        {context.goal?.target.kind === "performance"
-          ? <p className="home-progress-caveat">Race-day progress cannot yet be assessed. Current fitness is not a race-day result.</p>
-          : <p className="home-progress-caveat">This approved consistency target does not establish a race-day result. No on-track verdict is available.</p>}
-        <div className="home-goal-actions"><p className="home-goal-provenance">Plan v{context.plan?.version} · <Link className="text-link" href="/dashboard/plan">Open Plan</Link></p><div className="home-evidence-control">{readinessAction}</div></div>
+        <div className="home-goal-actions"><Link className="text-link" href="/dashboard/plan">Plan details</Link><div className="home-evidence-control">{readinessAction}</div></div>
       </div>;
     case "goal_only":
       return <>
         <GoalTarget context={context} />
-        <p className="home-progress-caveat">A settled goal is available, but there is no active approved plan with milestones.</p>
+        <GoalNarrative label="Why it matters" text={context.goal?.why ?? null} />
+        <p className="home-progress-caveat">No active plan. Adherence and performance are not assessed.</p>
         <div className="home-goal-actions"><Link className="text-link" href="/dashboard/plan">Open Plan</Link><div className="home-evidence-control">{readinessAction}</div></div>
       </>;
     case "no_active_plan":
-      return <><div className="home-goal-state"><p>No active approved plan is available. In online mode, a goal-only status cannot be confirmed without an approved plan projection.</p><Link className="text-link" href="/dashboard/plan">Open Plan</Link></div><div className="home-evidence-control">{readinessAction}</div></>;
+      return <><div className="home-goal-state"><p>No active approved plan is available.</p><Link className="text-link" href="/dashboard/plan">Open Plan</Link></div><div className="home-evidence-control">{readinessAction}</div></>;
     case "projection_pending":
-      return <><div className="home-goal-state" role="status"><p>Approved goal details are waiting for paired-device publication. The plan is available; target and milestone values will appear when its verified context arrives.</p><p>Plan v{context.plan?.version} · <Link className="text-link" href="/dashboard/plan">Open approved plan</Link></p></div><div className="home-evidence-control">{readinessAction}</div></>;
+      return <><div className="home-goal-state" role="status"><p>Goal details are not available yet. Your approved plan remains available.</p><Link className="text-link" href="/dashboard/plan">Open approved plan</Link></div><div className="home-evidence-control">{readinessAction}</div></>;
     case "unavailable":
       return <><div className="home-goal-state" role="status"><p>The approved goal context could not be verified. No goal or milestone values are being inferred.</p><Link className="text-link" href="/dashboard/plan">Review Plan</Link></div><div className="home-evidence-control">{readinessAction}</div></>;
   }
 }
 
-export function HomeGoalContext({ readinessAction }: { readinessAction: ReactNode }) {
+export function HomeGoalContext({ readinessAction, onTimezone }: { readinessAction: ReactNode; onTimezone?: (timezone: string) => void }) {
   const [state, setState] = useState<ReadState>("loading");
   const [context, setContext] = useState<GoalContextRouteData | null>(null);
+  const [plan, setPlan] = useState<TrainingPlan | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [, setDateTick] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setDateTick((value) => value + 1);
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, []);
 
   useEffect(() => {
     let current = true;
+    setState("loading");
     void fetch("/api/v1/coaching/goal-context/active", { cache: "no-store" }).then(async (response) => {
       const body: unknown = await response.json().catch(() => undefined);
       if (!response.ok) throw new Error("Approved goal context is temporarily unavailable.");
@@ -108,6 +126,7 @@ export function HomeGoalContext({ readinessAction }: { readinessAction: ReactNod
       if (current) {
         setContext(parsed.data.context);
         setState("ready");
+        if (parsed.data.context.plan?.timezone) onTimezone?.(parsed.data.context.plan.timezone);
       }
     }).catch(() => {
       if (current) {
@@ -115,12 +134,17 @@ export function HomeGoalContext({ readinessAction }: { readinessAction: ReactNod
         setState("error");
       }
     });
+    void fetch("/api/v1/coaching/plans/active", { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) return null;
+      const parsed = activePlanApiResponseSchema.safeParse(await response.json());
+      return parsed.success ? parsed.data.data : null;
+    }).then((value) => { if (current) setPlan(value); }).catch(() => { if (current) setPlan(null); });
     return () => { current = false; };
-  }, []);
+  }, [retry, onTimezone]);
 
   return <div className="home-goal-context">
     {state === "loading" ? <p role="status" aria-busy="true">Loading approved goal and milestones…</p> : null}
-    {state === "error" ? <><div className="home-goal-state" role="alert"><p>Goal context could not be loaded. Today's coaching and activity are available separately.</p><Link className="text-link" href="/dashboard/plan">Open Plan</Link></div><div className="home-evidence-control">{readinessAction}</div></> : null}
-    {state === "ready" && context ? <GoalContextContent context={context} readinessAction={readinessAction} /> : null}
+    {state === "error" ? <><div className="home-goal-state" role="alert"><p>Goal context could not be loaded.</p><button className="button button-secondary" onClick={() => setRetry((value) => value + 1)}>Retry goal</button><Link className="text-link" href="/dashboard/plan">Open Plan</Link></div><div className="home-evidence-control">{readinessAction}</div></> : null}
+    {state === "ready" && context ? <GoalContextContent context={context} support={approvedPlanSupport(context, plan)} readinessAction={readinessAction} /> : null}
   </div>;
 }

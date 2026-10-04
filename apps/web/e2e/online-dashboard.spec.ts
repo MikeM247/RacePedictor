@@ -72,6 +72,7 @@ async function mockDashboard(page: Page, overview = dashboard) {
 test("online dashboard stays useful while the local device and Second Brain are stale", async ({ page }) => {
   await mockDashboard(page);
   await page.goto("/dashboard");
+  await page.getByRole("button", { name: "View current-fitness details" }).click();
   await page.getByText("Data freshness", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Independent freshness signals" })).toBeVisible();
   await expect(page.getByText("Workout data").locator("..").getByText("Current", { exact: true })).toBeVisible();
@@ -86,7 +87,8 @@ test("online dashboard exposes a recoverable service error", async ({ page }) =>
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "Unavailable", details: [] } }) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: status }) }));
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Outlook unavailable" })).toBeVisible();
+  await page.getByRole("button", { name: "View current-fitness details" }).click();
+  await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
   await expect(page.getByText("Online dashboard data is temporarily unavailable.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
@@ -204,11 +206,12 @@ test("online Plan selects an approved version while Calendar remains prescriptio
   await page.getByRole("button", { name: "Confirm activation" }).click();
   await expect(page.getByRole("alertdialog", { name: "Make coaching version 1.0.0 active?" })).toContainText("Home and Calendar use this approved version.");
 
-  // The Calendar is a single month overview at every supported width.
+  // At desktop width the month selects a day, whose summary opens a record.
   await page.setViewportSize({ width: 1200, height: 844 });
   await page.goto("/dashboard/calendar?date=2026-08-10");
   const pastDay = page.locator(".calendar-day").filter({ hasText: "Cloud easy run" });
   await pastDay.click();
+  await page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View planned session: Cloud easy run" }).click();
   const pastDetails = page.getByRole("dialog", { name: "Plan details" });
   await expect(pastDetails.getByRole("heading", { name: "Cloud easy run" })).toBeVisible();
   await expect(pastDetails.getByText("Past sessions can only be recorded as skipped. The approved source remains unchanged.")).toBeVisible();
@@ -261,7 +264,9 @@ test("online Calendar saves a reasoned amendment to a future owner session", asy
 
   await page.goto(`/dashboard/calendar?date=${futureDate}`);
   const futureDay = page.locator(".calendar-day").filter({ hasText: "Cloud future run" });
-  await futureDay.getByRole("button", { name: /View details for/ }).click();
+  await futureDay.click();
+  const futureSession = page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View planned session: Cloud future run" });
+  await futureSession.click();
   const details = page.getByRole("dialog", { name: "Plan details" });
   let card = details.locator("#session-run-future");
   await card.getByRole("button", { name: "Amend session" }).click();
@@ -273,7 +278,7 @@ test("online Calendar saves a reasoned amendment to a future owner session", asy
   await dialog.getByRole("button", { name: "Save reasoned amendment" }).click();
 
   await expect(page.getByRole("status").filter({ hasText: "approved source and your reason are preserved" })).toBeVisible();
-  await futureDay.getByRole("button", { name: /View details for/ }).click();
+  await futureSession.click();
   card = page.getByRole("dialog", { name: "Plan details" }).locator("#session-run-future");
   await expect(card).toContainText("Current prescription: Run easily for 30 minutes on the treadmill.");
   await card.getByText("Change history (1)").click();
@@ -345,6 +350,8 @@ test("online Calendar records a past session as skipped without changing its app
   await page.goto(`/dashboard/calendar?date=${pastDate}`);
   const pastDay = page.locator(".calendar-day").filter({ hasText: "Thursday hilly run" });
   await pastDay.click();
+  const pastSession = page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View planned session: Thursday hilly run" });
+  await pastSession.click();
   const details = page.getByRole("dialog", { name: "Plan details" });
   let card = details.locator("#session-run-past");
   await expect(card.getByText("Past sessions can only be recorded as skipped.")).toBeVisible();
@@ -355,7 +362,7 @@ test("online Calendar records a past session as skipped without changing its app
   await dialog.getByRole("button", { name: "Confirm change" }).click();
 
   await expect(page.getByRole("status").filter({ hasText: "approved source remains unchanged" })).toBeVisible();
-  await pastDay.getByRole("button", { name: /View details for/ }).click();
+  await pastSession.click();
   card = page.getByRole("dialog", { name: "Plan details" }).locator("#session-run-past");
   await expect(card).toContainText("run · skipped");
   await expect(card.getByText("Approved source prescription")).toBeVisible();

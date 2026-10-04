@@ -39,7 +39,7 @@ export function assertRawObjectMetadata(scope, metadata) {
     throw new Error("Raw object metadata contains an unsupported field");
   }
   assertAthleteOwnership(scope, metadata.athleteId);
-  if (metadata.provider !== "strava") throw new Error("Raw object provider is unsupported");
+  if (metadata.provider !== "strava" && metadata.provider !== "uploads") throw new Error("Raw object provider is unsupported");
   assertRawObjectKey(scope, metadata.key, metadata.provider);
   if (!SHA256_PATTERN.test(metadata.checksumSha256)) throw new Error("Raw object checksum is invalid");
   if (!Number.isInteger(metadata.sizeBytes) || metadata.sizeBytes < 0) throw new Error("Raw object size is invalid");

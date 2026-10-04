@@ -48,31 +48,40 @@ test("F05 keeps every redesigned route within the contract widths", async ({ pag
   }
 });
 
-test("F05 preserves the Calendar month view through contract-boundary resizing", async ({ page }) => {
+test("F05 keeps the month grid and switches sidebar to day dialog at the responsive boundary", async ({ page }) => {
   await mockSharedReads(page);
   await page.setViewportSize({ width: 1200, height: 900 });
   await page.goto("/dashboard/calendar");
   await expect(page.getByLabel("Choose month and year")).toBeVisible();
   await expect(page.getByRole("region", { name: /training calendar/ })).toBeVisible();
   await page.setViewportSize({ width: 1199, height: 900 });
-  await expect(page.getByLabel("Choose month and year")).toBeVisible();
-  await expect(page.getByRole("region", { name: /training calendar/ })).toBeVisible();
+  await expect(page.locator(".calendar-month-region")).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Selected day" })).toBeHidden();
+  const cell = page.locator(".calendar-day").first();
+  await cell.click();
+  await expect(page.getByRole("dialog", { name: /^Day details/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(cell).toBeFocused();
   await page.setViewportSize({ width: 1200, height: 900 });
   await expect(page.getByRole("button", { name: "Previous month" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Next month" })).toBeVisible();
   await expectNoPageOverflow(page, 1200);
 });
 
-test("F05 fits the Calendar month overview at supported compact heights", async ({ page }) => {
+test("F05 keeps readable Calendar navigation and optional totals accessible at compact heights", async ({ page }) => {
   await mockSharedReads(page);
   for (const viewport of [{ width: 360, height: 640 }, { width: 1280, height: 720 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/dashboard/calendar?date=2026-10-08");
     await expect(page.getByRole("region", { name: /training calendar/ })).toBeVisible();
-    await expect(page.getByLabel("Choose month and year")).toBeVisible();
+    await expect(page.getByLabel("Choose month and year", { exact: true })).toBeVisible();
+    await page.getByText("Training totals and timezone", { exact: true }).click();
     await expect(page.getByRole("region", { name: /at a glance/ })).toBeVisible();
     await expectNoPageOverflow(page, viewport.width);
-    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(viewport.height);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const today = await page.getByRole("button", { name: "Today", exact: true }).boundingBox();
+    expect(today!.y).toBeGreaterThanOrEqual(viewport.width < 768 ? 64 : 0);
+    expect(today!.y + today!.height).toBeLessThanOrEqual(viewport.height - (viewport.width < 768 ? 80 : 0));
   }
 });
 
@@ -88,10 +97,9 @@ test("F05 keeps Calendar on the shared sidebar and uses compact navigation below
   expect(desktopNavBox).not.toBeNull();
   expect(desktopMainBox).not.toBeNull();
   expect(desktopNavBox?.x).toBe(0);
-  expect(desktopNavBox?.width).toBeGreaterThanOrEqual(210);
-  expect(desktopNavBox?.width).toBeLessThanOrEqual(230);
+  expect(desktopNavBox?.width).toBe(180);
   expect(desktopMainBox?.x).toBeCloseTo(desktopNavBox?.width ?? 0, 0);
-  await expect(page.getByRole("link", { name: "Data Quality" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   await expect(page.locator(".calendar-month-region")).toBeVisible();
 
   await page.setViewportSize({ width: 1024, height: 768 });
@@ -99,7 +107,9 @@ test("F05 keeps Calendar on the shared sidebar and uses compact navigation below
   const compactNavBox = await page.locator(".dashboard-nav").boundingBox();
   expect(compactNavBox).not.toBeNull();
   expect(compactNavBox?.x).toBe(0);
-  expect(compactNavBox?.width).toBeCloseTo(1024, 0);
+  expect(compactNavBox?.width).toBe(160);
   await expect(page.locator(".dashboard-nav-secondary")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Data Quality" })).toBeVisible();
+  await expect(page.getByRole("region", { name: /training calendar/ })).toBeVisible();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Data quality and recovery" })).toBeVisible();
 });

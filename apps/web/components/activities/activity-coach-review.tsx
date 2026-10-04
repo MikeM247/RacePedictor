@@ -7,10 +7,11 @@ import {
   readActivityReviewRequestResponse,
 } from "../../lib/activities-api-client";
 import { useActivityCoachReview } from "./use-activity-coach-review";
+import { ActivityAthleteFeedback } from "./activity-athlete-feedback";
 
 type ReviewData = ActivityCoachReviewResponse["data"];
 
-export function ActivityCoachReview({ activityId, headingLevel = 3 }: { activityId: string; headingLevel?: 3 | 4 }) {
+export function ActivityCoachReview({ activityId, headingLevel = 3, recordHeadingId }: { activityId: string; headingLevel?: 3 | 4; recordHeadingId?: string }) {
   const reviewRead = useActivityCoachReview(activityId);
   const [requestMessage, setRequestMessage] = useState<string>();
   const [requesting, setRequesting] = useState(false);
@@ -37,11 +38,12 @@ export function ActivityCoachReview({ activityId, headingLevel = 3 }: { activity
   }
 
   return (
-    <section className="activity-coach-review detail-subsection" aria-labelledby={`coach-review-${activityId}`}>
+    <>
+    <section className="activity-coach-review detail-subsection" aria-labelledby={`coach-review-${activityId}${recordHeadingId ? ` ${recordHeadingId}` : ""}`}>
       <div className="detail-section-heading">
         <div>
           <p className="eyebrow">Athlete Intelligence</p>
-          <ReviewHeading id={`coach-review-${activityId}`}>Coach&apos;s review</ReviewHeading>
+          <ReviewHeading id={`coach-review-${activityId}`}>AI coach feedback</ReviewHeading>
         </div>
         {data?.review ? <span className="activity-review-badge">AI-generated</span> : null}
       </div>
@@ -63,6 +65,8 @@ export function ActivityCoachReview({ activityId, headingLevel = 3 }: { activity
       ) : null}
       {data?.review ? <ReviewContent review={data.review} status={data.status} onRefresh={() => void reviewRead.load()} titleElement={ReviewTitle} /> : null}
     </section>
+    <ActivityAthleteFeedback activityId={activityId} headingLevel={headingLevel} recordHeadingId={recordHeadingId} />
+    </>
   );
 }
 

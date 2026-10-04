@@ -876,3 +876,116 @@
 @media (max-width: 360px) {
   .home-goal-facts--performance { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
 }
+
+/* Home/Calendar companion presentation. Keep the established brand and tokens. */
+.dashboard-layout { grid-template-columns: 180px minmax(0, 1fr); }
+.dashboard-nav { padding: 24px 16px; }
+.dashboard-brand { width: 145px; margin: 0 auto; }
+.dashboard-brand-name { display: block; margin-top: 8px; color: var(--rp-text); font-size: 1rem; line-height: 1.4; text-align: center; }
+.dashboard-nav nav a { display: flex; align-items: center; gap: 12px; padding: 12px; font-size: 16px; }
+.dashboard-nav-secondary { margin-top: auto !important; }
+.dashboard-nav-secondary-label { display: none; }
+.home-layout .dashboard-toolbar { min-height: 0; padding: 20px 32px 0; border: 0; background: transparent; }
+.home-layout .dashboard-toolbar h1 { font-size: 28px; }
+.home-layout .dashboard-content { width: min(1120px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; margin: 0 auto; padding: 20px 32px 40px; }
+.home-layout .home-group { gap: 12px; }
+.home-layout .group-heading { font-size: 18px; }
+.home-layout .home-goal-panel, .home-layout .home-group > .today-coach-card, .home-layout .home-group > .home-session-summary { padding: 20px; border-radius: 10px; }
+.home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1.6fr) minmax(250px, 1fr); gap: 12px 24px; }
+.home-goal-main { display: grid; gap: 10px; min-width: 0; }
+.home-layout .home-goal-target h3 { font-size: clamp(24px, 2.6vw, 34px); line-height: 1.2; }
+.home-layout .home-goal-facts--performance { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.home-layout .home-goal-facts dt { font-size: 13px; }
+.home-layout .home-goal-facts dd { font-size: 16px; }
+.home-goal-narrative, .home-narrative-detail p { font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.home-layout .home-target-line { margin: 0; color: var(--rp-text-muted); font-size: 14px; line-height: 1.5; }
+.home-narrative-detail summary { color: var(--rp-cyan-strong); cursor: pointer; padding-block: 10px; }
+.home-progress-summaries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 0; padding-top: 10px; border-top: 1px solid var(--rp-border); }
+.home-progress-summaries > div { min-width: 0; }
+.home-progress-summaries > div + div { padding-left: 20px; border-left: 1px solid var(--rp-border); }
+.home-progress-summaries dt { font-size: 14px; }
+.home-progress-summaries dd { margin: 6px 0; color: var(--rp-text); font-size: 16px; font-weight: 650; }
+.home-progress-summaries p { margin: 0; font-size: 14px; line-height: 1.5; }
+.home-progress-summaries dd { font-weight: normal; }
+.home-progress-summaries dd p { margin-top: 8px; }
+.home-goal-main > p { margin: 0; }
+.home-layout .dashboard-content .today-coach-card--compact .today-prescription { border: 0; background: transparent; box-shadow: none; font-weight: normal; }
+.home-layout .home-goal-actions .home-evidence-control .text-link { font-size: 16px; color: var(--rp-cyan-strong); }
+.home-layout .dashboard-toolbar { width: min(1120px, 100%); margin-inline: auto; }
+.home-layout .home-milestone { height: auto; align-content: start; padding: 16px; gap: 6px; border-color: color-mix(in srgb, var(--rp-violet) 36%, var(--rp-border)); background: color-mix(in srgb, var(--rp-violet) 6%, var(--rp-surface)); box-shadow: none; }
+.home-layout .home-milestone .eyebrow { color: var(--rp-violet); font-size: 13px; }
+.home-layout .home-milestone h4 { font-size: 20px; }
+.home-layout .home-milestone h4 a { display: inline-flex; align-items: center; min-height: 44px; color: var(--rp-text); text-decoration: none; }
+.home-layout .home-milestone h4 a:hover { color: var(--rp-cyan-strong); text-decoration: underline; }
+.home-layout .home-milestone-facts { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.home-layout .home-milestone-facts dd { font-size: 16px; }
+.home-layout .home-goal-actions { grid-column: 1 / -1; justify-content: space-between; padding-top: 0; }
+.home-layout .home-goal-panel { position: relative; }
+.home-layout .home-goal-content--ready .home-goal-actions { position: absolute; top: -48px; right: 0; gap: 16px; }
+.home-layout .today-coach-card--compact { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; }
+.home-layout .today-coach-main { display: grid; gap: 6px; }
+.home-layout .today-coach-main h3, .home-layout .home-session-heading h3 { font-size: 24px; line-height: 1.25; }
+.home-layout .today-prescription { margin: 0; padding: 0 !important; border: 0; background: transparent; font-size: 16px !important; line-height: 1.6 !important; }
+.home-layout .today-meta { align-self: center; display: block; }
+.home-layout .metadata, .home-layout .quiet-copy { font-size: 14px; line-height: 1.5; }
+.home-layout .today-focus-purpose { font-size: 16px !important; }
+.home-layout .home-session-summary { gap: 10px; }
+.home-layout .home-session-caveat { border: 0; padding-top: 0; font-size: 14px; line-height: 1.5; }
+.home-recorded-label { color: var(--rp-lime); font-size: 14px; }
+.home-layout .text-link, .dashboard-nav .text-link { min-height: 44px; display: inline-flex; align-items: center; font-size: 16px; }
+.supporting-management nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .dashboard-layout { display: grid; }
+  .dashboard-nav { position: sticky; display: flex; flex-direction: column; top: 0; width: auto; height: 100vh; align-items: stretch; border-right: 1px solid var(--rp-border); border-bottom: 0; }
+  .dashboard-nav > .dashboard-brand { width: 100%; }
+  .dashboard-nav .dashboard-nav-primary, .dashboard-nav .dashboard-nav-secondary { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-nav .dashboard-nav-primary { margin-top: 26px !important; }
+  .dashboard-nav .dashboard-nav-secondary { margin-top: auto !important; padding-top: 16px; border-top: 1px solid var(--rp-border); }
+}
+
+@media (max-width: 1099px) and (min-width: 768px) {
+  .dashboard-layout { grid-template-columns: 160px minmax(0, 1fr); }
+  .home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 767px) {
+  .dashboard-layout { display: block; padding-top: 64px; padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .dashboard-nav { position: fixed; z-index: 20; inset: 0 0 auto; height: 64px; width: 100%; padding: 6px 16px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; border-right: 0; border-bottom: 1px solid var(--rp-border); }
+  .dashboard-brand { display: flex; align-items: center; gap: 12px; margin: 0; width: auto; }
+  .dashboard-brand img { width: 56px; height: 50px; object-fit: contain; }
+  .dashboard-brand-name { margin: 0; font-size: 16px; text-align: left; }
+  .dashboard-nav .dashboard-nav-primary { position: fixed; inset: auto 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin: 0; padding: 8px 20px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--rp-border); background: var(--rp-nav); }
+  .dashboard-nav .dashboard-nav-primary a { display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 14px; padding: 8px; min-height: 60px; }
+  .dashboard-nav .dashboard-nav-secondary { position: static; grid-column: auto; grid-row: auto; display: block; margin: 0 !important; padding: 0; border: 0; }
+  .dashboard-nav-secondary a { gap: 6px; padding: 8px 0; font-size: 13px !important; }
+  .dashboard-nav-secondary a svg { width: 20px; }
+  .home-layout .dashboard-toolbar { padding: 16px 16px 0; }
+  .home-layout .dashboard-toolbar h1 { font-size: 24px; }
+  .home-layout .dashboard-content { padding: 16px 16px 24px; gap: 24px; }
+  .home-layout .home-group { gap: 8px; }
+  .home-layout .home-goal .group-heading, .home-layout .home-today .group-heading { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .home-layout .home-goal-target h3::before, .home-layout .today-coach-main h3::before { display: block; margin-bottom: 4px; color: var(--rp-text-muted); font-size: 14px; line-height: 1.5; font-weight: 600; }
+  .home-layout .home-goal-target h3::before { content: "Your goal"; }
+  .home-layout .today-coach-main h3::before { content: "Today’s focus"; }
+  .home-layout .home-goal-panel, .home-layout .home-group > .today-coach-card, .home-layout .home-group > .home-session-summary { padding: 14px; }
+  .home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .home-layout .home-goal-main { gap: 8px; }
+  .home-layout .home-goal-facts--performance { gap: 12px 16px; }
+  .home-layout .home-milestone { padding: 10px 12px; gap: 2px; }
+  .home-layout .home-milestone h4 { font-size: 18px; }
+  .home-layout .today-coach-card--compact { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; }
+  .home-layout .today-coach-card--compact .today-coach-main { display: contents; }
+  .home-layout .today-coach-card--compact .today-coach-main > p { grid-column: 1 / -1; }
+  .home-layout .today-coach-card--compact .today-meta { grid-column: 2; grid-row: 1; justify-self: end; align-self: start; }
+  .home-layout .today-coach-main h3 { font-size: 20px; }
+  .home-layout .home-session-heading { flex-wrap: wrap; gap: 12px; }
+  .home-progress-summaries { gap: 12px; }
+  .home-progress-summaries { display: block; padding-top: 8px; }
+  .home-progress-summaries > div { display: block; margin-top: 4px; }
+  .home-progress-summaries dt, .home-progress-summaries dd { display: inline; font-size: 16px; line-height: 1.5; }
+  .home-progress-summaries dt::after { content: ": "; }
+  .home-progress-summaries > div + div { padding-left: 0; border-left: 0; }
+  .home-layout .home-goal-actions { grid-column: auto; gap: 4px 12px; }
+  .home-layout .home-goal-content--ready .home-goal-actions { gap: 12px; }
+  .dashboard-content :is(a, button, input, summary) { scroll-margin-top: 76px; scroll-margin-bottom: 96px; }
+}

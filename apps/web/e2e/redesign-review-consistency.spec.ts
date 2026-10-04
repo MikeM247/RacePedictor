@@ -43,7 +43,7 @@ test("F03 reuses the same persisted review, qualification, and evidence on Home,
   await mockReviewSurfaces(page);
 
   await page.goto("/dashboard");
-  await expect(page.getByText("Suggested plan match — not confirmed", { exact: false })).toBeVisible();
+  await expect(page.getByText("Possible planned session; link unconfirmed.", { exact: true })).toBeVisible();
   await expect(page.getByText("Heart-rate data was not supplied.")).toBeVisible();
   await page.getByRole("link", { name: "View full session review" }).click();
   await expect(page.getByRole("heading", { name: "A controlled recorded run." })).toBeVisible();
@@ -56,6 +56,7 @@ test("F03 reuses the same persisted review, qualification, and evidence on Home,
   await page.goto("/dashboard/calendar?date=2026-09-15");
   const day = page.locator(".calendar-day").filter({ hasText: "F03 recorded run" });
   await day.click();
+  await page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View activity: F03 recorded run" }).click();
   const dialog = page.getByRole("dialog", { name: "Run details" });
   await expect(dialog.getByRole("heading", { name: "A controlled recorded run." })).toBeVisible();
   await expect(dialog.getByText("Suggested plan match — not confirmed", { exact: false })).toBeVisible();

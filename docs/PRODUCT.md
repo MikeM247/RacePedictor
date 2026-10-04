@@ -1,5 +1,7 @@
 # PRODUCT
 
+> **4 October 2026 presentation amendment:** Home and Calendar are the primary destinations for the approved training companion. Home shows Goal + next milestone, Today, then latest recorded activity; existing approved explanations and reviews remain qualified. Adherence and race-day assessment remain unavailable without compatible evidence. Secondary Settings links to Plan management, activity history/import and recovery in both runtimes. See [implementation and verification](plans/HOME_CALENDAR_REDESIGN_IMPLEMENTATION.md). Older analytics scope below is historical context; domain authority, privacy and stable APIs remain unchanged.
+
 ## v1 Product Scope
 RacePredictor v1 delivers a desktop-first analytics dashboard backed by stable `/api/v1` APIs, ingest/normalize pipelines, and weekly-first performance features for a **single local athlete profile**. The product scope aligns to the core monorepo boundaries (`apps/web`, `packages/core`, `packages/db`, `packages/ui`) and prioritizes read-oriented coaching/analysis workflows over account management or mobile-first experiences.
 

@@ -22,9 +22,12 @@ import {
   TrainingPlanActivationError,
   TrainingPlanGoalContextUnavailableError,
 } from "../../../../packages/db/src/cloud/index.js";
+import { activityFeedbackResponseDataSchema } from "../../../../packages/core/src/contracts/activity-review.ts";
 import type { CloudCalendarSession } from "../../../../packages/db/src/cloud/index.js";
 import { getCloudReadComposition } from "./cloud-read-composition.ts";
 import type { SensitiveRouteContext } from "./route-security.ts";
+import { after } from "next/server.js";
+import { runCloudCoachFeedbackBatch } from "./activity-coach-worker.ts";
 
 export type CloudReadComposition = ReturnType<typeof getCloudReadComposition>;
 export type GetCloudReadComposition = () => CloudReadComposition;
@@ -39,14 +42,51 @@ export async function handleCloudActivityReview(
   return success(result);
 }
 
+export async function handleCloudActivityFeedback(
+  security: SensitiveRouteContext,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  const decodedActivityId = decodeId(activityId);
+  const [coachFeedback, athleteFeedback, legacyReviews] = await Promise.all([
+    getComposition().activityReviews.get(scope, decodedActivityId),
+    getComposition().athleteFeedback.get(scope, decodedActivityId),
+    getComposition().activityReviews.listForActivity(scope, decodedActivityId),
+  ]);
+  return success(activityFeedbackResponseDataSchema.parse({
+    activityId: decodedActivityId,
+    coachFeedback,
+    athleteFeedback,
+    legacyReviews,
+  }));
+}
+
+export async function handleCloudLegacyActivityReviews(
+  security: SensitiveRouteContext,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  return success({ items: await getComposition().activityReviews.listForActivity(scope, decodeId(activityId)) });
+}
+
 export async function handleCloudActivityReviewRequest(
   security: SensitiveRouteContext,
   activityId: string,
   getComposition: GetCloudReadComposition = getCloudReadComposition,
 ) {
   const scope = requireOwnerScope(security);
-  const result = await getComposition().activityReviews.queue(scope, decodeId(activityId));
+  const decodedActivityId = decodeId(activityId);
+  const result = await getComposition().activityReviews.queue(scope, decodedActivityId);
   if (!result) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
+  after(async () => {
+    try {
+      await runCloudCoachFeedbackBatch({ athleteId: scope.athleteId, activityId: decodedActivityId, limit: 1 });
+    } catch (error) {
+      console.warn("Requested coach feedback could not be scheduled", error instanceof Error ? error.message : "unknown error");
+    }
+  });
   return success(result, 202);
 }
 
@@ -70,11 +110,6 @@ export async function handleCloudActivities(
   const scope = requireScope(security);
   const params = new URL(request.url).searchParams;
   try {
-    try {
-      await getComposition().activityReviews.reconcileRecent(scope);
-    } catch (error) {
-      console.warn("Activity coach review reconciliation could not run", error instanceof Error ? error.message : "unknown error");
-    }
     return success(await getComposition().activities.list(scope, {
       cursor: params.get("cursor"),
       limit: params.has("limit") ? Number(params.get("limit")) : undefined,

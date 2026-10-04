@@ -58,6 +58,7 @@ export const activityCoachReviewSchema = z.object({
   publishedAt: isoDateTimeSchema,
   model: z.string().trim().min(1).max(120),
   promptVersion: z.string().trim().min(1).max(40),
+  provenance: z.enum(["cloud_metrics_plan", "legacy_combined"]).optional(),
 }).strict();
 
 export const activityCoachReviewSummarySchema = z.object({
@@ -130,3 +131,40 @@ export type ActivityCoachReviewSummary = z.infer<typeof activityCoachReviewSumma
 export type ActivityCoachReviewResponse = z.infer<typeof activityCoachReviewResponseSchema>;
 export type ActivityReviewRequestResponse = z.infer<typeof activityReviewRequestResponseSchema>;
 export type ActivityCoachReviewArtifact = z.infer<typeof activityCoachReviewArtifactSchema>;
+
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
+
+export const activityAthleteFeedbackSchema = z.object({
+  id: idSchema,
+  athleteId: idSchema,
+  activityId: idSchema,
+  revision: revisionSchema,
+  activityRevision: revisionSchema,
+  headline: z.string().trim().min(1).max(160),
+  summary: z.string().trim().min(1).max(6000),
+  model: z.string().trim().min(1).max(120),
+  artifactId: idSchema,
+  artifactHash: sha256Schema,
+  approvedAt: isoDateTimeSchema,
+  publishedAt: isoDateTimeSchema,
+}).strict();
+
+export const activityAthleteFeedbackArtifactSchema = activityAthleteFeedbackSchema.extend({
+  expectedActivityRevision: revisionSchema,
+  expectedFeedbackRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const activityFeedbackResponseDataSchema = z.object({
+    activityId: idSchema,
+    coachFeedback: activityCoachReviewResponseDataSchema,
+    athleteFeedback: activityAthleteFeedbackSchema.nullable(),
+    legacyReviews: z.array(activityCoachReviewSchema).max(40),
+  }).strict();
+
+export const activityFeedbackResponseSchema = z.object({
+  data: activityFeedbackResponseDataSchema,
+}).strict();
+
+export type ActivityAthleteFeedback = z.infer<typeof activityAthleteFeedbackSchema>;
+export type ActivityAthleteFeedbackArtifact = z.infer<typeof activityAthleteFeedbackArtifactSchema>;
+export type ActivityFeedbackResponse = z.infer<typeof activityFeedbackResponseSchema>;

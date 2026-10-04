@@ -12,7 +12,8 @@ export interface R2RawObjectStoreOptions {
 export class R2RawObjectStore implements RawObjectStore {
   constructor(options: R2RawObjectStoreOptions);
   put(scope: AthleteScope, input: { metadata: RawObjectMetadata; body: Uint8Array }): Promise<RawObjectMetadata>;
-  head(scope: AthleteScope, key: string): Promise<RawObjectMetadata | null>;
+  head(scope: AthleteScope, key: string, provider?: string): Promise<RawObjectMetadata | null>;
   createPresignedGet(scope: AthleteScope, input: { key: string; expiresInSeconds: number }): Promise<string>;
-  readImmutableForReplay(scope: AthleteScope, key: string): Promise<Uint8Array | null>;
+  createPresignedPut(scope: AthleteScope, input: { key: string; contentType: string; contentLength: number; checksumSha256: string; expiresInSeconds?: number }): Promise<{ url: string; headers: Record<string, string> }>;
+  readImmutableForReplay(scope: AthleteScope, key: string, provider?: string): Promise<Uint8Array | null>;
 }

@@ -5,6 +5,7 @@ import { FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMous
 import type { ActivityDetail } from "../../../../packages/core/src/contracts/activity";
 import { readActivityDetailResponse } from "../../lib/activities-api-client";
 import { ActivityRecordContent } from "../activities/activities-shell";
+import { TrainingTools } from "../dashboard/training-tools";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import {
   canAmendFutureSession,
@@ -32,6 +33,8 @@ import "../dashboard/dashboard.css";
 import "../activities/activities.css";
 import "./coaching-ui.css";
 import { ActivePlanOverview } from "./active-plan-overview";
+import { CalendarDaySummary } from "./calendar-day-summary";
+import { calendarDayRecords, compactCalendarMetric } from "../../lib/calendar-display";
 import {
   activePlanApiResponseSchema,
   currentContextApiResponseSchema,
@@ -66,6 +69,7 @@ type RequestState = "idle" | "loading" | "success" | "error";
 type PlanWorkflowStage = "setup" | "continue" | "import" | "review";
 type CalendarDetail =
   | { kind: "session"; id: string; date: string }
+  | { kind: "activity"; id: string; date: string }
   | { kind: "day"; date: string };
 type ActivityDetailState = { status: "loading" | "success" | "error"; activity?: ActivityDetail; error?: string };
 const timezoneDefault = "Africa/Johannesburg";
@@ -189,6 +193,7 @@ function useModalKeyboard<T extends HTMLElement>(
   close: () => void,
   returnFocusRef?: { current: HTMLElement | null },
   fallbackFocus?: () => HTMLElement | null,
+  preserveScroll = false,
 ) {
   const dialogRef = useRef<T>(null);
   const closeRef = useRef(close);
@@ -214,8 +219,8 @@ function useModalKeyboard<T extends HTMLElement>(
         const requestedTarget = requestedCloseFocus.current?.();
         requestedCloseFocus.current = null;
         const target = requestedTarget ?? returnTarget;
-        if (target?.isConnected && !target.closest("[inert]")) target.focus();
-        else fallbackFocus?.()?.focus();
+        if (target?.isConnected && !target.closest("[inert]") && (!preserveScroll || (target.getClientRects().length > 0 && target.tagName !== "BODY"))) target.focus({ preventScroll: preserveScroll });
+        else fallbackFocus?.()?.focus({ preventScroll: preserveScroll });
       });
     };
   }, [open]);
@@ -302,9 +307,7 @@ export function DataQualityPage() {
     fileSubmitGuard.current = true;
     setFileState("loading"); setFileMessage("Validating and importing the selected file…");
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const imported = importUploadResponseSchema.parse(await apiRequest("/api/v1/imports/upload", { method: "POST", body: form }));
+      const imported = await uploadActivityFile(file);
       setFileResult(imported); setReplacingFile(false); setFileState("success");
       setFileMessage(imported.reused ? "Existing import outcome retained. No duplicate activities were added by this request." : "The server recorded this import outcome. Your approved plan was not changed.");
     } catch (error) {
@@ -381,6 +384,29 @@ export function DataQualityPage() {
       <div className="coach-actions"><Link className="button button-primary" href={returnTo}>{presentation.action === "check" ? "Check Training" : returnLabel}</Link>{presentation.action === "correct" ? <button className="button button-secondary" type="button" onClick={startFileReplacement}>Correct file</button> : null}</div>
     </section> : source === "strava" && backfillAcknowledgement ? <section className="coach-panel data-quality-panel data-quality-panel--result" aria-labelledby="backfill-result-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Strava recovery</p><h2 id="backfill-result-heading">Backfill acknowledged</h2></div><span className="status-chip">Queued</span></div><p><strong>Practical consequence:</strong> {backfillAcknowledgement.reused ? "An existing backfill remains queued." : "The requested history was queued."} This does not confirm imported activities, a completed review, or a recomputed readiness assessment.</p><div className="coach-actions"><Link className="button button-primary" href={returnTo}>{returnLabel}</Link></div></section> : <section className="coach-panel coach-empty"><h2>No {source === "file" ? "file import" : "Strava queue"} result yet</h2><p>Select the active source above to see its validation, queued status, and any data-quality limitations. No new import or readiness assessment has been confirmed here.</p><div className="coach-actions"><Link className="button button-secondary" href={returnTo}>{returnLabel}</Link></div></section>}
   </CoachShell>;
+}
+
+async function uploadActivityFile(file: File) {
+  const bytes = await file.arrayBuffer();
+  const checksum = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((value) => value.toString(16).padStart(2, "0")).join("");
+  try {
+    const initiated = await apiRequest("/api/v1/imports/upload/initiate", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: file.name, type: file.type || "application/octet-stream", size: file.size, checksumSha256: checksum }),
+    });
+    const uploadResponse = await fetch(String(initiated.url), { method: "PUT", headers: asRecord(initiated.headers) as Record<string, string>, body: bytes });
+    if (!uploadResponse.ok) throw new Error("The private upload could not be stored.");
+    return importUploadResponseSchema.parse(await apiRequest("/api/v1/imports/upload/complete", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ importId: initiated.importId, name: file.name, type: file.type || "application/octet-stream", size: file.size, checksumSha256: checksum }),
+    }));
+  } catch (error) {
+    const typed = error as Error & { code?: string };
+    if (typed.code !== "CONFIGURATION_ERROR" && typed.code !== "UNAVAILABLE") throw error;
+    const form = new FormData();
+    form.set("file", file);
+    return importUploadResponseSchema.parse(await apiRequest("/api/v1/imports/upload", { method: "POST", body: form }));
+  }
 }
 
 export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
@@ -983,10 +1009,16 @@ function formatPace(secondsPerKm: number) {
 }
 
 export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }: { initialDate?: string; focusSessionId?: string; onlineMode?: boolean }) {
+  const [compactCalendar, setCompactCalendar] = useState(false);
   const [planTimezone, setPlanTimezone] = useState(timezoneDefault);
   const today = localDateInTimezone(planTimezone);
   const [anchorDate, setAnchorDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(initialDate ?? "") ? initialDate! : today);
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(anchorDate);
+  const initialDateResolved = useRef(/^\d{4}-\d{2}-\d{2}$/.test(initialDate ?? ""));
+  const [loadedRange, setLoadedRange] = useState<string | null>(null);
+  const [, setDateTick] = useState(0);
+  const [activityDetailRetry, setActivityDetailRetry] = useState(0);
+  const focusedRecordRef = useRef<string | null>(null);
   const [sessions, setSessions] = useState<CalendarSessionView[]>([]);
   const [activities, setActivities] = useState<CalendarActivityView[]>([]);
   const [activitiesReadStatus, setActivitiesReadStatus] = useState<"available" | "unavailable">("available");
@@ -1021,27 +1053,34 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const amendmentModal = useModalKeyboard<HTMLElement>(Boolean(amendDraft), () => {
     if (actionState !== "loading") setAmendDraft(null);
   }, amendmentLauncherRef);
-  const detailModal = useModalKeyboard<HTMLElement>(Boolean(selectedDetail), () => setSelectedDetail(null), detailLauncherRef);
+  const detailModal = useModalKeyboard<HTMLElement>(Boolean(selectedDetail), () => setSelectedDetail(null), detailLauncherRef, () => document.getElementById(`calendar-day-${selectedDate}`), true);
   const range = calendarMonthRange(anchorDate, planTimezone);
 
   useEffect(() => {
-    const todayWeek = range.weeks.findIndex((week) => today >= week.from && today <= week.to);
-    setSelectedWeekIndex(todayWeek >= 0 ? todayWeek : 0);
-  }, [range.month, today]);
+    const media = window.matchMedia("(max-width: 1199px)");
+    const update = () => {
+      setCompactCalendar(media.matches);
+      // A day selection becomes the desktop sidebar at this same CSS boundary.
+      if (!media.matches) setSelectedDetail((current) => current?.kind === "day" ? null : current);
+    };
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     if (!loadedOnce.current) return;
     const params = new URLSearchParams(window.location.search);
-    params.set("date", `${range.month}-01`);
-    params.delete("session");
+    params.set("date", selectedDate);
+    if (!selectedDetail) params.delete("session");
     window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }, [range.month]);
+  }, [selectedDate, selectedDetail]);
 
   async function loadCalendar(successMessage?: string) {
     calendarRequestRef.current?.abort();
     const request = new AbortController();
     calendarRequestRef.current = request;
-    if (!loadedOnce.current) setState("loading");
+    if (!loadedOnce.current || loadedRange !== range.month) setState("loading");
     setMessage("Loading the approved schedule…");
     try {
       const [response, active, todayContext] = await Promise.all([
@@ -1053,11 +1092,15 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       const activeRecord = asRecord(active);
       const startsOn = String(activeRecord.startsOn ?? "");
       const endsOn = String(activeRecord.endsOn ?? "");
-      const timezone = String(activeRecord.timezone ?? timezoneDefault);
+      const timezone = String(response.timezone ?? activeRecord.timezone ?? timezoneDefault);
       setPlanTimezone(timezone);
-      if (!loadedOnce.current && !initialDate) {
+      if (!loadedOnce.current && !initialDateResolved.current) {
+        initialDateResolved.current = true;
         const resolvedToday = localDateInTimezone(timezone);
-        if (resolvedToday !== anchorDate) { setAnchorDate(resolvedToday); return; }
+        if (resolvedToday !== anchorDate) {
+          setAnchorDate(resolvedToday); setSelectedDate(resolvedToday);
+          if (!resolvedToday.startsWith(range.month)) return;
+        }
       }
       setPlanRange(/^\d{4}-\d{2}-\d{2}$/.test(startsOn) && /^\d{4}-\d{2}-\d{2}$/.test(endsOn) ? { startsOn, endsOn } : null);
       const stale = asRecord(asRecord(todayContext).stale);
@@ -1069,15 +1112,17 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       setActivitiesReadStatus(calendarActivitiesReadStatus(response));
       setSelectedDetail((current) => {
         if (current?.kind === "session" && normalizedSessions.some((session) => session.id === current.id)) return current;
+        if (current?.kind === "activity" && normalizedActivities.some((activity) => activity.id === current.id)) return current;
         if (current?.kind === "day") return current;
         return null;
       });
       loadedOnce.current = true;
+      setLoadedRange(range.month);
       setState("success"); setMessage(successMessage);
     setRangeAnnouncement(`${range.monthLabel}, ${formatCoachingDate(range.from, timezone)} to ${formatCoachingDate(range.to, timezone)}`);
     } catch (error) {
       if (request.signal.aborted || calendarRequestRef.current !== request) return;
-      setState(loadedOnce.current ? "success" : "error");
+      setState(loadedOnce.current && loadedRange === range.month ? "success" : "error");
       setMessage(error instanceof Error ? error.message : "Calendar could not be loaded.");
     }
   }
@@ -1087,10 +1132,26 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }, [range.from, range.to]);
 
   useEffect(() => {
+    const refresh = () => setDateTick((value) => value + 1);
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, []);
+
+  useEffect(() => {
     if (!selectedDetail) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = previousOverflow; };
+    // A successful retry can remove the focused control. Escape must still close
+    // the active details when focus temporarily falls back to the document.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        setSelectedDetail(null);
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", escape); };
   }, [selectedDetail]);
 
   useEffect(() => {
@@ -1126,9 +1187,9 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }, [focusSessionId, range.from, sessions, state]);
 
   useEffect(() => {
-    if (!selectedDetail || selectedDetail.date > today) return;
+    if (!selectedDetail) return;
     const records = activities.filter((activity) => activity.localDate === selectedDetail.date);
-    const missing = records.filter((activity) => !activityDetails[activity.id]);
+    const missing = records.filter((activity) => !activityDetails[activity.id] || activityDetails[activity.id].status === "loading");
     if (missing.length === 0) return;
     const request = new AbortController();
     setActivityDetails((current) => ({ ...current, ...Object.fromEntries(missing.map((activity) => [activity.id, { status: "loading" as const }])) }));
@@ -1142,7 +1203,31 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       }
     }));
     return () => request.abort();
-  }, [activities, selectedDetail, today]);
+  }, [activities, selectedDetail, activityDetailRetry]);
+
+  useEffect(() => {
+    if (!selectedDetail || selectedDetail.kind === "day") { focusedRecordRef.current = null; return; }
+    const key = `${selectedDetail.kind}:${selectedDetail.id}`;
+    if (focusedRecordRef.current === key) return;
+    const target = document.getElementById(selectedDetail.kind === "session" ? `session-${selectedDetail.id}` : `calendar-record-${selectedDetail.id}`);
+    if (!target) return;
+    const frame = window.requestAnimationFrame(() => { focusedRecordRef.current = key; target.focus(); });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedDetail, activityDetails, sessions]);
+
+  function chooseDate(date: string) {
+    initialDateResolved.current = true;
+    setSelectedDate(date);
+    setAnchorDate(date);
+    setFocusMessage(undefined);
+  }
+
+  function openRecord(kind: "session" | "activity", id: string, date: string, launcher: HTMLButtonElement) {
+    detailLauncherRef.current = launcher;
+    focusedRecordRef.current = null;
+    setSelectedDate(date);
+    setSelectedDetail({ kind, id, date });
+  }
 
   function handleCalendarKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
     if (event.currentTarget !== event.target || selectedDetail) return;
@@ -1152,8 +1237,10 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
 
   function moveMonth(offset: number) {
     if (selectedDetail) return;
+    initialDateResolved.current = true;
     const date = new Date(Date.UTC(Number(anchorDate.slice(0, 4)), Number(anchorDate.slice(5, 7)) - 1 + offset, 1));
     setAnchorDate(date.toISOString().slice(0, 10));
+    setSelectedDate(date.toISOString().slice(0, 10));
     setFocusMessage(undefined);
     setSelectedDetail(null);
   }
@@ -1235,8 +1322,9 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
 
   function renderSessionCard(session: CalendarSessionView, includeId = true) {
     const isToday = session.effectiveDate === today;
-    const isFuture = canAmendFutureSession(session, today);
-    const canRecordPastSkip = canRecordPastSessionSkip(session, today);
+    const verifiedOverlay = !session.warnings.some((warning) => /projection.*unavailable|approved plan source/i.test(warning));
+    const isFuture = verifiedOverlay && canAmendFutureSession(session, today);
+    const canRecordPastSkip = verifiedOverlay && canRecordPastSessionSkip(session, today);
     const original = session.original;
     const originalTarget = [
       original.distanceMeters ? `${Number((original.distanceMeters / 1000).toFixed(2))} km` : null,
@@ -1273,15 +1361,19 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }
 
   function renderCalendarDay(date: string, month: string) {
-    const daySessions = sessions.filter((session) => session.effectiveDate === date);
-    const dayActivities = activities.filter((activity) => activity.localDate === date);
+    const { planned: daySessions, recorded: dayActivities, hiddenCount: extraCount } = calendarDayRecords(date, sessions, activities);
     const isToday = date === today;
     const inMonth = date.startsWith(`${month}-`);
     const primarySession = daySessions[0];
-    const detail: CalendarDetail = primarySession ? { kind: "session", id: primarySession.id, date } : { kind: "day", date };
     const openDay = (event: ReactMouseEvent<HTMLButtonElement>) => {
-      detailLauncherRef.current = event.currentTarget;
-      setSelectedDetail(detail);
+      initialDateResolved.current = true;
+      setSelectedDate(date);
+      setFocusMessage(undefined);
+      if (window.matchMedia("(max-width: 1199px)").matches) {
+        detailLauncherRef.current = event.currentTarget;
+        focusedRecordRef.current = null;
+        setSelectedDetail({ kind: "day", date });
+      }
     };
     const compactActivity = dayActivities[0];
     const activityMetrics = compactActivity ? [
@@ -1290,13 +1382,20 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     ].filter(Boolean).join(" · ") : "";
     const plannedLabel = primarySession?.kind === "rest" ? "Rest" : primarySession ? primarySession.title : "";
     const plannedMetrics = primarySession && primarySession.kind !== "rest" ? formatSessionTarget(primarySession) : "";
-    const extraCount = Math.max(0, dayActivities.length + daySessions.length - 2);
-    return <button className={`calendar-day${isToday ? " calendar-day--today" : ""}${inMonth ? "" : " calendar-day--outside"}`} type="button" onClick={openDay} aria-label={`View details for ${formatCoachingDate(date, planTimezone)}${isToday ? ", today" : ""}`} key={date}>
-      <span className="calendar-day-heading"><time dateTime={date}>{new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: planTimezone }).format(new Date(`${date}T12:00:00.000Z`))}</time>{isToday ? <span className="today-marker">Today</span> : null}</span>
-      <span className="calendar-day-entries">
+    const plannedCompact = primarySession?.kind === "rest" ? "Rest" : primarySession ? compactCalendarMetric(primarySession.distanceMeters, primarySession.durationMinutes * 60) : "";
+    const recordedCompact = compactActivity ? compactCalendarMetric(compactActivity.distanceMeters, compactActivity.elapsedTimeSeconds) : "";
+    const metricLabel = compactCalendar ? `${primarySession ? `; planned ${plannedCompact}${primarySession.status === "skipped" ? ", skipped" : ""}` : ""}${compactActivity ? `; recorded ${recordedCompact}` : ""}` : "";
+    return <button id={`calendar-day-${date}`} className={`calendar-day${isToday ? " calendar-day--today" : ""}${inMonth ? "" : " calendar-day--outside"}`} type="button" onClick={openDay} aria-pressed={selectedDate === date} aria-current={isToday ? "date" : undefined} aria-haspopup={compactCalendar ? "dialog" : undefined} aria-label={`Select ${formatCoachingDate(date, "UTC")}${isToday ? ", today" : ""}; ${daySessions.length} planned, ${dayActivities.length} recorded${metricLabel}`} key={date}>
+      <span className="calendar-day-heading"><time dateTime={date}>{Number(date.slice(-2))}</time>{isToday ? <span className="today-marker">Today</span> : null}</span>
+      <span className="calendar-day-entries calendar-day-entries--full">
         {primarySession ? <span className={`calendar-entry calendar-entry--planned${primarySession.kind === "rest" ? " calendar-entry--rest" : ""}`}><b>PLANNED</b><strong>{plannedLabel}</strong>{plannedMetrics ? <small>{plannedMetrics}</small> : null}</span> : null}
         {compactActivity ? <span className="calendar-entry calendar-entry--actual"><b>RECORDED</b><strong>{compactActivity.title}</strong><small>{activityMetrics}</small></span> : null}
         {extraCount > 0 ? <span className="calendar-entry-more">+{extraCount} more</span> : null}
+      </span>
+      <span className="calendar-day-entries calendar-day-entries--compact" aria-hidden="true">
+        {primarySession ? <span className={`calendar-compact-metric calendar-compact-metric--planned${primarySession.status === "skipped" ? " calendar-compact-metric--skipped" : ""}`}><span>P</span><strong>{plannedCompact}</strong>{primarySession.status === "skipped" ? <span className="calendar-compact-status">Skipped</span> : null}</span> : null}
+        {compactActivity ? <span className="calendar-compact-metric calendar-compact-metric--recorded"><span>R</span><strong>{recordedCompact}</strong></span> : null}
+        {extraCount > 0 ? <span className="calendar-compact-more">+{extraCount}</span> : null}
       </span>
     </button>;
   }
@@ -1324,19 +1423,20 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     const selectedSession = selectedDetail.kind === "session"
       ? daySessions.find((session) => session.id === selectedDetail.id) ?? null
       : null;
-    const hasRecords = date <= today && dayActivities.length > 0;
-    const title = hasRecords ? "Run details" : selectedSession ? "Plan details" : "Calendar details";
+    const hasRecords = dayActivities.length > 0;
+    const title = selectedDetail.kind === "day" ? `Day details — ${formatCoachingDate(date, "UTC")}` : hasRecords ? "Run details" : selectedSession ? "Plan details" : "Calendar details";
 
     return <div className="coach-dialog-backdrop"><section ref={detailModal.dialogRef} onKeyDown={detailModal.onKeyDown} className="coach-dialog coach-dialog--calendar-detail" role="dialog" aria-modal="true" aria-labelledby="calendar-detail-title">
       <div className="calendar-detail-heading"><div><p className="eyebrow">{formatCoachingDate(date, planTimezone)}</p><h2 id="calendar-detail-title">{title}</h2></div><button autoFocus className="button button-secondary" type="button" onClick={() => setSelectedDetail(null)}>Close details</button></div>
+      {selectedDetail.kind === "day" && activitiesReadStatus === "unavailable" ? <div className="coach-status coach-status--error" role="alert"><p>Recorded activities could not be loaded. Retry the calendar to check this date.</p><button className="button button-secondary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></div> : null}
       {hasRecords ? <section className="calendar-detail-records" aria-label="Activity records">
-        {dayActivities.map((summary) => {
+        {dayActivities.map((summary, recordIndex) => {
           const detail = activityDetails[summary.id];
           if (!detail || detail.status === "loading") return <p className="adjustment-cue" key={summary.id}>Loading activity record…</p>;
-          if (detail.status === "error") return <section className="coach-status coach-status--error" role="alert" key={summary.id}><p>Could not load this activity record: {detail.error}</p><button className="button button-secondary" type="button" onClick={() => setActivityDetails((current) => { const next = { ...current }; delete next[summary.id]; return next; })}>Retry</button></section>;
-          return detail.activity ? <section className="activity-detail calendar-activity-record" aria-labelledby={`calendar-activity-${summary.id}`} key={summary.id}><ActivityRecordContent activity={detail.activity} headingId={`calendar-activity-${summary.id}`} headingLevel={3} /></section> : null;
+          if (detail.status === "error") return <section className="coach-status coach-status--error" role="alert" key={summary.id}><p>Could not load this activity record: {detail.error}</p><button className="button button-secondary" type="button" onClick={() => { setActivityDetails((current) => { const next = { ...current }; delete next[summary.id]; return next; }); setActivityDetailRetry((value) => value + 1); }}>Retry</button></section>;
+          return detail.activity ? <section id={`calendar-record-${summary.id}`} tabIndex={-1} className="activity-detail calendar-activity-record" aria-labelledby={`calendar-record-context-${summary.id}`} key={summary.id}><span className="sr-only" id={`calendar-record-context-${summary.id}`}>Record {recordIndex + 1}: {summary.title}</span><ActivityRecordContent activity={detail.activity} headingId={`calendar-activity-${summary.id}`} landmarkContextId={`calendar-record-context-${summary.id}`} headingLevel={3} /></section> : null;
         })}
-      </section> : date <= today ? <p className="adjustment-cue">{activitiesReadStatus === "unavailable" ? "Activity records could not be loaded. Retry the calendar to check recorded runs." : "No run recorded."}</p> : null}
+      </section> : selectedDetail.kind === "day" ? activitiesReadStatus === "available" ? <p className="adjustment-cue">No recorded activity.</p> : null : date <= today ? <p className="adjustment-cue">{activitiesReadStatus === "unavailable" ? "Activity records could not be loaded. Retry the calendar to check recorded runs." : "No run recorded."}</p> : null}
       <section className="calendar-plan-context" aria-label="Active plan session details">
         <p className="eyebrow">Active plan · session scheduled for this date</p>
         {daySessions.length > 0
@@ -1387,8 +1487,13 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     </aside>;
   };
 
-  return <CoachShell page="calendar" title="Calendar" subtitle={onlineMode ? "Owner-managed future sessions with preserved approved sources" : "Approved sessions and reasoned, auditable future changes"} meta={`${formatCoachingDate(range.from, planTimezone)} – ${formatCoachingDate(range.to, planTimezone)} · ${planTimezone}`}>
-    <section className="coach-panel calendar-controls" aria-label="Calendar controls"><nav className="local-plan-switch" aria-label="Plan views"><Link href="/dashboard/plan">Overview</Link><Link aria-current="page" href="/dashboard/calendar">Calendar</Link></nav><div className="calendar-month-toolbar"><button className="button button-secondary" type="button" onClick={() => moveMonth(-1)} aria-label="Previous month">‹</button><label className="calendar-month-picker"><span className="sr-only">Choose month</span><select value={range.month} onChange={(event) => setAnchorDate(`${event.target.value}-01`)} aria-label="Choose month and year">{Array.from({ length: 36 }, (_, index) => { const year = Number(range.month.slice(0, 4)) - 1 + Math.floor(index / 12); const month = String((index % 12) + 1).padStart(2, "0"); return <option value={`${year}-${month}`} key={`${year}-${month}`}>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(`${year}-${month}-01T12:00:00.000Z`))}</option>; })}</select></label><button className="button button-secondary" type="button" onClick={() => moveMonth(1)} aria-label="Next month">›</button><button className="button button-primary" type="button" onClick={() => setAnchorDate(today.slice(0, 7) + "-01")}>Today</button></div><p id="calendar-scroll-help">Month view · select a date to open plan and recorded activity details.</p></section>
+  const daySummary = (date: string) => {
+    const records = calendarDayRecords(date, sessions, activities);
+    return <CalendarDaySummary key={date} date={date} today={today} planned={records.planned} recorded={records.recorded} activitiesUnavailable={activitiesReadStatus === "unavailable"} onOpen={openRecord} />;
+  };
+
+  return <CoachShell page="calendar" title="Calendar" subtitle="Your planned sessions and recorded activities" meta={planTimezone}>
+    <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="calendar-month-toolbar"><button className="button button-secondary" type="button" onClick={() => moveMonth(-1)} aria-label="Previous month">‹</button><label className="calendar-month-picker"><span className="sr-only">Choose month</span><select value={range.month} onChange={(event) => chooseDate(`${event.target.value}-01`)} aria-label="Choose month and year">{Array.from({ length: 36 }, (_, index) => { const year = Number(range.month.slice(0, 4)) - 1 + Math.floor(index / 12); const month = String((index % 12) + 1).padStart(2, "0"); return <option value={`${year}-${month}`} key={`${year}-${month}`}>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(`${year}-${month}-01T12:00:00.000Z`))}</option>; })}</select></label><button className="button button-secondary" type="button" onClick={() => moveMonth(1)} aria-label="Next month">›</button><button className="button button-secondary" type="button" onClick={() => chooseDate(today)}>Today</button></div><div className="calendar-legend"><span>● Planned</span><span>● Recorded</span></div><p id="calendar-scroll-help" className="sr-only">Select a date, then open any planned session or recorded activity.</p></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
     {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h3>Calendar could not be loaded</h3><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
     {state === "success" && message ? <StatusLine state="success" message={message} /> : null}
@@ -1396,21 +1501,21 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     {state === "success" && staleMessage ? <section className="coach-panel calendar-state-panel calendar-state-panel--stale" role="status"><strong>Schedule context needs review</strong><span>{staleMessage} The approved plan has not been changed.</span><Link className="text-link" href="/dashboard/plan">Review plan</Link></section> : null}
     {state === "success" && focusMessage ? <p className="coach-status coach-status--error" role="alert">{focusMessage}</p> : null}
     <p className="calendar-range-announcement" aria-live="polite">{rangeAnnouncement}</p>
-    {state === "success" ? <section className="calendar-month-region" aria-label={`${range.monthLabel} training calendar`} aria-describedby="calendar-scroll-help" tabIndex={0} onKeyDown={handleCalendarKeyDown}>
+    {state === "success" ? <><div className="calendar-presentation"><section className="calendar-month-region" aria-label={`${range.monthLabel} training calendar`} aria-describedby="calendar-scroll-help" tabIndex={0} onKeyDown={handleCalendarKeyDown}>
     <section className="calendar-weeks">
-      <div className="calendar-weekday-headings">{weekdays.map((weekday) => <strong key={weekday}>{weekday}</strong>)}<strong className="calendar-weekly-heading">Weekly totals</strong></div>
+      <div className="calendar-weekday-headings">{weekdays.map((weekday) => <strong key={weekday}>{weekday.slice(0, 3)}</strong>)}</div>
       {range.weeks.map((week) => <section className="calendar-week-row" aria-label={`Week of ${formatCoachingDate(week.from, planTimezone)}`} key={week.from}>
         {Array.from({ length: 7 }, (_, index) => {
           const day = new Date(`${week.from}T00:00:00.000Z`);
           day.setUTCDate(day.getUTCDate() + index);
           return day.toISOString().slice(0, 10);
         }).map((date) => renderCalendarDay(date, range.month))}
-        {renderWeekTotal(week)}
       </section>)}
     </section>
-    <section className="calendar-mobile-week-summary" aria-label="Weekly totals"><label>Weekly totals <select value={selectedWeekIndex} onChange={(event) => setSelectedWeekIndex(Number(event.target.value))}>{range.weeks.map((week, index) => <option value={index} key={week.from}>Week of {formatCoachingDate(week.from, planTimezone)}</option>)}</select></label>{renderWeekTotal(range.weeks[selectedWeekIndex] ?? range.weeks[0])}</section>
+    </section><aside className="calendar-selected-day" aria-label="Selected day">{daySummary(selectedDate)}</aside></div>
+    <details className="calendar-totals"><summary>Training totals and timezone</summary><p className="quiet-copy">Dates use {planTimezone}. Planned totals and recorded totals are separate.</p><div className="calendar-week-totals-list">{range.weeks.map((week) => <div key={week.from}>{renderWeekTotal(week)}</div>)}</div>
     <section className="calendar-month-summary" aria-label={`${range.monthLabel} at a glance`}><div><span className="eyebrow">{range.monthLabel} at a glance</span><strong>{monthActivities.length}</strong><small>recorded runs</small></div><div><strong>{formatDistance(monthTotals.distance)}</strong><small>recorded distance</small></div><div><strong>{formatMinutes(monthTotals.time)}</strong><small>recorded time</small></div><div><strong>{monthTotals.caloriesKnown ? monthTotals.calories.toLocaleString() : "Unavailable"}</strong><small>calories</small></div><div className="calendar-planned-summary"><strong>{monthTotals.plannedDistanceKnown ? formatDistance(monthTotals.plannedDistance) : "Distance n/a"}</strong><small>planned · {monthTotals.plannedSessions} sessions · {formatMinutes(monthTotals.plannedTime)}</small></div></section>
-    </section> : null}
+    </details></> : null}
     {renderCalendarDetail()}
     {pending ? <div className="coach-dialog-backdrop"><form ref={pendingModal.dialogRef} onKeyDown={pendingModal.onKeyDown} onSubmit={(event) => { event.preventDefault(); void confirmEdit(); }} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">
       <h2 id="calendar-edit-title">Confirm {pending.operation}</h2>
@@ -1569,6 +1674,7 @@ export function SettingsPage() {
   }
 
   return <CoachShell page="settings" title="Settings" subtitle="Local coaching preferences and Codex reminder handoff" meta={baseline ? `${baseline.localTime} · ${baseline.timezone}` : "Checking preferences"}>
+    <TrainingTools />
     <h2 className="sr-only">Settings sections</h2>
     {returnTo !== "/dashboard/settings" ? <section className="coach-panel"><p>Return to the import recovery without changing a preference or connection.</p><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></section> : null}
     <details className="settings-group" open={settingsGroup === "preferences"} onToggle={(event) => { if (event.currentTarget.open) setSettingsGroup("preferences"); }}><summary>Preferences <span className="status-chip">{baseline ? (baseline.enabled ? "Enabled" : "Disabled") : "Unavailable"}</span></summary><section className="coach-panel settings-panel settings-panel--preference" aria-labelledby="reminder-settings-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Reminder preference</p><h3 id="reminder-settings-heading">Daily coaching reminder</h3></div></div>{preferencesRead.status === "error" && !preferencesRead.data ? <><p className="quiet-copy">Preferences could not be loaded. No editable defaults are shown until the saved preference is read.</p><button className="button button-primary" type="button" onClick={() => void loadPreferences()}>Retry preferences</button><StatusLine state="error" message={preferencesRead.message} /></> : <form className="coach-form coach-form-grid" onSubmit={save}><label className="checkbox-field field-wide"><input disabled={saveState === "loading" || preferencesRead.status === "refreshing"} type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /><span>Enable the daily reminder preference</span></label><label><span>Local time</span><input disabled={saveState === "loading"} type="time" value={draft.localTime} onChange={(event) => setDraft({ ...draft, localTime: event.target.value })} /></label><label><span>IANA timezone</span><input disabled={saveState === "loading"} value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} /></label><button className="button button-primary field-wide" disabled={saveState === "loading" || !dirty || needsAuthoritativeRecovery} type="submit">{saveState === "loading" ? "Saving…" : "Save preferences"}</button></form>} {needsAuthoritativeRecovery ? <button className="button button-secondary" type="button" onClick={() => void loadPreferences()}>Reread saved preferences</button> : null}{preferencesRead.status === "error" && preferencesRead.data ? <><StatusLine state="error" message={`${preferencesRead.message} Showing the last confirmed settings.`} /><button className="button button-secondary" type="button" onClick={() => void loadPreferences()}>Retry preferences</button></> : null}<StatusLine state={saveState} message={saveMessage} /></section></details>

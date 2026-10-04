@@ -22,8 +22,8 @@ type DashboardShellProps = DashboardViewModel & {
   onAnalyticsRetry?: () => void;
 };
 
-const formatHomeDate = (iso: string, includeTime = false) => new Intl.DateTimeFormat("en-ZA", {
-  timeZone: "Africa/Johannesburg",
+const formatHomeDate = (iso: string, timezone: string, includeTime = false) => new Intl.DateTimeFormat("en-ZA", {
+  timeZone: timezone,
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -46,6 +46,7 @@ export function DashboardShell({
   onlineStatusError = null,
   onAnalyticsRetry,
 }: DashboardShellProps) {
+  const [timezone, setTimezone] = useState("Africa/Johannesburg");
   const [selectedDistanceM, setSelectedDistanceM] = useState(
     predictionSummary.targetDistanceM ?? predictionOptions[0]?.targetDistanceM ?? 21097.5,
   );
@@ -145,31 +146,29 @@ export function DashboardShell({
   };
 
   return (
-    <div className="dashboard-layout">
+    <div className="dashboard-layout home-layout">
       <DashboardNavigation activePage="home" />
 
       <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="dashboard-page-title">
         <header className="dashboard-toolbar">
           <div className="dashboard-toolbar-title">
-            <p className="eyebrow">Training command centre</p>
             <h1 id="dashboard-page-title">Home</h1>
-            <p>Your approved goal, today&apos;s focus, and latest recorded activity.</p>
           </div>
         </header>
 
         <section className="dashboard-content" aria-label="Home content">
           <section className="content-group home-group home-goal" aria-labelledby="goal-and-milestone-heading">
-            <h2 id="goal-and-milestone-heading" className="group-heading">Your approved goal</h2>
-            <div className="home-goal-panel"><HomeGoalContext readinessAction={<button id="view-readiness" ref={readinessLauncher} className="text-link" type="button" aria-label="View current-fitness details" aria-expanded={readinessOpen} aria-controls="readiness" onClick={openReadiness}><span>Readiness details</span></button>} /></div>
+            <h2 id="goal-and-milestone-heading" className="group-heading">Your goal</h2>
+            <div className="home-goal-panel"><HomeGoalContext onTimezone={setTimezone} readinessAction={<button id="view-readiness" ref={readinessLauncher} className="text-link" type="button" aria-label="View current-fitness details" aria-expanded={readinessOpen} aria-controls="readiness" onClick={openReadiness}><span>Readiness</span></button>} /></div>
             {readinessOpen ? <section id="readiness" className="home-evidence" aria-labelledby="readiness-heading" tabIndex={-1}>
               <div className="home-evidence-heading"><div><p className="eyebrow">Readiness detail</p><h3 id="readiness-heading">Current-fitness estimate</h3></div><button className="button button-secondary" type="button" onClick={closeReadiness}>Back to Home</button></div>
               {analyticsLoading ? <p role="status">Loading the current-fitness estimate…</p> : null}
               {!analyticsLoading && uiState.showErrorState ? <div role="alert"><p>{errorMessage ?? "Current-fitness details could not be loaded."}</p>{onAnalyticsRetry ? <button className="button button-secondary" type="button" onClick={onAnalyticsRetry}>Try again</button> : null}</div> : null}
               {!analyticsLoading && uiState.showEmptyState ? <div><p>No compatible current-fitness estimate is available from the imported history.</p><RecoveryDataQualityLink label="Review data coverage" issue="No compatible current-fitness estimate is available from the current history." /></div> : null}
               {!analyticsLoading && uiState.showContent ? <>
-                <div className="group-heading-row"><h4>{predictionDistanceLabel(selectedPrediction.targetDistanceM)} estimate</h4><p>Updated {formatHomeDate(selectedPrediction.generatedAt)}</p></div>
+                <div className="group-heading-row"><h4>{predictionDistanceLabel(selectedPrediction.targetDistanceM)} estimate</h4><p>Updated {formatHomeDate(selectedPrediction.generatedAt, timezone)}</p></div>
                 {predictionOptions.length > 1 ? <details className="home-prediction-settings"><summary>Estimate settings</summary><label className="distance-selector home-distance-selector" htmlFor="home-race-distance"><span>Show estimate for</span><select id="home-race-distance" value={selectedDistanceM} onChange={(event) => setSelectedDistanceM(Number(event.target.value))}>{predictionOptions.map((candidate) => <option key={candidate.targetDistanceM} value={candidate.targetDistanceM}>{predictionDistanceLabel(candidate.targetDistanceM)}</option>)}</select></label><p>This selects a current-fitness estimate. It does not change your approved goal.</p></details> : null}
-                {uiState.showStaleState ? <p className="home-inline-status state-panel--stale" role="status">Showing the last available estimate. {staleInfo.staleReason ?? "Live updates are delayed."}{staleInfo.staleAtIso ? ` Last update: ${formatHomeDate(staleInfo.staleAtIso, true)}.` : ""}</p> : null}
+                {uiState.showStaleState ? <p className="home-inline-status state-panel--stale" role="status">Showing the last available estimate. {staleInfo.staleReason ?? "Live updates are delayed."}{staleInfo.staleAtIso ? ` Last update: ${formatHomeDate(staleInfo.staleAtIso, timezone, true)}.` : ""}</p> : null}
                 <div className="home-outlook-main"><div><strong className="home-outlook-value">{selectedKpis[0]?.value}</strong><span className="home-outlook-label">current-fitness estimate · {selectedKpis[1]?.value}</span></div><div className="home-outlook-copy"><p><strong>Training signal:</strong> {outlookReason.text}</p><p><strong>Estimate range:</strong> {selectedKpis[2]?.value}. This is the model&apos;s low-to-high estimate span, not a probability or race-day forecast.</p></div></div>
                 <p className="home-evidence-caveat">Race-day progress cannot yet be assessed from this current-fitness estimate.</p>
                 <DriverEvidence drivers={driverContributions} /><TrendEvidence series={trendSeries} />
@@ -181,8 +180,8 @@ export function DashboardShell({
             </section> : null}
           </section>
 
-          <section className="content-group home-group home-today" aria-labelledby="today-focus-heading"><h2 id="today-focus-heading" className="group-heading">Today&apos;s focus</h2><TodayCoachingCard compact headingLevel={3} /></section>
-          <section className="content-group home-group home-activity" aria-labelledby="latest-activity-heading"><h2 id="latest-activity-heading" className="group-heading">Latest activity</h2><HomeRecentTraining /></section>
+          <section className="content-group home-group home-today" aria-labelledby="today-focus-heading"><h2 id="today-focus-heading" className="group-heading">Today&apos;s focus</h2><TodayCoachingCard compact headingLevel={3} onTimezone={setTimezone} /></section>
+          <section className="content-group home-group home-activity" aria-labelledby="latest-activity-heading"><h2 id="latest-activity-heading" className="group-heading">Latest activity</h2><HomeRecentTraining timezone={timezone} /></section>
         </section>
       </main>
     </div>

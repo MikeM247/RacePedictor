@@ -36,3 +36,4 @@ export { PrismaActivityReviewRepository } from "./prisma-activity-review-reposit
 export { AthleteFeedbackConflictError, PrismaAthleteFeedbackRepository } from "./prisma-athlete-feedback-repository.js";
 export { PrismaReconciliationScopeRepository } from "./prisma-reconciliation-scope-repository.js";
 export { PrismaIdentityRepository } from "./prisma-identity-repository.js";
+export { PrismaActivityPaceComparisonRepository } from "./prisma-activity-pace-comparison-repository.js";

@@ -152,6 +152,7 @@ model Activity {
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
   athleteFeedback         ActivityAthleteFeedback[]
+  paceComparisons         ActivityPaceComparison[]
 
   @@unique([id, athleteId])
   @@unique([athleteId, dedupeHash])
@@ -360,7 +361,6 @@ model Athlete {
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
   athleteFeedback         ActivityAthleteFeedback[]
-
   @@map("athletes")
 }
 
@@ -734,6 +734,22 @@ model TrainingPlanProjection {
   @@unique([athleteId, contentHash])
   @@index([athleteId, active, planVersion(sort: Desc)])
   @@map("training_plan_projections")
+}
+
+model ActivityPaceComparison {
+  id            String   @id @default(cuid())
+  athleteId     String
+  activityId    String
+  revision      Int
+  artifactId    String
+  artifactHash  String
+  payload       Json
+  publishedAt   DateTime @default(now()) @db.Timestamptz(3)
+  activity      Activity @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, activityId, revision])
+  @@unique([athleteId, activityId, artifactId])
+  @@map("activity_pace_comparisons")
 }
 
 model TrainingPlanGoalContextProjection {

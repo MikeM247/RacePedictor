@@ -317,3 +317,9 @@ export class PrismaIdentityRepository implements IdentityRepository {
     displayName?: string | null;
   }): Promise<{ userId: string; athleteId: string }>;
 }
+export class PrismaActivityPaceComparisonRepository {
+  constructor(input: { prisma: unknown });
+  read(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string): Promise<import("../../../core/src/contracts/activity-pace-comparison.ts").PaceComparisonRead>;
+  context(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string, planId: string, sessionId: string, sessionRevision?: number | null): Promise<import("../../../core/src/contracts/activity-pace-comparison.ts").PaceContext>;
+  publish(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, artifact: import("../../../core/src/contracts/activity-pace-comparison.ts").PaceArtifact, deviceId: string): Promise<import("../../../core/src/contracts/activity-pace-comparison.ts").PaceComparison>;
+}

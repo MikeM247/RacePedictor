@@ -1,5 +1,6 @@
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { activityDetailSchema } from "../../core/src/contracts/activity.ts";
 
 const DEFAULT_PAGE_SIZE = 40;
 const MAX_PAGE_SIZE = 100;
@@ -148,11 +149,22 @@ export const getLocalActivity = ({
         normalized_power_w AS normalizedPowerW, training_stress_score AS trainingStressScore,
         avg_power_w AS avgPowerW, max_power_w AS maxPowerW, steps,
         body_battery_drain AS bodyBatteryDrain, lap_count AS lapCount,
-        dedupe_hash AS dedupeHash, created_at AS createdAt
+        dedupe_hash AS dedupeHash, created_at AS createdAt, source_payload_json AS sourcePayloadJson
       FROM activities
       WHERE athlete_id = ? AND id = ?
     `).get(athleteId, activityId);
     if (!row) return null;
+    let splits = [];
+    try {
+      // Cloud sync stores the canonical detail here; raw CSV/GPX payloads do not
+      // satisfy this contract and must never be interpreted as invented splits.
+      const canonical = activityDetailSchema.safeParse(JSON.parse(row.sourcePayloadJson));
+      if (canonical.success && canonical.data.athleteId === athleteId
+        && canonical.data.dedupeHash === row.dedupeHash && canonical.data.occurredAt === row.occurredAt
+        && canonical.data.splits.every(split => split.athleteId === athleteId && split.activityId === canonical.data.id)) {
+        splits = canonical.data.splits.map(split => ({ ...split, activityId: row.id }));
+      }
+    } catch { /* Legacy import payloads need not contain canonical split data. */ }
     let routeSignature = null;
     try {
       const route = database.prepare(`
@@ -203,7 +215,7 @@ export const getLocalActivity = ({
       lapCount: row.lapCount,
       dedupeHash: row.dedupeHash,
       createdAt: row.createdAt,
-      splits: [],
+      splits,
       routeSignature,
     };
   } finally {

@@ -97,6 +97,19 @@ export class RacePredictorSyncClient {
     }
     return payload;
   }
+
+  async getPaceComparisonContext(token, { activityId, planId, sessionId, sessionRevision }) {
+    const url = new URL(`/api/v1/sync/device/activities/${encodeURIComponent(activityId)}/pace-comparison-context`, this.#baseUrl);
+    url.searchParams.set("planId", planId); url.searchParams.set("sessionId", sessionId);
+    if (sessionRevision != null) url.searchParams.set("sessionRevision", String(sessionRevision));
+    return this.#request(token, url, { method: "GET" });
+  }
+
+  async publishPaceComparison(token, artifact) {
+    return this.#request(token, new URL("/api/v1/sync/device/activity-pace-comparisons/publish", this.#baseUrl), {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(artifact),
+    });
+  }
 }
 
 export class LocalSyncHttpError extends Error {

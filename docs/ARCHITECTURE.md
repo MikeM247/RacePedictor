@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## Reviewed split comparison extension (6 October 2026)
+
+One responsive bar-chart component serves Calendar and Training. Browser-safe core calculations are separate from server hashing/source validation and cloud/local repositories. A paired-device workflow prepares and publishes explicitly owner-reviewed pace blocks, independently of plan activation and session completion matching. See [ADR 0009](adr/0009-reviewed-activity-pace-comparisons.md) and [implementation/workflow](plans/ACTIVITY_SPLIT_COMPARISON.md).
+
 ## Monorepo Layout
 
 ```text

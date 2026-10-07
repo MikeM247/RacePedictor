@@ -154,6 +154,16 @@ export class PrismaAthleteFeedbackRepository {
   publish(scope: AthleteScope, artifact: import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedbackArtifact): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedback | null>;
 }
 
+export class AthleteJournalConflictError extends Error {}
+export class AthleteJournalDateError extends Error {}
+export class PrismaAthleteJournalRepository {
+  constructor(input: { prisma: unknown });
+  getReflection(scope: AthleteScope, activityId: string): Promise<import("../../../core/src/contracts/athlete-journal.ts").ActivityReflection | null>;
+  saveReflection(scope: AthleteScope, activityId: string, input: import("../../../core/src/contracts/athlete-journal.ts").SaveActivityReflectionRequest): Promise<import("../../../core/src/contracts/athlete-journal.ts").ActivityReflection | null>;
+  listWellbeing(scope: AthleteScope, from: string, to: string): Promise<import("../../../core/src/contracts/athlete-journal.ts").DailyWellbeingCheckIn[]>;
+  saveWellbeing(scope: AthleteScope, localDate: string, input: import("../../../core/src/contracts/athlete-journal.ts").SaveDailyWellbeingRequest): Promise<import("../../../core/src/contracts/athlete-journal.ts").DailyWellbeingCheckIn>;
+}
+
 export class PrismaCloudDashboardRepository {
   constructor(input: { prisma: unknown });
   getOverview(scope: AthleteScope, generatedAt?: Date): Promise<DashboardFetchResult>;

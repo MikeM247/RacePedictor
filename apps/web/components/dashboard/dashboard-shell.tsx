@@ -10,6 +10,7 @@ import type { OnlineStatus } from "../../../../packages/core/src/contracts/sync.
 import { OnlineStatusPanel } from "./online-status-panel";
 import { HomeRecentTraining } from "./home-recent-training";
 import { HomeGoalContext } from "./home-goal-context";
+import { DailyWellbeingCheckIn } from "../coaching/daily-wellbeing-check-in";
 import { createRecoveryContext, dataQualityHref, readRecoveryContext, restoreRecoveryFocus } from "../../lib/recovery-context";
 import { groupTrendSeries, selectOutlookReason } from "../../lib/readiness-evidence";
 import "./dashboard.css";
@@ -180,7 +181,7 @@ export function DashboardShell({
             </section> : null}
           </section>
 
-          <section className="content-group home-group home-today" aria-labelledby="today-focus-heading"><h2 id="today-focus-heading" className="group-heading">Today&apos;s focus</h2><TodayCoachingCard compact headingLevel={3} onTimezone={setTimezone} /></section>
+          <section className="content-group home-group home-today" aria-labelledby="today-focus-heading"><h2 id="today-focus-heading" className="group-heading">Today&apos;s focus</h2><TodayCoachingCard compact headingLevel={3} onTimezone={setTimezone} /><DailyWellbeingCheckIn timezone={timezone} /></section>
           <section className="content-group home-group home-activity" aria-labelledby="latest-activity-heading"><h2 id="latest-activity-heading" className="group-heading">Latest activity</h2><HomeRecentTraining timezone={timezone} /></section>
         </section>
       </main>

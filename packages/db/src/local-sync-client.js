@@ -98,6 +98,13 @@ export class RacePredictorSyncClient {
     return payload;
   }
 
+  async getWellbeing(token, { from, to }) {
+    const url = new URL("/api/v1/sync/device/wellbeing-check-ins", this.#baseUrl);
+    url.searchParams.set("from", from);
+    url.searchParams.set("to", to);
+    return this.#request(token, url, { method: "GET" });
+  }
+
   async getPaceComparisonContext(token, { activityId, planId, sessionId, sessionRevision }) {
     const url = new URL(`/api/v1/sync/device/activities/${encodeURIComponent(activityId)}/pace-comparison-context`, this.#baseUrl);
     url.searchParams.set("planId", planId); url.searchParams.set("sessionId", sessionId);

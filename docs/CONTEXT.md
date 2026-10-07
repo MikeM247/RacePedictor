@@ -1,5 +1,9 @@
 # CONTEXT
 
+## 6 October 2026 scope amendment: activity split comparisons
+
+The approved feature adds responsive per-split actual pace bars with explicitly reviewed historical planned targets. Ranges, approximate pace and effort guidance remain distinct. It does not change the active plan or infer session completion. A separate paired-device approval/publication workflow pins the source and appends immutable revisions. Scope and rollout are documented in [Activity split comparison](plans/ACTIVITY_SPLIT_COMPARISON.md).
+
 ## Purpose
 RacePredictor is a monorepo-based product to ingest race/activity data, normalize it, and deliver a desktop-first analytics dashboard with stable public APIs.
 

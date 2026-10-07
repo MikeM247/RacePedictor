@@ -989,3 +989,13 @@
   .home-layout .home-goal-content--ready .home-goal-actions { gap: 12px; }
   .dashboard-content :is(a, button, input, summary) { scroll-margin-top: 76px; scroll-margin-bottom: 96px; }
 }
+/* Optional athlete recovery check-in */
+.daily-check-in { display: grid; gap: .75rem; margin-top: 1rem; padding: 1rem; border: 1px solid var(--rp-border); border-left: 3px solid var(--rp-cyan); background: var(--rp-surface-soft); }
+.daily-check-in h3, .daily-check-in-form h4 { margin: 0; }
+.daily-check-in p { margin: .35rem 0 0; color: var(--rp-text-muted); }
+.daily-check-in-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
+.daily-check-in-form { display: grid; gap: .75rem; padding-top: .75rem; border-top: 1px solid var(--rp-border); }
+.daily-check-in-form label { display: grid; gap: .3rem; color: var(--rp-text-muted); }
+.daily-check-in-form select, .daily-check-in-form textarea { min-height: 42px; border: 1px solid var(--rp-border-strong); border-radius: 6px; background: var(--rp-surface); color: var(--rp-text); padding: .55rem .65rem; font: inherit; }
+.daily-check-in-form textarea { resize: vertical; }
+.daily-check-in-state { color: var(--rp-text-muted); font-size: .86rem; }

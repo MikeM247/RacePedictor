@@ -152,6 +152,7 @@ model Activity {
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
   athleteFeedback         ActivityAthleteFeedback[]
+  activityReflections     ActivityReflection[]
   paceComparisons         ActivityPaceComparison[]
 
   @@unique([id, athleteId])
@@ -361,6 +362,8 @@ model Athlete {
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
   athleteFeedback         ActivityAthleteFeedback[]
+  activityReflections     ActivityReflection[]
+  wellbeingCheckIns       DailyWellbeingCheckIn[]
   @@map("athletes")
 }
 
@@ -712,6 +715,48 @@ model ActivityAthleteFeedback {
   @@unique([athleteId, activityId, artifactId])
   @@index([athleteId, activityId, revision(sort: Desc)])
   @@map("activity_athlete_feedback")
+}
+
+model ActivityReflection {
+  id                   String   @id @default(cuid())
+  athleteId            String
+  activityId           String
+  revision             Int      @default(0)
+  activityRevision     Int
+  type                 String?
+  answers              Json
+  sections             Json
+  questionnaireVersion String   @default("activity-reflection.v1")
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
+  athlete              Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity             Activity @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, activityId])
+  @@unique([id, athleteId])
+  @@index([athleteId, updatedAt(sort: Desc)])
+  @@map("activity_reflections")
+}
+
+model DailyWellbeingCheckIn {
+  id                   String   @id @default(cuid())
+  athleteId            String
+  localDate            String
+  timezone             String
+  answers              Json
+  status               String
+  recordedAt           DateTime? @db.Timestamptz(3)
+  skippedAt            DateTime? @db.Timestamptz(3)
+  revision             Int      @default(0)
+  questionnaireVersion String   @default("daily-wellbeing.v1")
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
+  athlete              Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, localDate])
+  @@unique([id, athleteId])
+  @@index([athleteId, localDate])
+  @@map("daily_wellbeing_check_ins")
 }
 
 model TrainingPlanProjection {

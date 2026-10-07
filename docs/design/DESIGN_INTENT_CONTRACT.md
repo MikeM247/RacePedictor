@@ -229,6 +229,10 @@ Every data-dependent surface MUST implement applicable states below. A missing c
 
 If an exception is necessary, document the requirement ID, concrete conflict, proposed alternative, and user impact for review. Continue compliant independent work; do not claim the exception is approved.
 
+## 6 October 2026 split comparison amendment
+
+The approved activity split view is a bar chart beneath the run summary, shared by Calendar and Training. Actual pace bars carry separate per-block planned markers/ranges and exact selectable values; effort guidance never becomes a numeric target. Responsive window sizing, overlap, swipe/arrow/keyboard behavior, partial-split labelling, Table view, state retention and fallback states are specified in [Activity split comparison](../plans/ACTIVITY_SPLIT_COMPARISON.md). These requirements supersede the previous initially-collapsed splits requirement only; navigation and other disclosures retain their existing behavior.
+
 ## 16. Definition of done for UX implementation
 
 The redesign is complete only when the applicable checks below pass with recorded evidence. An unavailable state is acceptable when the underlying capability is absent; an unimplemented UI requirement is not.

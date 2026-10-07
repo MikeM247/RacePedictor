@@ -383,3 +383,16 @@
 .activity-review-details dd { margin: 0; }
 .activity-review-details ul { margin: 0.75rem 0 0; padding-left: 1.25rem; }
 .activity-review-refresh { justify-self: start; }
+.activity-athlete-reflection { border: 1px solid var(--rp-border); background: var(--rp-surface); }
+.athlete-journal-form { display: grid; gap: 1rem; }
+.athlete-journal-form fieldset { display: grid; gap: .65rem; border: 1px solid var(--rp-border); padding: 1rem; margin: 0; }
+.athlete-journal-form legend { padding: 0 .35rem; font-weight: 700; }
+.athlete-journal-form label { display: grid; gap: .35rem; color: var(--rp-text-muted); }
+.athlete-journal-form input, .athlete-journal-form select, .athlete-journal-form textarea { min-height: 42px; border: 1px solid var(--rp-border-strong); border-radius: 6px; background: var(--rp-surface-soft); color: var(--rp-text); padding: .55rem .65rem; font: inherit; }
+.athlete-journal-form textarea { min-height: 76px; resize: vertical; }
+.journal-choice-row { display: flex; flex-wrap: wrap; gap: .9rem 1.25rem; }
+.journal-choice-row label { display: inline-flex; align-items: center; gap: .35rem; }
+.form-help { margin: 0; color: var(--rp-text-muted); font-size: .86rem; }
+.journal-section-row { display: grid; grid-template-columns: 10rem 1fr 2fr; gap: .5rem; }
+.journal-form-actions { display: flex; flex-wrap: wrap; gap: .65rem; }
+@media (max-width: 640px) { .journal-section-row { grid-template-columns: 1fr; } }

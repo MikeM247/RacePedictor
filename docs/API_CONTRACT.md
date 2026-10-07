@@ -1,5 +1,9 @@
 # API_CONTRACT
 
+## Reviewed activity pace comparison (6 October 2026)
+
+The owner-scoped `GET /api/v1/activities/:activityId/pace-comparison` returns ready/none/stale with an immutable comparison snapshot. Paired-device context and publication endpoints require an explicit historical plan/session, source hash, split fingerprint and expected revisions. Exact envelopes, error codes and publication commands are in [Activity split comparison](plans/ACTIVITY_SPLIT_COMPARISON.md#api). The strict source is `packages/core/src/contracts/activity-pace-comparison.ts`.
+
 ## API Namespace
 - Base path: `/api/v1`
 - Content type: `application/json`
@@ -236,5 +240,11 @@ Scheduled reconciliation is bounded to 25 connected athletes and 25 claimed jobs
 `GET /api/v1/activities/:activityId/feedback` returns independent `coachFeedback`, `athleteFeedback`, and `legacyReviews` values. Coach feedback is generated from recorded metrics and an approved plan snapshot; athlete feedback is an owner-approved local artifact. A missing athlete value is presented as `Athlete feedback has not been provided.`. `GET /api/v1/activities/:activityId/legacy-reviews` exposes preserved mixed reviews without populating either current field.
 
 `POST /api/v1/activities/:activityId/coach-review` queues or retries cloud generation and returns `202`. `GET /api/v1/sync/device/activities/:activityId/feedback-context` supplies the exact activity revision and current feedback to a paired device. `POST /api/v1/sync/device/athlete-feedback/publish` accepts a hash-validated approved artifact and uses activity and athlete-feedback revisions for idempotent publication; stale or competing artifacts return `409`.
+
+## Athlete journal contracts
+
+`GET|PUT /api/v1/activities/:activityId/reflection` reads or revision-safely saves optional athlete-authored training/race reflection answers. `GET /api/v1/wellbeing-check-ins?from=YYYY-MM-DD&to=YYYY-MM-DD` reads at most 31 athlete-scoped local dates, and `PUT /api/v1/wellbeing-check-ins/:date` saves or skips one date. Saving a check-in requires at least one answer; skipping is explicit. These endpoints use the standard envelopes and owner session for writes. They do not mutate activity metrics, plans, predictions, completion state, or automatic coach inputs.
+
+The paired-device `GET /api/v1/sync/device/wellbeing-check-ins` endpoint supplies the same bounded date-range records. The activity feedback context includes the activity reflection and the activity date plus following-day check-ins as athlete-authored context.
 
 Online upload clients should use `POST /api/v1/imports/upload/initiate` to obtain a short-lived athlete-scoped R2 PUT URL and required headers, then `POST /api/v1/imports/upload/complete` with the checksum and immutable import identity. The legacy multipart endpoint remains available for smaller uploads and uses the same cloud normalizer. Uploads are limited to 15 MiB, and CSV normalization is bounded to 100 rows per batch.

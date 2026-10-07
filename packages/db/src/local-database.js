@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const LOCAL_DATABASE_SCHEMA_VERSION = 5;
+export const LOCAL_DATABASE_SCHEMA_VERSION = 6;
 
 const migrations = [
   {
@@ -329,6 +329,14 @@ const migrations = [
     `,
   },
 ];
+
+migrations.push({ version: 6, name: "activity_pace_comparisons", sql: `
+  CREATE TABLE local_activity_pace_comparisons (
+    athlete_id TEXT NOT NULL, activity_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision > 0),
+    artifact_id TEXT NOT NULL, artifact_hash TEXT NOT NULL, payload_json TEXT NOT NULL,
+    PRIMARY KEY (athlete_id, activity_id, revision), UNIQUE (athlete_id, activity_id, artifact_id)
+  );
+` });
 
 const applyLocalMigrations = (database) => {
   database.exec(`

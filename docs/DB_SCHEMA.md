@@ -1,5 +1,9 @@
 # DB_SCHEMA
 
+## Activity pace comparison addition (6 October 2026)
+
+`ActivityPaceComparison` (`activity_pace_comparisons`) stores append-only approved JSON snapshots with tenant/activity identity, monotonic revision, artifact ID/hash and publication timestamp. Its compound Activity foreign key enforces tenant ownership. Tenant/activity/revision and tenant/activity/artifact ID are unique. Migration `20261006140000_activity_pace_comparisons` is additive and does not alter plan/proposal hashes. SQLite schema v6 adds `local_activity_pace_comparisons` for accepted publication receipts. See [ADR 0009](adr/0009-reviewed-activity-pace-comparisons.md).
+
 ## Overview
 
 The MVP schema is anchored on four primary Prisma models provided for implementation planning:
@@ -275,3 +279,7 @@ Operational buckets are unique by `(metric, windowStart)` and indexed by `(metri
 ## Separate activity feedback persistence
 
 `ActivityCoachReview.provenance` distinguishes new `cloud_metrics_plan` revisions from preserved `legacy_combined` history. `ActivityReviewRequest.activityRevision` and `inputFingerprint` bind durable work to the canonical activity inputs; the cloud worker rechecks both before publication. `ActivityAthleteFeedback` is an independent immutable revision stream keyed by athlete, activity, revision, and artifact identity. Its publication cannot update or regenerate coach reviews. Existing mixed reviews are retained as legacy history and do not backfill either current field. CSV/GPX imports create `Import`, `RawFile`, `StagingActivity`, `ActivityRevision`, and queued coach work in one scoped transaction after private R2 integrity verification.
+
+## Athlete journal persistence
+
+`ActivityReflection` stores one editable, athlete-scoped structured reflection per activity, including nullable training/race classification, answers, turning-point sections, questionnaire version, activity revision, and an application revision. `DailyWellbeingCheckIn` stores one athlete-scoped record per local date, including timezone, optional answers, saved/skipped state, timestamps, questionnaire version, and revision. Both have athlete-scoped uniqueness and indexes. Revisions are checked on writes; stale updates return a conflict. Journal content is separate from immutable AI feedback and is not included in prediction inputs.

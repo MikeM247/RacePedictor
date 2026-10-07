@@ -631,3 +631,6 @@
   .calendar-compact-metric > span:first-child { font-size: 11px; }
   .calendar-agenda-entry { padding: 12px 0 12px 12px; }
 }
+.calendar-wellbeing-history { margin-top: 1rem; padding: 1rem; border: 1px solid var(--rp-border); background: var(--rp-surface-soft); }
+.calendar-wellbeing-history h3 { margin: .25rem 0; font-size: 1rem; }
+.calendar-wellbeing-history p { margin: .35rem 0 0; }

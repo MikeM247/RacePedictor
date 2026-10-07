@@ -85,6 +85,16 @@ test("all migrations apply to PostgreSQL and enforce tenant-safe cloud persisten
       );
     `);
 
+    await database.exec(`INSERT INTO "activity_pace_comparisons"
+      ("id", "athleteId", "activityId", "revision", "artifactId", "artifactHash", "payload")
+      VALUES ('pace-1', 'athlete_legacy', 'activity_legacy', 1, 'reviewed-1', '${"a".repeat(64)}', '{}'::jsonb)`);
+    await assert.rejects(database.exec(`INSERT INTO "activity_pace_comparisons"
+      ("id", "athleteId", "activityId", "revision", "artifactId", "artifactHash", "payload")
+      VALUES ('pace-foreign', 'athlete_other', 'activity_legacy', 1, 'reviewed-foreign', '${"a".repeat(64)}', '{}'::jsonb)`), /foreign key/iu);
+    await assert.rejects(database.exec(`INSERT INTO "activity_pace_comparisons"
+      ("id", "athleteId", "activityId", "revision", "artifactId", "artifactHash", "payload")
+      VALUES ('pace-duplicate', 'athlete_legacy', 'activity_legacy', 1, 'reviewed-2', '${"b".repeat(64)}', '{}'::jsonb)`), /unique constraint/iu);
+
     const snapshot = await database.query(`
       SELECT "selectedFields", "context" FROM "second_brain_snapshots"
       WHERE "id" = 'snapshot_1'

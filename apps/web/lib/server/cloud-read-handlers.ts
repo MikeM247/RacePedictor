@@ -23,11 +23,19 @@ import {
   TrainingPlanGoalContextUnavailableError,
 } from "../../../../packages/db/src/cloud/index.js";
 import { activityFeedbackResponseDataSchema } from "../../../../packages/core/src/contracts/activity-review.ts";
+import {
+  activityReflectionResponseSchema,
+  saveActivityReflectionRequestSchema,
+  saveDailyWellbeingRequestSchema,
+  wellbeingRangeQuerySchema,
+  dailyWellbeingListResponseSchema,
+} from "../../../../packages/core/src/contracts/athlete-journal.ts";
 import type { CloudCalendarSession } from "../../../../packages/db/src/cloud/index.js";
 import { getCloudReadComposition } from "./cloud-read-composition.ts";
 import type { SensitiveRouteContext } from "./route-security.ts";
 import { after } from "next/server.js";
 import { runCloudCoachFeedbackBatch } from "./activity-coach-worker.ts";
+import { AthleteJournalConflictError, AthleteJournalDateError } from "../../../../packages/db/src/cloud/index.js";
 
 export type CloudReadComposition = ReturnType<typeof getCloudReadComposition>;
 export type GetCloudReadComposition = () => CloudReadComposition;
@@ -60,6 +68,69 @@ export async function handleCloudActivityFeedback(
     athleteFeedback,
     legacyReviews,
   }));
+}
+
+export async function handleCloudActivityReflection(
+  security: SensitiveRouteContext,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  const decodedActivityId = decodeId(activityId);
+  const activity = await getComposition().activities.findById(scope, decodedActivityId);
+  if (!activity) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
+  return Response.json(activityReflectionResponseSchema.parse({ data: await getComposition().journal.getReflection(scope, decodedActivityId) }));
+}
+
+export async function handleCloudSaveActivityReflection(
+  security: SensitiveRouteContext,
+  request: Request,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  const parsed = saveActivityReflectionRequestSchema.safeParse(await readJson(request));
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Activity reflection is invalid", parsed.error.issues);
+  try {
+    const reflection = await getComposition().journal.saveReflection(scope, decodeId(activityId), parsed.data);
+    if (!reflection) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
+    return success(reflection);
+  } catch (error) {
+    if (error instanceof AthleteJournalConflictError) throw new ApiHttpError(409, "CONFLICT", "The reflection changed; reload and review the latest values");
+    throw error;
+  }
+}
+
+export async function handleCloudWellbeingList(
+  security: SensitiveRouteContext,
+  request: Request,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  const params = new URL(request.url).searchParams;
+  const parsed = wellbeingRangeQuerySchema.safeParse({ from: params.get("from"), to: params.get("to") });
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Wellbeing date range is invalid", parsed.error.issues);
+  return Response.json(dailyWellbeingListResponseSchema.parse({ data: { items: await getComposition().journal.listWellbeing(scope, parsed.data.from, parsed.data.to) } }));
+}
+
+export async function handleCloudSaveWellbeing(
+  security: SensitiveRouteContext,
+  request: Request,
+  localDate: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  const parsed = saveDailyWellbeingRequestSchema.safeParse(await readJson(request));
+  if (!parsed.success || !/^\d{4}-\d{2}-\d{2}$/u.test(localDate)) {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "Daily check-in is invalid", parsed.success ? [] : parsed.error.issues);
+  }
+  try {
+    return success(await getComposition().journal.saveWellbeing(scope, localDate, parsed.data));
+  } catch (error) {
+    if (error instanceof AthleteJournalConflictError) throw new ApiHttpError(409, "CONFLICT", "The check-in changed; reload and review the latest values");
+    if (error instanceof AthleteJournalDateError) throw new ApiHttpError(400, "VALIDATION_ERROR", "Daily check-ins can only be saved for today in the selected timezone");
+    throw error;
+  }
 }
 
 export async function handleCloudLegacyActivityReviews(

@@ -154,6 +154,16 @@ export class PrismaAthleteFeedbackRepository {
   publish(scope: AthleteScope, artifact: import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedbackArtifact): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedback | null>;
 }
 
+export class AthleteJournalConflictError extends Error {}
+export class AthleteJournalDateError extends Error {}
+export class PrismaAthleteJournalRepository {
+  constructor(input: { prisma: unknown });
+  getReflection(scope: AthleteScope, activityId: string): Promise<import("../../../core/src/contracts/athlete-journal.ts").ActivityReflection | null>;
+  saveReflection(scope: AthleteScope, activityId: string, input: import("../../../core/src/contracts/athlete-journal.ts").SaveActivityReflectionRequest): Promise<import("../../../core/src/contracts/athlete-journal.ts").ActivityReflection | null>;
+  listWellbeing(scope: AthleteScope, from: string, to: string): Promise<import("../../../core/src/contracts/athlete-journal.ts").DailyWellbeingCheckIn[]>;
+  saveWellbeing(scope: AthleteScope, localDate: string, input: import("../../../core/src/contracts/athlete-journal.ts").SaveDailyWellbeingRequest): Promise<import("../../../core/src/contracts/athlete-journal.ts").DailyWellbeingCheckIn>;
+}
+
 export class PrismaCloudDashboardRepository {
   constructor(input: { prisma: unknown });
   getOverview(scope: AthleteScope, generatedAt?: Date): Promise<DashboardFetchResult>;
@@ -316,4 +326,10 @@ export class PrismaIdentityRepository implements IdentityRepository {
     athleteId: string;
     displayName?: string | null;
   }): Promise<{ userId: string; athleteId: string }>;
+}
+export class PrismaActivityPaceComparisonRepository {
+  constructor(input: { prisma: unknown });
+  read(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string): Promise<import("../../../core/src/contracts/activity-pace-comparison.ts").PaceComparisonRead>;
+  context(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, activityId: string, planId: string, sessionId: string, sessionRevision?: number | null): Promise<import("../../../core/src/contracts/activity-pace-comparison.ts").PaceContext>;
+  publish(scope: import("../../../core/src/contracts/auth.ts").AthleteScope, artifact: import("../../../core/src/contracts/activity-pace-comparison.ts").PaceArtifact, deviceId: string): Promise<import("../../../core/src/contracts/activity-pace-comparison.ts").PaceComparison>;
 }

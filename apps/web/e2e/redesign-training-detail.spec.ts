@@ -66,7 +66,7 @@ test("F04 restores three loaded pages and focus through Back, keeps disclosures 
   const selected = page.getByRole("button", { name: /F04 selected beyond page one/ });
   await selected.click();
   await expect(page.getByRole("heading", { name: "F04 selected beyond page one" })).toBeFocused();
-  for (const name of ["Additional telemetry", "Splits", "Route details"]) await expect(page.locator("details", { hasText: name }).first()).not.toHaveAttribute("open", "");
+  for (const name of ["Additional telemetry", "Route details"]) await expect(page.locator("details", { hasText: name }).first()).not.toHaveAttribute("open", "");
   await page.locator("details", { hasText: "Additional telemetry" }).locator("summary").click();
   await expect(page.getByText("Average heart rate")).toBeVisible();
   await page.getByRole("button", { name: "← Back to Training" }).click();

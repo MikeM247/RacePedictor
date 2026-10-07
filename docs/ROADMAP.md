@@ -1,5 +1,12 @@
 # ROADMAP
 
+## 6 October 2026: activity split comparisons
+
+- [x] Responsive actual-versus-reviewed-plan bar charts, shared by Calendar and Training; immutable publication, source validation and local receipt reads.
+- [ ] Deploy additive migration/API/UI and publish the Sunday race comparison after reviewing its concrete source and blocks. Implementation does not itself approve a real comparison.
+
+See [implementation guide](plans/ACTIVITY_SPLIT_COMPARISON.md) and [QA evidence](progress/activity-split-comparison-qa-20261006.md).
+
 This roadmap tracks execution status, but `docs/CONTEXT.md` is the planning source of truth for scope, constraints, non-goals, and milestone order. If wording conflicts, follow `CONTEXT.md` and update this roadmap accordingly.
 
 ## Status key

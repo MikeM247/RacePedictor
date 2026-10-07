@@ -33,6 +33,7 @@ import "../dashboard/dashboard.css";
 import "../activities/activities.css";
 import "./coaching-ui.css";
 import { ActivePlanOverview } from "./active-plan-overview";
+import { DailyWellbeingHistory } from "./daily-wellbeing-history";
 import { CalendarDaySummary } from "./calendar-day-summary";
 import { calendarDayRecords, compactCalendarMetric } from "../../lib/calendar-display";
 import {
@@ -1437,6 +1438,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
           return detail.activity ? <section id={`calendar-record-${summary.id}`} tabIndex={-1} className="activity-detail calendar-activity-record" aria-labelledby={`calendar-record-context-${summary.id}`} key={summary.id}><span className="sr-only" id={`calendar-record-context-${summary.id}`}>Record {recordIndex + 1}: {summary.title}</span><ActivityRecordContent activity={detail.activity} headingId={`calendar-activity-${summary.id}`} landmarkContextId={`calendar-record-context-${summary.id}`} headingLevel={3} /></section> : null;
         })}
       </section> : selectedDetail.kind === "day" ? activitiesReadStatus === "available" ? <p className="adjustment-cue">No recorded activity.</p> : null : date <= today ? <p className="adjustment-cue">{activitiesReadStatus === "unavailable" ? "Activity records could not be loaded. Retry the calendar to check recorded runs." : "No run recorded."}</p> : null}
+      <DailyWellbeingHistory localDate={date} timezone={planTimezone} />
       <section className="calendar-plan-context" aria-label="Active plan session details">
         <p className="eyebrow">Active plan · session scheduled for this date</p>
         {daySessions.length > 0

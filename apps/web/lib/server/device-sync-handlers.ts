@@ -241,13 +241,35 @@ export async function handleActivityFeedbackContext(
   const scope = athleteScopeFor(security.actor);
   const activity = await getComposition().activities.findById(scope, decodeURIComponent(activityId));
   if (!activity) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
-  const [activityRevision, coach, athlete, planComparison] = await Promise.all([
+  const localDate = String(activity.localOccurredAt ?? activity.occurredAt).slice(0, 10);
+  const nextDate = new Date(`${localDate}T00:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const followingDate = nextDate.toISOString().slice(0, 10);
+  const [activityRevision, coach, athlete, planComparison, reflection, wellbeing] = await Promise.all([
     getComposition().activities.currentRevision(scope, activity.id),
     getComposition().activityReviews.get(scope, activity.id),
     getComposition().athleteFeedback.get(scope, activity.id),
     typeof getComposition().activityReviews.planComparison === "function" ? getComposition().activityReviews.planComparison(scope, activity.id) : null,
+    getComposition().journal.getReflection(scope, activity.id),
+    getComposition().journal.listWellbeing(scope, localDate, followingDate),
   ]);
-  return success({ activity, activityRevision, planComparison, coachFeedback: coach, athleteFeedback: athlete });
+  return success({ activity, activityRevision, planComparison, coachFeedback: coach, athleteFeedback: athlete, reflection, wellbeing });
+}
+
+export async function handleDeviceWellbeing(
+  security: AuthenticatedDevice,
+  request: Request,
+  getComposition: GetDeviceSyncComposition = getDeviceSyncComposition,
+) {
+  const params = new URL(request.url).searchParams;
+  const from = params.get("from");
+  const to = params.get("to");
+  if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/u.test(from) || !/^\d{4}-\d{2}-\d{2}$/u.test(to) || from > to) {
+    throw new ApiHttpError(400, "VALIDATION_ERROR", "Wellbeing date range is invalid");
+  }
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000;
+  if (days > 30) throw new ApiHttpError(400, "VALIDATION_ERROR", "Wellbeing date range cannot exceed 31 days");
+  return success({ items: await getComposition().journal.listWellbeing(athleteScopeFor(security.actor), from, to) });
 }
 
 export async function handlePublishAthleteFeedback(

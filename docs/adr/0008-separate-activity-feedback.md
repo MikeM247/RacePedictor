@@ -22,3 +22,7 @@ The browser never receives the OpenAI key and never sends personal conversation 
 ## Operational policy
 
 Use `store: false` for independent Responses API requests. Retry transient provider failures through the durable request state; configuration and authentication failures require attention. Preserve the last valid coach review while a newer revision is pending. Disable new claiming/generation/publication to roll back without deleting activities or saved feedback.
+
+## Athlete-authored journal extension (2026-10-06)
+
+The activity page now has a separate, editable athlete journal record (`ActivityReflection`) and Home has an optional daily recovery record (`DailyWellbeingCheckIn`). These records use additive owner-scoped APIs and revision checks. They are never merged into `ActivityAthleteFeedback`, do not enqueue online coach generation, and do not alter predictions, completion, plans, or calendar state. Paired-device feedback context may read the records as explicitly athlete-authored observations; missing answers remain missing.

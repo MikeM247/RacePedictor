@@ -1,5 +1,14 @@
 # ROADMAP
 
+## 7 October 2026: full-screen activity detail
+
+- [x] Shared full-viewport Activity detail dialog for Calendar and Training, retaining contextual return, focus/scroll handling, and existing record content.
+- [x] Separate Calendar date selection from direct recorded-activity launch; keep Day details as a summary with one-record launchers.
+- [x] All splits overview and width-based Detail view with solid hollow targets aligned to actual bars.
+- [x] Final feature QA, production build, and responsive/accessibility review. A separate Home desktop fit assertion is recorded as a follow-up.
+
+See [updated activity detail and split handoff](plans/ACTIVITY_SPLIT_COMPARISON.md), [Calendar behavior](plans/CALENDAR_MOBILE_MONTH_IMPLEMENTATION.md), and [7 October QA evidence](progress/activity-detail-dialog-qa-20261007.md).
+
 ## 6 October 2026: activity split comparisons
 
 - [x] Responsive actual-versus-reviewed-plan bar charts, shared by Calendar and Training; immutable publication, source validation and local receipt reads.

@@ -1,5 +1,9 @@
 # CONTEXT
 
+## 7 October 2026 scope amendment: full-screen activity detail
+
+Calendar and Training recorded activities use the same full-viewport Activity detail dialog. Calendar date selection remains separate; recorded activity controls open the chosen activity directly, while Day details keeps its planned-session flow and activity summary launchers. Training preserves its list state underneath. Split comparison defaults to All splits and uses aligned, hollow, solid target outlines with a same-width band for ranges. Existing activity, reviewed-comparison, and plan data remain authoritative. This is a frontend-only change: it adds no API, database, authentication, or comparison-publication change. UX and chart details are in [the design contract](design/DESIGN_INTENT_CONTRACT.md#7-october-2026-activity-dialog-and-split-presentation-amendment) and [implementation handoff](plans/ACTIVITY_SPLIT_COMPARISON.md).
+
 ## 6 October 2026 scope amendment: activity split comparisons
 
 The approved feature adds responsive per-split actual pace bars with explicitly reviewed historical planned targets. Ranges, approximate pace and effort guidance remain distinct. It does not change the active plan or infer session completion. A separate paired-device approval/publication workflow pins the source and appends immutable revisions. Scope and rollout are documented in [Activity split comparison](plans/ACTIVITY_SPLIT_COMPARISON.md).

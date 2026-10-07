@@ -1,6 +1,22 @@
 # SDLC Progress
 
-Last updated: 2026-09-09
+Last updated: 2026-10-07
+
+## 2026-10-07 Full-screen activity details and clearer split targets
+
+**Objective:** open recorded activities in one full-viewport dialog from Calendar and Training, then make planned split targets easier to compare with actual pace.
+
+**Current stage:** Implementation and feature QA complete. Normal frontend deployment remains separate and has not been performed.
+
+**Status:** The shared dialog, direct Calendar launch, Training context recovery, all-splits overview, width-aware Detail mode, solid hollow target outlines, responsive/accessibility coverage, and design documentation are complete. The change does not alter APIs, persistence, or comparison publication.
+
+| Stage | Owner | Status | Evidence / next action |
+|---|---|---|---|
+| Requirements and UX | Product Owner, UX/UI Designer | Accepted | Approved full-screen dialog and thin solid lavender target design; visual reference is in the Codex activity-dialog mockup. |
+| Architecture | Architect | Complete | Approved plan is reflected in the shared dialog boundary and existing activity-record presentation. No new API, database, or ADR work. |
+| Implementation | Engineering | Complete | Shared Calendar/Training dialog, modal focus and scroll lifecycle, independent Calendar launch controls, Training history recovery, split overview/detail controls, SVG targets, responsive styling, and specs. |
+| Focused validation | QA | Passed | Web 154/154, typecheck, production build, local feature E2E 22/22 plus cross-surface E2E 3/3, accessibility/forced-colors/overflow E2E 4/4, online-fixture E2E 4/4, and owner-auth E2E 3/3. See [QA evidence](activity-detail-dialog-qa-20261007.md). |
+| Follow-up | Engineering | Open | The non-feature Home desktop summary-fit assertion fails at 1440×900 and is reproducible by itself. It is excluded from the activity-feature pass count and should be handled separately. |
 
 ## 2026-09-09 Asynchronous Activity Coach Feedback
 

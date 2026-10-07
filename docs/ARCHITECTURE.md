@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## Shared full-screen activity detail (7 October 2026)
+
+Calendar and Training compose the same client-side `ActivityDetailDialog` around the existing `ActivityRecordContent`. Page owners retain activity selection, loading, retry, history and return-context behavior; Calendar requests only the chosen record. The dialog portals to the document body, locks scrolling, inerts background siblings, and uses the shared modal keyboard/focus hook. Calendar keeps Day details as the parent summary; Training leaves its list mounted beneath the dialog. This is a presentation and navigation change with no API, storage, or authority changes. Split target rendering remains in the shared chart component. See [the activity detail and chart contract](plans/ACTIVITY_SPLIT_COMPARISON.md).
+
 ## Reviewed split comparison extension (6 October 2026)
 
 One responsive bar-chart component serves Calendar and Training. Browser-safe core calculations are separate from server hashing/source validation and cloud/local repositories. A paired-device workflow prepares and publishes explicitly owner-reviewed pace blocks, independently of plan activation and session completion matching. See [ADR 0009](adr/0009-reviewed-activity-pace-comparisons.md) and [implementation/workflow](plans/ACTIVITY_SPLIT_COMPARISON.md).

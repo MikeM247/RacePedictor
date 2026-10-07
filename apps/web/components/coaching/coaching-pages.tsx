@@ -5,6 +5,7 @@ import { FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMous
 import type { ActivityDetail } from "../../../../packages/core/src/contracts/activity";
 import { readActivityDetailResponse } from "../../lib/activities-api-client";
 import { ActivityRecordContent } from "../activities/activities-shell";
+import { ActivityDetailDialog } from "../activities/activity-detail-dialog";
 import { TrainingTools } from "../dashboard/training-tools";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import {
@@ -36,6 +37,7 @@ import { ActivePlanOverview } from "./active-plan-overview";
 import { DailyWellbeingHistory } from "./daily-wellbeing-history";
 import { CalendarDaySummary } from "./calendar-day-summary";
 import { calendarDayRecords, compactCalendarMetric } from "../../lib/calendar-display";
+import { useModalKeyboard } from "./use-modal-keyboard";
 import {
   activePlanApiResponseSchema,
   currentContextApiResponseSchema,
@@ -168,87 +170,6 @@ function StatusLine({ state, message }: { state: RequestState; message?: string 
   return <p className={`coach-status coach-status--${state}`} role={state === "error" ? "alert" : "status"} aria-live="polite">
     {message ?? (state === "loading" ? "Working…" : state === "success" ? "Saved." : "Something went wrong.")}
   </p>;
-}
-
-const dialogFocusableSelector = [
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "textarea:not([disabled])",
-  "select:not([disabled])",
-  "summary",
-  "a[href]",
-  "[contenteditable='true']",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
-
-function dialogFocusableElements(container: HTMLElement | null) {
-  return Array.from(container?.querySelectorAll<HTMLElement>(dialogFocusableSelector) ?? []).filter((element) => {
-    if (!element.isConnected || element.closest("[inert]") || element.matches(":disabled")) return false;
-    const style = window.getComputedStyle(element);
-    return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
-  });
-}
-
-function useModalKeyboard<T extends HTMLElement>(
-  open: boolean,
-  close: () => void,
-  returnFocusRef?: { current: HTMLElement | null },
-  fallbackFocus?: () => HTMLElement | null,
-  preserveScroll = false,
-) {
-  const dialogRef = useRef<T>(null);
-  const closeRef = useRef(close);
-  const requestedCloseFocus = useRef<(() => HTMLElement | null) | null>(null);
-  closeRef.current = close;
-
-  useEffect(() => {
-    if (!open) return;
-    requestedCloseFocus.current = null;
-    const returnTarget = returnFocusRef?.current
-      ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    const frame = window.requestAnimationFrame(() => {
-      const target = dialogRef.current?.querySelector<HTMLElement>("[autofocus]")
-        ?? dialogFocusableElements(dialogRef.current)[0]
-        ?? dialogRef.current;
-      target?.focus();
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.requestAnimationFrame(() => {
-        // The closing route may mount its destination in the same commit that
-        // removes this dialog. Resolve here, after inertness is removed.
-        const requestedTarget = requestedCloseFocus.current?.();
-        requestedCloseFocus.current = null;
-        const target = requestedTarget ?? returnTarget;
-        if (target?.isConnected && !target.closest("[inert]") && (!preserveScroll || (target.getClientRects().length > 0 && target.tagName !== "BODY"))) target.focus({ preventScroll: preserveScroll });
-        else fallbackFocus?.()?.focus({ preventScroll: preserveScroll });
-      });
-    };
-  }, [open]);
-
-  function onKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeRef.current();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const focusable = dialogFocusableElements(dialogRef.current);
-    if (focusable.length === 0) { event.preventDefault(); dialogRef.current?.focus(); return; }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault(); last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault(); first.focus();
-    }
-  }
-
-  return {
-    dialogRef,
-    onKeyDown,
-    requestCloseFocus: (target: () => HTMLElement | null) => { requestedCloseFocus.current = target; },
-  };
 }
 
 export function DataQualityPage() {
@@ -1025,7 +946,10 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const [activitiesReadStatus, setActivitiesReadStatus] = useState<"available" | "unavailable">("available");
   const [rangeAnnouncement, setRangeAnnouncement] = useState("");
   const [activityDetails, setActivityDetails] = useState<Record<string, ActivityDetailState>>({});
+  const activityDetailsRef = useRef(activityDetails);
+  activityDetailsRef.current = activityDetails;
   const [selectedDetail, setSelectedDetail] = useState<CalendarDetail | null>(focusSessionId ? { kind: "session", id: focusSessionId, date: anchorDate } : null);
+  const [selectedCalendarActivity, setSelectedCalendarActivity] = useState<string | null>(null);
   const [state, setState] = useState<RequestState>("loading");
   const [message, setMessage] = useState<string>();
   const [staleMessage, setStaleMessage] = useState<string>();
@@ -1188,13 +1112,13 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }, [focusSessionId, range.from, sessions, state]);
 
   useEffect(() => {
-    if (!selectedDetail) return;
-    const records = activities.filter((activity) => activity.localDate === selectedDetail.date);
-    const missing = records.filter((activity) => !activityDetails[activity.id] || activityDetails[activity.id].status === "loading");
-    if (missing.length === 0) return;
+    if (!selectedCalendarActivity) return;
+    const summary = activities.find(activity => activity.id === selectedCalendarActivity);
+    if (!summary) return;
+    if (activityDetailsRef.current[summary.id]?.status === "success") return;
     const request = new AbortController();
-    setActivityDetails((current) => ({ ...current, ...Object.fromEntries(missing.map((activity) => [activity.id, { status: "loading" as const }])) }));
-    void Promise.all(missing.map(async (summary) => {
+    setActivityDetails((current) => ({ ...current, [summary.id]: { status: "loading" } }));
+    void (async () => {
       try {
         const response = await fetch(`/api/v1/activities/${encodeURIComponent(summary.id)}`, { signal: request.signal });
         const data = await readActivityDetailResponse(response);
@@ -1202,9 +1126,9 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       } catch (error) {
         if (!request.signal.aborted) setActivityDetails((current) => ({ ...current, [summary.id]: { status: "error", error: error instanceof Error ? error.message : "The activity could not be loaded." } }));
       }
-    }));
+    })();
     return () => request.abort();
-  }, [activities, selectedDetail, activityDetailRetry]);
+  }, [activities, selectedCalendarActivity, activityDetailRetry]);
 
   useEffect(() => {
     if (!selectedDetail || selectedDetail.kind === "day") { focusedRecordRef.current = null; return; }
@@ -1227,7 +1151,8 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     detailLauncherRef.current = launcher;
     focusedRecordRef.current = null;
     setSelectedDate(date);
-    setSelectedDetail({ kind, id, date });
+    if (kind === "activity") setSelectedCalendarActivity(id);
+    else setSelectedDetail({ kind, id, date });
   }
 
   function handleCalendarKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
@@ -1386,19 +1311,24 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     const plannedCompact = primarySession?.kind === "rest" ? "Rest" : primarySession ? compactCalendarMetric(primarySession.distanceMeters, primarySession.durationMinutes * 60) : "";
     const recordedCompact = compactActivity ? compactCalendarMetric(compactActivity.distanceMeters, compactActivity.elapsedTimeSeconds) : "";
     const metricLabel = compactCalendar ? `${primarySession ? `; planned ${plannedCompact}${primarySession.status === "skipped" ? ", skipped" : ""}` : ""}${compactActivity ? `; recorded ${recordedCompact}` : ""}` : "";
-    return <button id={`calendar-day-${date}`} className={`calendar-day${isToday ? " calendar-day--today" : ""}${inMonth ? "" : " calendar-day--outside"}`} type="button" onClick={openDay} aria-pressed={selectedDate === date} aria-current={isToday ? "date" : undefined} aria-haspopup={compactCalendar ? "dialog" : undefined} aria-label={`Select ${formatCoachingDate(date, "UTC")}${isToday ? ", today" : ""}; ${daySessions.length} planned, ${dayActivities.length} recorded${metricLabel}`} key={date}>
-      <span className="calendar-day-heading"><time dateTime={date}>{Number(date.slice(-2))}</time>{isToday ? <span className="today-marker">Today</span> : null}</span>
-      <span className="calendar-day-entries calendar-day-entries--full">
-        {primarySession ? <span className={`calendar-entry calendar-entry--planned${primarySession.kind === "rest" ? " calendar-entry--rest" : ""}`}><b>PLANNED</b><strong>{plannedLabel}</strong>{plannedMetrics ? <small>{plannedMetrics}</small> : null}</span> : null}
-        {compactActivity ? <span className="calendar-entry calendar-entry--actual"><b>RECORDED</b><strong>{compactActivity.title}</strong><small>{activityMetrics}</small></span> : null}
-        {extraCount > 0 ? <span className="calendar-entry-more">+{extraCount} more</span> : null}
-      </span>
-      <span className="calendar-day-entries calendar-day-entries--compact" aria-hidden="true">
-        {primarySession ? <span className={`calendar-compact-metric calendar-compact-metric--planned${primarySession.status === "skipped" ? " calendar-compact-metric--skipped" : ""}`}><span>P</span><strong>{plannedCompact}</strong>{primarySession.status === "skipped" ? <span className="calendar-compact-status">Skipped</span> : null}</span> : null}
-        {compactActivity ? <span className="calendar-compact-metric calendar-compact-metric--recorded"><span>R</span><strong>{recordedCompact}</strong></span> : null}
-        {extraCount > 0 ? <span className="calendar-compact-more">+{extraCount}</span> : null}
-      </span>
-    </button>;
+    return <div className="calendar-day-cell" key={date}>
+      <button id={`calendar-day-${date}`} className={`calendar-day${isToday ? " calendar-day--today" : ""}${inMonth ? "" : " calendar-day--outside"}`} type="button" onClick={openDay} aria-pressed={selectedDate === date} aria-current={isToday ? "date" : undefined} aria-haspopup={compactCalendar ? "dialog" : undefined} aria-label={`Select ${formatCoachingDate(date, "UTC")}${isToday ? ", today" : ""}; ${daySessions.length} planned, ${dayActivities.length} recorded${metricLabel}`}>
+        <span className="calendar-day-heading"><time dateTime={date}>{Number(date.slice(-2))}</time>{isToday ? <span className="today-marker">Today</span> : null}</span>
+        <span className="calendar-day-entries calendar-day-entries--full">
+          {primarySession ? <span className={`calendar-entry calendar-entry--planned${primarySession.kind === "rest" ? " calendar-entry--rest" : ""}`}><b>PLANNED</b><strong>{plannedLabel}</strong>{plannedMetrics ? <small>{plannedMetrics}</small> : null}</span> : null}
+          {extraCount > 0 ? <span className="calendar-entry-more">+{extraCount} more</span> : null}
+        </span>
+        <span className="calendar-day-entries calendar-day-entries--compact" aria-hidden="true">
+          {primarySession ? <span className={`calendar-compact-metric calendar-compact-metric--planned${primarySession.status === "skipped" ? " calendar-compact-metric--skipped" : ""}`}><span>P</span><strong>{plannedCompact}</strong>{primarySession.status === "skipped" ? <span className="calendar-compact-status">Skipped</span> : null}</span> : null}
+          {extraCount > 0 ? <span className="calendar-compact-more">+{extraCount} more</span> : null}
+        </span>
+        {compactActivity ? <span className="sr-only">{compactActivity.title} · {activityMetrics}</span> : null}
+      </button>
+      {compactActivity ? <button type="button" className="calendar-activity-launcher calendar-entry calendar-entry--actual" aria-label={`Open activity: ${compactActivity.title}`} aria-haspopup="dialog" onClick={(event) => openRecord("activity", compactActivity.id, date, event.currentTarget)}>
+        <span className="calendar-activity-full"><b>RECORDED</b><strong>{compactActivity.title}</strong><small>{activityMetrics}</small></span>
+        <span className="calendar-activity-compact calendar-compact-metric calendar-compact-metric--recorded" aria-hidden="true"><span>R</span><strong>{recordedCompact || "N/A"}</strong></span>
+      </button> : null}
+    </div>;
   }
 
   function renderActivityCard(activity: CalendarActivityView) {
@@ -1427,15 +1357,13 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     const hasRecords = dayActivities.length > 0;
     const title = selectedDetail.kind === "day" ? `Day details — ${formatCoachingDate(date, "UTC")}` : hasRecords ? "Run details" : selectedSession ? "Plan details" : "Calendar details";
 
-    return <div className="coach-dialog-backdrop"><section ref={detailModal.dialogRef} onKeyDown={detailModal.onKeyDown} className="coach-dialog coach-dialog--calendar-detail" role="dialog" aria-modal="true" aria-labelledby="calendar-detail-title">
+    return <div className="coach-dialog-backdrop" aria-hidden={Boolean(selectedCalendarActivity) || undefined} inert={Boolean(selectedCalendarActivity) || undefined}><section ref={detailModal.dialogRef} onKeyDown={detailModal.onKeyDown} className="coach-dialog coach-dialog--calendar-detail" role="dialog" aria-modal="true" aria-labelledby="calendar-detail-title">
       <div className="calendar-detail-heading"><div><p className="eyebrow">{formatCoachingDate(date, planTimezone)}</p><h2 id="calendar-detail-title">{title}</h2></div><button autoFocus className="button button-secondary" type="button" onClick={() => setSelectedDetail(null)}>Close details</button></div>
       {selectedDetail.kind === "day" && activitiesReadStatus === "unavailable" ? <div className="coach-status coach-status--error" role="alert"><p>Recorded activities could not be loaded. Retry the calendar to check this date.</p><button className="button button-secondary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></div> : null}
       {hasRecords ? <section className="calendar-detail-records" aria-label="Activity records">
-        {dayActivities.map((summary, recordIndex) => {
-          const detail = activityDetails[summary.id];
-          if (!detail || detail.status === "loading") return <p className="adjustment-cue" key={summary.id}>Loading activity record…</p>;
-          if (detail.status === "error") return <section className="coach-status coach-status--error" role="alert" key={summary.id}><p>Could not load this activity record: {detail.error}</p><button className="button button-secondary" type="button" onClick={() => { setActivityDetails((current) => { const next = { ...current }; delete next[summary.id]; return next; }); setActivityDetailRetry((value) => value + 1); }}>Retry</button></section>;
-          return detail.activity ? <section id={`calendar-record-${summary.id}`} tabIndex={-1} className="activity-detail calendar-activity-record" aria-labelledby={`calendar-record-context-${summary.id}`} key={summary.id}><span className="sr-only" id={`calendar-record-context-${summary.id}`}>Record {recordIndex + 1}: {summary.title}</span><ActivityRecordContent activity={detail.activity} headingId={`calendar-activity-${summary.id}`} landmarkContextId={`calendar-record-context-${summary.id}`} headingLevel={3} /></section> : null;
+        {dayActivities.map((activity) => {
+          const metrics = [activity.distanceMeters > 0 ? formatDistance(activity.distanceMeters) : null, activity.elapsedTimeSeconds > 0 ? formatDuration(activity.elapsedTimeSeconds) : null, activity.averagePaceSecondsPerKm > 0 ? `${formatPace(activity.averagePaceSecondsPerKm)}/km` : null].filter(Boolean).join(" · ");
+          return <article className="calendar-activity-summary" key={activity.id}><p className="eyebrow">Recorded activity</p><h3>{activity.title}</h3><p>{metrics || "Recorded metrics unavailable"}</p><button className="text-link" type="button" aria-haspopup="dialog" aria-label={`View activity: ${activity.title}`} onClick={(event) => { detailLauncherRef.current = event.currentTarget; setSelectedCalendarActivity(activity.id); }}>Open activity details →</button></article>;
         })}
       </section> : selectedDetail.kind === "day" ? activitiesReadStatus === "available" ? <p className="adjustment-cue">No recorded activity.</p> : null : date <= today ? <p className="adjustment-cue">{activitiesReadStatus === "unavailable" ? "Activity records could not be loaded. Retry the calendar to check recorded runs." : "No run recorded."}</p> : null}
       <DailyWellbeingHistory localDate={date} timezone={planTimezone} />
@@ -1497,7 +1425,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   return <CoachShell page="calendar" title="Calendar" subtitle="Your planned sessions and recorded activities" meta={planTimezone}>
     <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="calendar-month-toolbar"><button className="button button-secondary" type="button" onClick={() => moveMonth(-1)} aria-label="Previous month">‹</button><label className="calendar-month-picker"><span className="sr-only">Choose month</span><select value={range.month} onChange={(event) => chooseDate(`${event.target.value}-01`)} aria-label="Choose month and year">{Array.from({ length: 36 }, (_, index) => { const year = Number(range.month.slice(0, 4)) - 1 + Math.floor(index / 12); const month = String((index % 12) + 1).padStart(2, "0"); return <option value={`${year}-${month}`} key={`${year}-${month}`}>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(`${year}-${month}-01T12:00:00.000Z`))}</option>; })}</select></label><button className="button button-secondary" type="button" onClick={() => moveMonth(1)} aria-label="Next month">›</button><button className="button button-secondary" type="button" onClick={() => chooseDate(today)}>Today</button></div><div className="calendar-legend"><span>● Planned</span><span>● Recorded</span></div><p id="calendar-scroll-help" className="sr-only">Select a date, then open any planned session or recorded activity.</p></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
-    {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h3>Calendar could not be loaded</h3><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
+    {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h2>Calendar could not be loaded</h2><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
     {state === "success" && message ? <StatusLine state="success" message={message} /> : null}
     <StatusLine state={actionState} message={actionMessage} />
     {state === "success" && staleMessage ? <section className="coach-panel calendar-state-panel calendar-state-panel--stale" role="status"><strong>Schedule context needs review</strong><span>{staleMessage} The approved plan has not been changed.</span><Link className="text-link" href="/dashboard/plan">Review plan</Link></section> : null}
@@ -1519,6 +1447,14 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     <section className="calendar-month-summary" aria-label={`${range.monthLabel} at a glance`}><div><span className="eyebrow">{range.monthLabel} at a glance</span><strong>{monthActivities.length}</strong><small>recorded runs</small></div><div><strong>{formatDistance(monthTotals.distance)}</strong><small>recorded distance</small></div><div><strong>{formatMinutes(monthTotals.time)}</strong><small>recorded time</small></div><div><strong>{monthTotals.caloriesKnown ? monthTotals.calories.toLocaleString() : "Unavailable"}</strong><small>calories</small></div><div className="calendar-planned-summary"><strong>{monthTotals.plannedDistanceKnown ? formatDistance(monthTotals.plannedDistance) : "Distance n/a"}</strong><small>planned · {monthTotals.plannedSessions} sessions · {formatMinutes(monthTotals.plannedTime)}</small></div></section>
     </details></> : null}
     {renderCalendarDetail()}
+    {selectedCalendarActivity ? (() => {
+      const record = activityDetails[selectedCalendarActivity];
+      const summary = activities.find(activity => activity.id === selectedCalendarActivity);
+      const status = record?.status === "error" ? "error" : record?.status === "success" && record.activity ? "ready" : "loading";
+      return <ActivityDetailDialog open title={record?.activity?.title || summary?.title || "Activity details"} parentLabel="Back to Calendar" onClose={() => setSelectedCalendarActivity(null)} returnFocusRef={detailLauncherRef} fallbackFocus={() => document.getElementById(`calendar-day-${selectedDate}`)} status={status} error={record?.error} onRetry={status === "error" ? () => { setActivityDetails(current => { const next = { ...current }; delete next[selectedCalendarActivity]; return next; }); setActivityDetailRetry(value => value + 1); } : undefined}>
+        {record?.activity ? <ActivityRecordContent activity={record.activity} headingId="calendar-activity-dialog-heading" headingLevel={1} showTitle={false} /> : null}
+      </ActivityDetailDialog>;
+    })() : null}
     {pending ? <div className="coach-dialog-backdrop"><form ref={pendingModal.dialogRef} onKeyDown={pendingModal.onKeyDown} onSubmit={(event) => { event.preventDefault(); void confirmEdit(); }} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">
       <h2 id="calendar-edit-title">Confirm {pending.operation}</h2>
       <p><strong>{pending.session.title}</strong>{pending.date ? ` will move from ${pending.session.effectiveDate} to ${pending.date}.` : ` will be marked ${pending.operation === "skip" ? "skipped" : "upcoming"}.`} Its prescribed date remains {pending.session.prescribedDate}.</p>

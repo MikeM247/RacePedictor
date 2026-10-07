@@ -36,7 +36,7 @@ async function loadFixtureTrainingHistory(page: Page) {
   await expect(page.getByRole("button", { name: /F04 first/ })).toBeVisible();
 }
 
-test("F04 keeps a selected detail and its parent control while filters are empty or history fails", async ({ page }) => {
+test("F04 opens a full-screen selected detail and preserves its list context when returning", async ({ page }) => {
   await fixtureTraining(page);
   await page.goto("/dashboard/activities");
   await loadFixtureTrainingHistory(page);
@@ -44,16 +44,25 @@ test("F04 keeps a selected detail and its parent control while filters are empty
   await page.getByRole("button", { name: "Load more activities" }).click();
   const selected = page.getByRole("button", { name: /F04 selected beyond page one/ });
   await selected.click();
-  await expect(page.getByRole("heading", { name: "F04 selected beyond page one" })).toBeVisible();
+  const detail = page.getByRole("dialog", { name: "F04 selected beyond page one" });
+  await expect(detail).toBeVisible();
+  await expect(detail).toHaveClass(/activity-detail-dialog/);
+  expect(await detail.boundingBox()).toMatchObject({ x: 0, y: 0, width: 1280, height: 720 });
+  expect(await page.locator(".activities-layout").evaluate(element => Boolean(element.closest("[inert]")))).toBe(true);
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+  await page.getByRole("button", { name: "← Back to Training" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(selected).toBeFocused();
+  await expect(selected).toHaveAttribute("aria-current", "true");
   await page.getByLabel("Search activities").fill("empty");
   await page.getByRole("button", { name: "Apply filters" }).click();
   await expect(page.getByRole("heading", { name: "No matching activities" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "F04 selected beyond page one" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "← Back to Training" })).toBeVisible();
+  await expect(page.getByText("This selected activity is outside the displayed results.")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByLabel("Search activities").fill("outage");
   await page.getByRole("button", { name: "Apply filters" }).click();
   await expect(page.getByText("Could not load training history.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "F04 selected beyond page one" })).toBeVisible();
+  await expect(page.getByText("This selected activity is outside the displayed results.")).toBeVisible();
 });
 
 test("F04 restores three loaded pages and focus through Back, keeps disclosures local, and never writes", async ({ page }) => {
@@ -66,6 +75,7 @@ test("F04 restores three loaded pages and focus through Back, keeps disclosures 
   const selected = page.getByRole("button", { name: /F04 selected beyond page one/ });
   await selected.click();
   await expect(page.getByRole("heading", { name: "F04 selected beyond page one" })).toBeFocused();
+  await expect(page.getByRole("dialog")).toBeVisible();
   for (const name of ["Additional telemetry", "Route details"]) await expect(page.locator("details", { hasText: name }).first()).not.toHaveAttribute("open", "");
   await page.locator("details", { hasText: "Additional telemetry" }).locator("summary").click();
   await expect(page.getByText("Average heart rate")).toBeVisible();

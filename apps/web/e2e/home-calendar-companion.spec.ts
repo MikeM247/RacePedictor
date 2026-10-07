@@ -51,7 +51,7 @@ test("mixed multiple records open independently with original/history and feedba
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockCompanion(page);
   await page.goto(`/dashboard/calendar?date=${date}`);
-  const cell = page.locator(".calendar-day").filter({ hasText: "Planned session 1" });
+  const cell = page.locator(".calendar-day-cell").filter({ hasText: "Planned session 1" });
   await expect(cell).toContainText("RECORDED");
   await expect(cell).toContainText("+2 more");
   const pane = page.getByRole("complementary", { name: "Selected day" });
@@ -74,12 +74,21 @@ test("mixed multiple records open independently with original/history and feedba
   for (const activity of activities) {
     const launcher = pane.getByRole("button", { name: `View activity: ${activity.title}` });
     await launcher.click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.locator(`#calendar-record-${activity.id}`)).toBeFocused();
+    const dialog = page.getByRole("dialog", { name: activity.title });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator(".activity-dialog-header .detail-back-button")).toBeFocused();
+    await expect(dialog.locator(".activity-dialog-logo")).toBeVisible();
+    await expect(dialog).toHaveClass(/activity-detail-dialog/);
     await expect(dialog).toContainText("Run at a glance");
     await expect(dialog).toContainText("Athlete feedback");
-    await expect(dialog.getByRole("heading", { name: "AI coach feedback", exact: true })).toHaveCount(2);
+    await expect(dialog.getByRole("heading", { name: "AI coach feedback", exact: true })).toHaveCount(1);
+    await expect(dialog).not.toContainText(activity.id === "recorded-1" ? "Recorded run 2" : "Recorded run 1");
+    expect(await dialog.boundingBox()).toMatchObject({ x: 0, y: 0, width: 1440, height: 900 });
+    expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(true);
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    if (activity.id === "recorded-1") await expectAxeClean(page, "full-screen Activity detail dialog");
     await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(launcher).toBeFocused();
   }
   await expectAxeClean(page, "desktop mixed calendar");
@@ -89,7 +98,7 @@ test("mixed multiple records open independently with original/history and feedba
   expectNoApplicationWrites(writes);
 });
 
-test("compact month opens every day record, preserves deep links, history, feedback and focus", async ({ page }) => {
+test("compact day summary opens one full activity, preserves deep links, history and focus", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockCompanion(page);
   await page.goto(`/dashboard/calendar?date=${date}&session=planned-2`);
@@ -99,14 +108,21 @@ test("compact month opens every day record, preserves deep links, history, feedb
   await expect(page.getByRole("complementary", { name: "Selected day" })).toBeHidden();
   const cell = dayCell(page, date);
   await expect(cell.locator(".calendar-day-entries--compact")).toContainText("7 km");
-  await expect(cell.locator(".calendar-day-entries--compact")).toContainText("5 km");
-  await expect(cell.locator(".calendar-compact-more")).toHaveText("+2");
+  await expect(page.getByRole("button", { name: "Open activity: Recorded run 1" }).locator(".calendar-activity-compact")).toContainText("5 km");
+  await expect(cell.locator(".calendar-compact-more")).toHaveText("+2 more");
   await cell.click();
   const dialog = page.getByRole("dialog", { name: "Day details — 03 Oct 2026" });
   await expect(dialog.locator(".session-card")).toHaveCount(2);
-  await expect(dialog.locator(".calendar-activity-record")).toHaveCount(2);
-  await expect(dialog).toContainText("Athlete feedback");
-  await expect(dialog.getByRole("heading", { name: "AI coach feedback", exact: true })).toHaveCount(2);
+  await expect(dialog.locator(".calendar-activity-summary")).toHaveCount(2);
+  const activityLauncher = dialog.getByRole("button", { name: "View activity: Recorded run 1" });
+  await activityLauncher.click();
+  const activityDialog = page.getByRole("dialog", { name: "Recorded run 1" });
+  await expect(activityDialog).toContainText("Run at a glance");
+  await expect(activityDialog).toContainText("Athlete feedback");
+  await expect(activityDialog.getByRole("heading", { name: "AI coach feedback", exact: true })).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(activityLauncher).toBeFocused();
   await dialog.locator("#session-planned-2 .session-source summary").click();
   await expect(dialog.locator("#session-planned-2")).toContainText("Original approved prescription.");
   await dialog.locator("#session-planned-2 .session-history summary").click();
@@ -118,6 +134,36 @@ test("compact month opens every day record, preserves deep links, history, feedb
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(e2eRoot, "companion-calendar-mobile-viewport.png") });
   await page.screenshot({ path: path.join(e2eRoot, "companion-calendar-mobile.png"), fullPage: true });
+});
+
+test("activity dialog fills the viewport and restores focus, scroll and background state responsively", async ({ page }) => {
+  await mockCompanion(page);
+  for (const width of [320, 390, 768, 1024, 1440, 720]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/dashboard/calendar?date=${date}`);
+    const launcher = page.getByRole("button", { name: "Open activity: Recorded run 1" });
+    await launcher.click();
+    const dialog = page.getByRole("dialog", { name: "Recorded run 1" });
+    await expect(dialog).toBeVisible();
+    expect(await dialog.boundingBox()).toMatchObject({ x: 0, y: 0, width, height: 844 });
+    await expect(dialog.locator(".activity-dialog-logo")).toBeVisible();
+    await expect(dialog.locator(".detail-primary-metrics")).toBeVisible();
+    const metricColumns = await dialog.locator(".detail-primary-metrics").evaluate(element => getComputedStyle(element).gridTemplateColumns.split(" ").length);
+    expect(metricColumns).toBe(width <= 767 ? 2 : 4);
+    expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(true);
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    // 720 CSS px approximates a 1440px desktop viewport at 200% browser zoom.
+    await page.screenshot({ path: path.join(e2eRoot, `activity-dialog-${width}.png`) });
+    await page.keyboard.press("Shift+Tab");
+    expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(launcher).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+    expect(await page.locator("#dashboard-main-content").evaluate(element => !element.closest("[inert]"))).toBe(true);
+  }
 });
 
 test("one-kind overflow, unavailable records and API timezone stay truthful", async ({ page }) => {
@@ -196,21 +242,21 @@ test("one record read can recover independently and future-dated records remain 
   });
   await page.goto(`/dashboard/calendar?date=${date}`);
   await page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View activity: Recorded run 2" }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.locator("#calendar-record-recorded-1")).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Recorded run 2" });
   await expect(dialog.getByRole("alert")).toContainText("Controlled record outage");
   fail = false;
-  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(dialog.locator("#calendar-record-recorded-2")).toBeFocused();
+  await dialog.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(dialog).toContainText("Run at a glance");
   expect(detailReads).toBe(2);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(dialog.locator("#calendar-record-recorded-2")).toBeFocused();
+  await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
   const future = "2026-10-04";
   await mockCompanion(page, { planned: [], recorded: [{ ...activities[0], localDate: future }] });
   await page.goto(`/dashboard/calendar?date=${future}`);
   await dayCell(page, future).click();
-  await expect(page.getByRole("dialog").locator("#calendar-record-recorded-1")).toBeVisible();
+  await page.getByRole("dialog", { name: /^Day details/ }).getByRole("button", { name: "View activity: Recorded run 1" }).click();
+  await expect(page.getByRole("dialog", { name: "Recorded run 1" })).toContainText("Run at a glance");
 });
 
 test("mobile month covers planned, recorded, multiple, empty, rest, skipped, moved and missing metrics", async ({ page }) => {
@@ -233,18 +279,20 @@ test("mobile month covers planned, recorded, multiple, empty, rest, skipped, mov
     await page.goto(`/dashboard/calendar?date=${date}`);
     const cell = dayCell(page, date);
     const compact = cell.locator(".calendar-day-entries--compact");
+    const activityLauncher = variant.recorded.length ? page.getByRole("button", { name: `Open activity: ${variant.recorded[0].title}` }).first() : null;
     await expect(cell).toHaveAttribute("aria-haspopup", "dialog");
     const extras = Math.max(0, variant.planned.length - 1) + Math.max(0, variant.recorded.length - 1);
-    if (extras) await expect(compact.locator(".calendar-compact-more")).toHaveText(`+${extras}`);
+    if (extras) await expect(compact.locator(".calendar-compact-more")).toHaveText(`+${extras} more`);
     else await expect(compact.locator(".calendar-compact-more")).toHaveCount(0);
     if (variant.planned[0]?.kind === "rest") await expect(compact).toContainText("Rest");
     if (variant.planned[0]?.status === "skipped") await expect(compact).toContainText("Skipped");
-    if (variant.recorded[0]?.elapsedTimeS === 1500) { await expect(compact).toContainText("45 min"); await expect(compact).toContainText("25 min"); }
-    if (variant.recorded[0]?.elapsedTimeS === 0) { await expect(compact.locator("strong")).toHaveText(["N/A", "N/A"]); await expect(compact).not.toContainText("0 km"); }
+    if (variant.recorded[0]?.elapsedTimeS === 1500) { await expect(compact).toContainText("45 min"); await expect(activityLauncher!.locator(".calendar-activity-compact")).toContainText("25 min"); }
+    if (variant.recorded[0]?.elapsedTimeS === 0) { await expect(compact.locator("strong")).toHaveText("N/A"); await expect(activityLauncher!.locator(".calendar-activity-compact strong")).toHaveText("N/A"); await expect(compact).not.toContainText("0 km"); }
     await cell.click();
     const dialog = page.getByRole("dialog", { name: "Day details — 03 Oct 2026" });
     await expect(dialog.locator(".session-card")).toHaveCount(variant.planned.length);
-    await expect(dialog.locator(".calendar-activity-record")).toHaveCount(variant.recorded.length);
+    await expect(dialog.locator(".calendar-activity-summary")).toHaveCount(variant.recorded.length);
+    await expect(dialog.locator(".calendar-activity-record")).toHaveCount(0);
     if (!variant.recorded.length) await expect(dialog).toContainText("No recorded activity.");
     if (!variant.planned.length) await expect(dialog).toContainText("No session scheduled in the active plan for this date.");
     if (variant.planned.length) {
@@ -269,7 +317,7 @@ test("mobile day unavailable status and individual record retries preserve other
   await expect(dialog).not.toContainText("No recorded activity.");
   await mockCompanion(page);
   await dialog.getByRole("button", { name: "Retry calendar" }).click();
-  await expect(dialog.locator(".calendar-activity-record")).toHaveCount(2);
+  await expect(dialog.locator(".calendar-activity-summary")).toHaveCount(2);
   await expect(dialog.getByRole("button", { name: "Retry calendar" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(cell).toBeFocused();
@@ -281,12 +329,16 @@ test("mobile day unavailable status and individual record retries preserve other
   });
   await page.reload();
   await cell.click();
-  await expect(dialog.locator("#calendar-record-recorded-1")).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText("Day detail outage");
+  await dialog.getByRole("button", { name: "View activity: Recorded run 2" }).click();
+  const activityDialog = page.getByRole("dialog", { name: "Recorded run 2" });
+  await expect(activityDialog.getByRole("alert")).toContainText("Day detail outage");
   failed = false;
-  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(dialog.locator("#calendar-record-recorded-2")).toBeVisible();
+  await activityDialog.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(activityDialog).toContainText("Run at a glance");
   expect(reads).toBe(2);
+  await page.keyboard.press("Escape");
+  await expect(activityDialog).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: /^Day details/ })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(cell).toBeFocused();
 });
@@ -395,7 +447,7 @@ test("logo-only nav and mobile month reflow at required widths and 200 percent",
       await expect(cell.locator(".calendar-day-entries--full")).toBeHidden();
       await cell.click();
       const dialog = page.getByRole("dialog", { name: "Day details — 03 Oct 2026" });
-      await expect(dialog.locator(".calendar-activity-record")).toHaveCount(2);
+      await expect(dialog.locator(".calendar-activity-summary")).toHaveCount(2);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
       await page.screenshot({ path: path.join(e2eRoot, `month-day-dialog-${width}.png`) });

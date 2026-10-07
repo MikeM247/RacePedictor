@@ -356,6 +356,10 @@
 .calendar-day-card span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .calendar-day-card small{margin-top:auto;color:var(--rp-amber,#f4b942)}
 .coach-dialog--calendar-detail{display:grid;gap:14px;width:min(760px,100%)}
+.calendar-activity-summary{display:grid;gap:8px;padding:14px 0 14px 14px;border-left:3px solid var(--rp-lime)}
+.calendar-activity-summary h3,.calendar-activity-summary p{margin:0}
+.calendar-activity-summary .eyebrow{color:var(--rp-lime)}
+.calendar-activity-summary>.text-link{justify-self:start;min-height:44px;color:var(--rp-text,#f5f8fc);text-decoration:underline;text-underline-offset:3px}
 .coach-dialog--calendar-detail>.session-card{min-width:0}
 .calendar-detail-records{display:grid;gap:12px}
 .calendar-plan-context{display:grid;gap:8px;padding-top:12px;border-top:1px solid var(--rp-border,#293b4e)}
@@ -634,3 +638,21 @@
 .calendar-wellbeing-history { margin-top: 1rem; padding: 1rem; border: 1px solid var(--rp-border); background: var(--rp-surface-soft); }
 .calendar-wellbeing-history h3 { margin: .25rem 0; font-size: 1rem; }
 .calendar-wellbeing-history p { margin: .35rem 0 0; }
+.calendar-day-cell{display:flex;flex-direction:column;min-width:0;min-height:112px;border:1px solid var(--rp-border);background:var(--rp-surface-soft);color:var(--rp-text)}
+.calendar-presentation .calendar-day-cell{min-height:112px;border-radius:0}
+.calendar-day-cell:has(.calendar-day--today){border-top:2px solid var(--rp-cyan)}
+.calendar-day-cell:has(.calendar-day[aria-pressed="true"]){outline:2px solid var(--rp-violet);outline-offset:-2px;z-index:1}
+.calendar-day-cell>.calendar-day{flex:1;min-height:0;width:100%;padding:8px 9px;border:0;border-radius:0;background:transparent;box-shadow:none;color:inherit;font:inherit;text-align:left}
+.calendar-day-cell>.calendar-day:hover,.calendar-day-cell>.calendar-day:focus-visible{background:var(--rp-surface-raised)}
+.calendar-day-cell>.calendar-day--outside{color:var(--rp-text-muted)}
+.calendar-day-cell .calendar-day-entries--compact{display:none}
+.calendar-activity-launcher{display:grid;width:calc(100% - 12px);min-height:44px;margin:0 6px 6px;padding:5px 7px;border:0;border-left:3px solid var(--rp-lime);border-radius:5px;background:color-mix(in srgb,var(--rp-lime) 9%,var(--rp-surface));color:var(--rp-text);text-align:left;cursor:pointer}
+.calendar-activity-launcher:focus-visible{outline:3px solid var(--rp-cyan);outline-offset:1px}
+.calendar-activity-launcher:hover{background:color-mix(in srgb,var(--rp-lime) 16%,var(--rp-surface))}
+.calendar-activity-full{display:grid;gap:2px;min-width:0}
+.calendar-activity-full b{color:var(--rp-lime);font-size:11px;letter-spacing:.06em}
+.calendar-activity-full strong,.calendar-activity-full small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calendar-activity-full strong{font-size:13px}.calendar-activity-full small{color:var(--rp-text-muted);font-size:12px}
+.calendar-activity-compact{display:none}
+@media(max-width:1199px){.calendar-presentation .calendar-day-cell{min-height:112px!important}.calendar-presentation .calendar-day-cell>.calendar-day{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr;padding:6px}.calendar-presentation .calendar-day-cell .calendar-day-entries--full{display:none}.calendar-presentation .calendar-day-cell .calendar-day-entries--compact{display:grid;gap:5px;align-content:start}.calendar-presentation .calendar-activity-full{display:none}.calendar-presentation .calendar-activity-compact{display:grid;grid-template-columns:minmax(0,1fr);gap:0;padding:2px;border:0;background:transparent}.calendar-presentation .calendar-activity-launcher{margin:0 4px 4px;padding:3px 4px;width:calc(100% - 8px);min-height:36px}.calendar-presentation .calendar-compact-metric{grid-template-columns:minmax(0,1fr);gap:0;padding:2px}.calendar-presentation .calendar-compact-metric>span:first-child{font-size:11px}}
+@media(max-width:767px){.calendar-presentation .calendar-day-cell{min-height:112px!important}.calendar-presentation .calendar-day-cell>.calendar-day{padding:4px 2px}.calendar-presentation .calendar-activity-launcher{min-height:38px;margin:0 2px 3px;padding:2px}.calendar-presentation .calendar-activity-compact{font-size:11px}}

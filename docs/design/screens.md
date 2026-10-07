@@ -2,6 +2,8 @@
 
 > **4 October 2026 redesign amendment:** follow the latest owner amendment in DESIGN_INTENT_CONTRACT.md and [the mobile month handoff](../plans/CALENDAR_MOBILE_MONTH_IMPLEMENTATION.md). Primary navigation is Home/Calendar; Settings exposes supporting management/history/import/recovery. Navigation uses the existing logo without duplicate app-name text. Calendar uses the Monday-first month grid at every width: desktop at 1200px and above retains the selected-day sidebar, while smaller widths open the complete date-specific Day details dialog on day taps. Compact cells show the first planned and recorded distance/duration or N/A with accurate +N; every record remains available in full detail. The old compact week/date selector and agenda are replaced. Month/scroll position, adjacent dates, Today, saved timezone, totals, deep links, focus, history and permitted actions remain. Vertical scrolling is allowed at narrow widths and zoom; no full-screen-fit requirement may clip content or shrink detail prose.
 
+> **7 October 2026 activity-detail amendment:** Recorded activity buttons in Calendar cells open the shared full-viewport Activity detail dialog directly. Selecting the date still opens the selected-day summary on desktop and Day details on compact screens; those surfaces show activity summary launchers, with full records opening in the same dialog. Returning to a compact Day view restores its launcher. Training activity rows open the same dialog while the activity list remains mounted underneath. Keep one active modal with a persistent logo/Back header, one scroll region, focus trapping/restoration, Escape, inert background and body-scroll lock. The splits chart opens to All splits; Detail fits up to ten 44px columns. Hollow solid lavender target outlines exactly align with actual bars and reach the baseline, with a same-width range band. See [the activity dialog and split handoff](../plans/ACTIVITY_SPLIT_COMPARISON.md).
+
 > Redesign authority: [DESIGN_INTENT_CONTRACT.md](DESIGN_INTENT_CONTRACT.md) now governs redesign navigation, presentation, interaction, and UX acceptance where this specification differs. Retain the domain behavior and data/approval boundaries documented here. The historical specification below remains a reference for existing functionality.
 
 This is the Phase 1 screen and state source of truth. `docs/UI_UX_SPEC.md` defines shared UX behavior and `docs/UI_GUIDELINES.md` defines visual rules.
@@ -46,9 +48,9 @@ The former Overview purpose evolves into Today. Planning conversation is launche
 ### Calendar
 
 - Default to a complete Monday–Sunday month grid. Previous/next controls, a month/year picker, and Today navigate the month; Page Up/Page Down changes month while the grid is focused.
-- Show active-plan sessions and recorded running activities together in each date cell, using violet planned and lime recorded treatments. Selecting a date opens the full activity and plan detail dialog.
+- Show active-plan sessions and recorded running activities together in each date cell, using violet planned and lime recorded treatments. Selecting a date opens the day summary; the separate recorded-activity control opens that run directly in the full-viewport Activity detail dialog.
 - Desktop uses a weekly totals rail and monthly summary. “Full width” means the available content area beside the standard application sidebar; the sidebar remains in its shared left position. Compact layouts use a weekly totals selector and monthly summary beneath the grid; the month overview does not require vertical scrolling at supported default viewports.
-- Each date has an information control. It opens active-plan details for future dates. For today and past dates, it shows each full Activity record first, then the currently active plan's scheduled session context.
+- Date selection and recorded activity selection are sibling controls. Day details retains planned-session actions and activity summary launchers. It opens one full activity at a time in the shared dialog, then returns to the original launcher. No activity record read is made for unrelated activities.
 - Calendar includes sessions from the current active plan only. Retired plan versions remain available on Plan.
 - Reschedule, skip, and restore require confirmation and have keyboard-accessible alternatives to drag-and-drop.
 - Warn before confirmation about same-day collisions and dates outside the plan range; an out-of-range move cannot be confirmed.
@@ -59,7 +61,7 @@ The former Overview purpose evolves into Today. Planning conversation is launche
 - Activities provides explicit CSV or GPX file selection; GPX accepts one activity per file.
 - Import result exposes accepted, duplicate, rejected, and warning counts with recoverable detail.
 - All normalized history remains browseable; re-import is idempotent.
-- Preserve the activity list and filters while selected activity details load. Compact layouts provide an explicit return to the selected list row.
+- Preserve the activity list, filters, loaded pages, scroll position, selected row and disclosures while activity detail is open. The shared full-viewport dialog has contextual Back and supports direct `activityId` links, loading/retry states and history recovery.
 - Data Quality identifies whether the user should correct/re-upload, retry normalization, or take no action.
 
 ### Settings

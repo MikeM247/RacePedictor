@@ -64,10 +64,10 @@ const fixtureContext = () => ({
 
 const currentScreenRoutes = [
   { href: "/dashboard", heading: "Home", nav: "Home" },
-  { href: "/dashboard/calendar", heading: "Calendar", nav: "Plan" },
-  { href: "/dashboard/plan", heading: "Plan", nav: "Plan" },
-  { href: "/dashboard/activities", heading: "Training", nav: "Training" },
-  { href: "/dashboard/data-quality", heading: "Data Quality", nav: "Data Quality" },
+  { href: "/dashboard/calendar", heading: "Calendar", nav: "Calendar" },
+  { href: "/dashboard/plan", heading: "Plan", nav: null },
+  { href: "/dashboard/activities", heading: "Training", nav: null },
+  { href: "/dashboard/data-quality", heading: "Data Quality", nav: null },
   { href: "/dashboard/settings", heading: "Settings", nav: "Settings" },
 ] as const;
 
@@ -777,7 +777,7 @@ test("Calendar deep links reveal a prescribed session outside the current week a
   await expect(page.getByRole("dialog", { name: "Plan details" })).toHaveCount(0);
 });
 
-test("Calendar shows full recorded runs before current active-plan context", async ({ page }) => {
+test("Calendar activity launcher opens directly and returns to the selected-day summary", async ({ page }) => {
   const date = "2026-08-13";
   await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill({
     status: 200,
@@ -819,14 +819,17 @@ test("Calendar shows full recorded runs before current active-plan context", asy
   await expect(emptyRecordedDay).not.toContainText("RECORDED");
   await page.getByRole("button", { name: /Select 13 Aug 2026/ }).click();
   await page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View activity: Morning Run" }).click();
-  const detail = page.getByRole("dialog", { name: "Run details" });
+  const detail = page.getByRole("dialog", { name: "Morning Run" });
   await expect(detail.getByRole("heading", { name: "Morning Run" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
   await expect(detail.getByRole("heading", { name: "Run at a glance" })).toBeVisible();
   await expect(detail).toContainText("10.00 km");
-  await expect(detail).toContainText("Active plan · session scheduled for this date");
-  await expect(detail).toContainText(/does not indicate that any recorded run completed the prescription/i);
-  await expect(detail).toContainText("Run 10 km at an easy effort.");
   await expect(detail).not.toContainText("historical plan");
+  await detail.getByRole("button", { name: "← Back to Calendar" }).click();
+  const selectedDay = page.getByRole("complementary", { name: "Selected day" });
+  await expect(selectedDay).toContainText("Easy 10 km");
+  await expect(selectedDay).toContainText("Morning Run");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("Calendar recovers from errors, marks today, and warns before conflicting or out-of-range moves on mobile", async ({ page }) => {
@@ -1320,7 +1323,7 @@ test("core screens render without overflow with reduced motion and forced colors
   for (const route of currentScreenRoutes) {
     await page.goto(route.href);
     await expect(page.getByRole("heading", { level: 1, name: route.heading, exact: true })).toBeVisible();
-    await expect(page.getByLabel("Application navigation")
+    if (route.nav) await expect(page.getByLabel("Application navigation")
       .getByRole("link", { name: route.nav, exact: true })).toHaveAttribute("aria-current", "page");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   }

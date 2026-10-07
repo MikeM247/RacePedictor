@@ -1,5 +1,9 @@
 # Calendar mobile month and logo-only navigation
 
+## 7 October 2026 activity-detail amendment
+
+Calendar now separates selecting a date from selecting a recorded activity. The date control keeps the desktop selected-day summary and compact Day details flow. Each recorded activity title/metric control is a sibling launcher into the shared full-viewport Activity detail dialog, so a direct cell click bypasses Day details. Activity summaries inside Day details launch one full record at a time; Back/Escape restores the Day view and launcher. Calendar opens only the selected activity detail request and cancels it when the selection changes or closes. The app-level dialog keeps a fixed logo/Back header and one scrolling content region, traps focus, inerts other page content, locks body scrolling, and restores focus to the launcher or selected date if the responsive breakpoint removes Day details. See [the updated design contract](../design/DESIGN_INTENT_CONTRACT.md#7-october-2026-activity-dialog-and-split-presentation-amendment) and [split comparison implementation](ACTIVITY_SPLIT_COMPARISON.md).
+
 4 October 2026 · `codex/home-calendar-redesign` · local implementation handoff
 
 ## Story Implemented

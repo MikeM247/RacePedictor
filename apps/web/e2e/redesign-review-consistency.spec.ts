@@ -57,7 +57,7 @@ test("F03 reuses the same persisted review, qualification, and evidence on Home,
   const day = page.locator(".calendar-day").filter({ hasText: "F03 recorded run" });
   await day.click();
   await page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View activity: F03 recorded run" }).click();
-  const dialog = page.getByRole("dialog", { name: "Run details" });
+  const dialog = page.getByRole("dialog", { name: "F03 recorded run" });
   await expect(dialog.getByRole("heading", { name: "A controlled recorded run." })).toBeVisible();
   await expect(dialog.getByText("Suggested plan match — not confirmed", { exact: false })).toBeVisible();
   await dialog.getByText("Review evidence").click();

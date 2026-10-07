@@ -1,14 +1,18 @@
 # Activity split comparison
 
-Implemented 2026-10-06 from the approved desktop/mobile bar-chart design.
+Implemented 2026-10-06 from the approved desktop/mobile bar-chart design; updated 2026-10-07 for the shared activity dialog and refined split targets.
+
+## Activity entry and full-screen detail
+
+Calendar and Training share one full-viewport `ActivityDetailDialog`. In Calendar, the date control continues to open or select the day summary, while each recorded activity title/metric control opens that activity directly. The compact Day details dialog retains planned-session actions and activity summary launchers; opening an activity overlays its full record and closing restores the day view and launcher. Training rows and direct `activityId` links open the same dialog while the activity list, filters, loaded pages, scroll position, selected-row context, and browser history remain mounted. The dialog includes the existing brand image and contextual Back to Calendar/Training control, with a fixed header and one vertical scroll region. It traps focus, closes on Escape, inerts the background, locks body scrolling, restores focus, and retains Back during loading, missing-record, and retryable errors. Only the selected activity is fetched; no API, URL contract, or viewing write is added.
 
 ## Runner experience
 
-Splits appear immediately below the activity summary in Calendar and Training. They open initially when data exists. Disclosure state, Chart/Table choice, selected split and visible window are retained per athlete/activity for the browser session.
+Splits appear immediately below the activity summary in Calendar and Training. They open initially when data exists unless the user saved them collapsed. Disclosure state, Chart/Table choice, All splits/Detail choice, selected split and visible window are retained per athlete/activity for the browser session.
 
-Actual pace is a lime bar. Violet dashed markers show exact/approximate targets; range shading preserves both bounds. Effort-only blocks show guidance without a numeric marker. Pace is labelled min/km with faster values higher. The scale includes the whole activity and all numeric targets and stays fixed when paging.
+Actual pace is a lime bar. Numeric planned targets use hollow, solid `#d5adff` rectangular outlines with the same x-coordinate and width as the actual bar and a lower edge at the chart baseline. The target stroke is 1.75px, separated from green fill by a dark under-stroke 1px wider; below 540px plot width it is 1.5px. Exact and approximate blocks use their stored target pace. Range blocks outline the existing midpoint and preserve the target bounds in a narrow same-width lavender band. Effort-only, missing, stale and unavailable comparisons never gain a numeric target outline. Pace is labelled min/km with faster values higher. The scale includes the whole activity and all valid numeric targets and stays fixed between views and while paging.
 
-Charts at least 540 CSS pixels wide show ten splits, narrower charts show five. Next/Previous and horizontal swipes advance nine/four splits with one-split overlap; the last window clamps to the end. Tap/click a bar or numbered selector for its exact pace, planned range and difference. Left/Right keys move selection. Arrow controls are 44px. Table view exposes all recorded splits and guidance. The final 193m example is labelled as a partial split, not a full kilometre.
+All splits is the default and shows the complete activity (all 22 splits in the half-marathon fixture) on desktop and mobile. Detail calculates capacity from plot width at 44px per column, capped at ten (approximately six at 390px and five at 320px). Next/Previous and horizontal swipes advance with one-split overlap; the last window clamps to the end. Detail initially includes the selected split. Selection survives mode changes, resizing and reopening. A native selected-split picker and previous/next split buttons remain available when numbered selectors cannot fit. Numbered selectors use 44px targets where columns allow. Table view exposes all recorded splits, both target bounds, approximate notation and effort guidance. The final 193m example is labelled as a partial split, not a full kilometre.
 
 No approved comparison, failed reads and stale comparisons leave actual splits usable. Loading and retry are scoped to the planned comparison. Effort guidance is never converted into a numeric target. Recorded provider splits are not represented as official course splits.
 

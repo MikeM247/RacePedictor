@@ -2,6 +2,8 @@
 
 Design specification input · 12 September 2026
 
+> **7 October 2026 owner amendment:** Activity details from Calendar and Training use one full-viewport dialog. Calendar date selection remains a separate day-summary interaction; compact Day details shows activity summaries that open one full activity at a time, while direct cell activity controls bypass the day view. Training opens the selected activity over its still-mounted list. The dialog has a persistent logo and contextual Back header, one scrolling content region, focus management, Escape, background inertness, and scroll locking. Loading and error states retain close/back. Splits default to All splits and offer a width-based Detail window (44px per split, maximum ten); planned numeric targets are thin solid hollow lavender rectangles aligned to actual bars and drawn to the baseline. Read [the binding design amendment](DESIGN_INTENT_CONTRACT.md#7-october-2026-activity-dialog-and-split-presentation-amendment) and [split handoff](../plans/ACTIVITY_SPLIT_COMPARISON.md).
+
 This document is governed by [DESIGN_INTENT_CONTRACT.md](DESIGN_INTENT_CONTRACT.md) and follows [INFORMATION_ARCHITECTURE_AND_USER_FLOWS.md](INFORMATION_ARCHITECTURE_AND_USER_FLOWS.md). It defines the screen behavior required for implementation. It does not define backend changes or introduce new prediction, matching, or coaching capabilities.
 
 ## Shared screen rules
@@ -397,7 +399,7 @@ Use a single-column detail view with Back to training/Home. Keep the review summ
 
 ### Desktop behaviour
 
-Use a readable detail column with optional expandable evidence. Preserve the Training list beside it when opened from the list. Calendar reuses the same activity/review composition.
+Use the shared full-viewport Activity detail dialog with a persistent header and one scrolling record region. Training keeps the list, filters, loaded pages, and row context mounted underneath. Calendar opens a selected record in the same dialog; Day details remains the parent summary and returns to its selected activity launcher.
 
 ### Acceptance criteria
 
@@ -632,7 +634,7 @@ Show the updated effective schedule, original approved prescription, saved reaso
 
 ### Mobile behaviour
 
-Use Agenda below 1200px. Detail replaces the list/grid and has a visible Close/Back action. Stack form fields and comparison values; do not require horizontal panning to understand a week.
+Day taps open Day details below 1200px. Activity title/metrics open the shared full-viewport Activity detail dialog, which remains scrollable, includes mobile safe-area padding, and has a persistent Back action. Stack form fields and comparison values; do not require horizontal panning to understand a week.
 
 ### Desktop behaviour
 

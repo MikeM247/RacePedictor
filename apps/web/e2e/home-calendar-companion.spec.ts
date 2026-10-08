@@ -77,7 +77,7 @@ test("mixed multiple records open independently with original/history and feedba
     const dialog = page.getByRole("dialog", { name: activity.title });
     await expect(dialog).toBeVisible();
     await expect(dialog.locator(".activity-dialog-header .detail-back-button")).toBeFocused();
-    await expect(dialog.locator(".activity-dialog-logo")).toBeVisible();
+    await expect(dialog.locator(".activity-dialog-logo")).toHaveCount(0);
     await expect(dialog).toHaveClass(/activity-detail-dialog/);
     await expect(dialog).toContainText("Run at a glance");
     await expect(dialog).toContainText("Athlete feedback");
@@ -146,7 +146,7 @@ test("activity dialog fills the viewport and restores focus, scroll and backgrou
     const dialog = page.getByRole("dialog", { name: "Recorded run 1" });
     await expect(dialog).toBeVisible();
     expect(await dialog.boundingBox()).toMatchObject({ x: 0, y: 0, width, height: 844 });
-    await expect(dialog.locator(".activity-dialog-logo")).toBeVisible();
+    await expect(dialog.locator(".activity-dialog-logo")).toHaveCount(0);
     await expect(dialog.locator(".detail-primary-metrics")).toBeVisible();
     const metricColumns = await dialog.locator(".detail-primary-metrics").evaluate(element => getComputedStyle(element).gridTemplateColumns.split(" ").length);
     expect(metricColumns).toBe(width <= 767 ? 2 : 4);

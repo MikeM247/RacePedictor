@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
 import { createPortal } from "react-dom";
 import { useModalKeyboard } from "../coaching/use-modal-keyboard";
 import "./activity-detail-dialog.css";
@@ -55,7 +54,7 @@ export function ActivityDetailDialog({ open, title, parentLabel, onClose, return
   const heading = title || (status === "loading" ? "Loading activity" : status === "error" ? "Activity unavailable" : "Activity details");
   return createPortal(<div className="activity-detail-backdrop">
     <section ref={dialog.dialogRef} onKeyDown={dialog.onKeyDown} className="activity-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-dialog-title" tabIndex={-1}>
-      <header className="activity-dialog-header"><Image className="activity-dialog-logo" src="/racepredictor-brand.png" alt="" aria-hidden="true" width={782} height={616} /><button autoFocus className="detail-back-button" type="button" onClick={onClose}>← {parentLabel}</button><h1 id="activity-dialog-title" tabIndex={-1}>{heading}</h1></header>
+      <header className="activity-dialog-header"><button autoFocus className="detail-back-button" type="button" onClick={onClose}>← {parentLabel}</button><h1 id="activity-dialog-title" tabIndex={-1}>{heading}</h1></header>
       <div className="activity-dialog-content" key={status}>
         {status === "loading" ? <p role="status" aria-live="polite">Loading activity details…</p>
           : status === "error" ? <section className="activity-detail-error" role="alert"><h2>Unable to load this activity</h2><p>{error || "Activity details are temporarily unavailable. Try again without losing your place."}</p>{onRetry ? <button className="button button-secondary" type="button" onClick={onRetry}>Try again</button> : null}</section>

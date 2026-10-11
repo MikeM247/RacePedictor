@@ -36,6 +36,14 @@ before replacing anything: working Strava ingestion already uses R2.
 | `R2_SECRET_ACCESS_KEY` | Corresponding secret, entered directly in Vercel |
 | `OPENAI_API_KEY` | OpenAI project API key, entered directly in Vercel |
 | `RACEPREDICTOR_ACTIVITY_REVIEW_MODEL` | `gpt-5-mini` |
+| `RACEPREDICTOR_ACTIVITY_REVIEW_REASONING_EFFORT` | Optional cloud review reasoning effort, e.g. `high` |
+
+Production cloud reviews use `RACEPREDICTOR_ACTIVITY_REVIEW_MODEL=gpt-6-luna`
+and `RACEPREDICTOR_ACTIVITY_REVIEW_REASONING_EFFORT=high` as configured on
+2026-10-11. The worker sends the effort as Responses API `reasoning.effort`.
+Without an effort override, it preserves the provider's default. Redeploy
+after changing either setting. Existing saved reviews are not regenerated
+automatically.
 
 Keep all credentials server-only; none of these should have a
 `NEXT_PUBLIC_` prefix. Review the current generation controls before adding

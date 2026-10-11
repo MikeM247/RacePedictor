@@ -14,13 +14,14 @@ const generatedReviewSchema = z.object({
   limitations: z.array(z.string().trim().min(1).max(500)).max(8),
 }).strict();
 
-export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null, limit = 5, fetchImpl = globalThis.fetch, apiKey = process.env.OPENAI_API_KEY, model = process.env.RACEPREDICTOR_ACTIVITY_REVIEW_MODEL || DEFAULT_MODEL, now = () => new Date() }: {
+export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null, limit = 5, fetchImpl = globalThis.fetch, apiKey = process.env.OPENAI_API_KEY, model = process.env.RACEPREDICTOR_ACTIVITY_REVIEW_MODEL || DEFAULT_MODEL, reasoningEffort = process.env.RACEPREDICTOR_ACTIVITY_REVIEW_REASONING_EFFORT, now = () => new Date() }: {
   athleteId: string;
   activityId?: string | null;
   limit?: number;
   fetchImpl?: typeof fetch;
   apiKey?: string;
   model?: string;
+  reasoningEffort?: string;
   now?: () => Date;
 }) {
   const prisma = getCloudPrismaClient() as any;
@@ -72,7 +73,7 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
         continue;
       }
       await reviews.recordInputSnapshot(scope, item.requestId, DEVICE_ID, { activityRevision: await activities.currentRevision(scope, item.activityId), inputFingerprint: facts.fingerprint, planComparison: buildReviewComparison(facts) });
-      const generated = await generate({ fetchImpl, apiKey, model, prompt: buildReviewPrompt(facts) });
+      const generated = await generate({ fetchImpl, apiKey, model, reasoningEffort, prompt: buildReviewPrompt(facts) });
       await reviews.recordProviderResult(scope, item.requestId, DEVICE_ID, generated.metadata);
       const timestamp = now().toISOString();
       const review = validateGeneratedReview({
@@ -105,7 +106,7 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
   return { status: "processed", processed: results.length, results };
 }
 
-async function generate({ fetchImpl, apiKey, model, prompt }: { fetchImpl: typeof fetch; apiKey: string; model: string; prompt: string }) {
+async function generate({ fetchImpl, apiKey, model, reasoningEffort, prompt }: { fetchImpl: typeof fetch; apiKey: string; model: string; reasoningEffort?: string; prompt: string }) {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
@@ -115,7 +116,7 @@ async function generate({ fetchImpl, apiKey, model, prompt }: { fetchImpl: typeo
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       signal: controller.signal,
-      body: JSON.stringify({ model, store: false, input: prompt, text: { format: {
+      body: JSON.stringify({ model, ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}), store: false, input: prompt, text: { format: {
         type: "json_schema", name: "activity_coach_review", strict: true,
         schema: { type: "object", additionalProperties: false, required: ["headline", "assessment", "nextStep", "evidence", "limitations"], properties: {
           headline: { type: "string" }, assessment: { type: "string" }, nextStep: { type: "string" },

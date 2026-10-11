@@ -4,7 +4,8 @@ import { activityCoachReviewArtifactSchema, type ActivityCoachReviewArtifact } f
 import { PrismaActivityReviewRepository, PrismaCloudActivityRepository, PrismaCloudCoachingRepository, PrismaCalendarSessionAmendmentRepository } from "../../../packages/db/src/cloud/index.js";
 import { runCloudCoachFeedbackBatch } from "../lib/server/activity-coach-worker.ts";
 
-test("cloud coach worker publishes generated feedback under the review contract", async (context) => {
+for (const configuration of [{ model: "test-model", reasoningEffort: "" }, { model: "gpt-6-luna", reasoningEffort: "high" }]) {
+test(`cloud coach worker publishes generated feedback with ${configuration.model}${configuration.reasoningEffort ? ` ${configuration.reasoningEffort}` : " and default reasoning"}`, async (context) => {
   const clientKey = "__racePredictorCloudPrismaClient";
   const globals = globalThis as typeof globalThis & Record<string, unknown>;
   const previousClient = globals[clientKey];
@@ -49,18 +50,22 @@ test("cloud coach worker publishes generated feedback under the review contract"
   const fetchImpl: typeof fetch = async (_url, init) => {
     providerCalls += 1;
     assert.equal(init?.method, "POST");
-    assert.equal(JSON.parse(String(init?.body)).store, false);
+    const request = JSON.parse(String(init?.body));
+    assert.equal(request.store, false);
+    assert.equal(request.model, configuration.model);
+    assert.deepEqual(request.reasoning, configuration.reasoningEffort ? { effort: configuration.reasoningEffort } : undefined);
     return Response.json({ output_text: JSON.stringify({ headline: "An easy recorded run", assessment: "The recorded distance matches the suggested session.",
       nextStep: "Review the next planned session.", evidence: [{ source: "activity", label: "Recorded 5 km" }, { source: "plan", label: "Suggested 5 km" }], limitations: [] }) });
   };
   try {
-    const result = await runCloudCoachFeedbackBatch({ athleteId, limit: 1, apiKey: "synthetic-provider-key-not-a-secret", model: "test-model", fetchImpl, now: () => new Date(timestamp) });
+    const result = await runCloudCoachFeedbackBatch({ athleteId, limit: 1, apiKey: "synthetic-provider-key-not-a-secret", ...configuration, fetchImpl, now: () => new Date(timestamp) });
     assert.deepEqual(result, { status: "processed", processed: 1, results: [{ activityId, status: "ready" }] });
     assert.deepEqual(failures, []);
     assert.equal(providerCalls, 1);
     assert.equal(published.length, 1);
     assert.equal(published[0].promptVersion, "activity-coach-review.cloud-metrics.v1");
     assert.equal(published[0].provenance, "cloud_metrics_plan");
+    assert.equal(published[0].model, configuration.model);
     assert.equal(published[0].expectedActivityRevision, 1);
     assert.equal(published[0].comparison.sessionId, "session-worker-test");
     assert.equal(published[0].requestId, "request-worker-test");
@@ -70,3 +75,4 @@ test("cloud coach worker publishes generated feedback under the review contract"
     else globals[clientKey] = previousClient;
   }
 });
+}

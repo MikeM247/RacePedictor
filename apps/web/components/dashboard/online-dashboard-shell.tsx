@@ -5,6 +5,7 @@ import type { DashboardFetchResult } from "../../../../packages/core/src/contrac
 import type { OnlineStatus } from "../../../../packages/core/src/contracts/sync.ts";
 import { toDashboardViewModel } from "../../lib/dashboard-view-model.ts";
 import { DashboardShell } from "./dashboard-shell.tsx";
+import { StartupSplash } from "../startup-splash.tsx";
 
 type State =
   | { kind: "loading" }
@@ -51,12 +52,17 @@ export function OnlineDashboardShell() {
     ? toDashboardViewModel(state.overview)
     : unavailableDashboard(state.kind === "error" ? state.message : "Recent analytics are loading.");
 
-  return <DashboardShell
-    {...viewModel}
-    analyticsLoading={state.kind === "loading"}
-    onlineStatus={statusState.kind === "ready" ? statusState.status : null}
-    onlineStatusLoading={statusState.kind === "loading"}
-    onlineStatusError={statusState.kind === "error" ? statusState.message : null}
-    onAnalyticsRetry={state.kind === "error" ? () => window.location.reload() : undefined}
-  />;
+  return <>
+    {state.kind === "loading" ? <StartupSplash /> : null}
+    <div hidden={state.kind === "loading"}>
+      <DashboardShell
+        {...viewModel}
+        analyticsLoading={state.kind === "loading"}
+        onlineStatus={statusState.kind === "ready" ? statusState.status : null}
+        onlineStatusLoading={statusState.kind === "loading"}
+        onlineStatusError={statusState.kind === "error" ? statusState.message : null}
+        onAnalyticsRetry={state.kind === "error" ? () => window.location.reload() : undefined}
+      />
+    </div>
+  </>;
 }

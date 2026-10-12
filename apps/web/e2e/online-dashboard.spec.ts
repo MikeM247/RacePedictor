@@ -69,9 +69,41 @@ async function mockDashboard(page: Page, overview = dashboard) {
   } }) }));
 }
 
+test("mobile startup is black with a centered logo until dashboard data arrives", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await mockDashboard(page);
+  let releaseOverview!: () => void;
+  const overviewReady = new Promise<void>((resolve) => { releaseOverview = resolve; });
+  await page.route("**/api/v1/dashboard/overview", async (route) => {
+    await overviewReady;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dashboard) });
+  });
+
+  try {
+    await page.goto("/dashboard");
+    const splash = page.getByRole("status", { name: "Loading Race Predictor" });
+    await expect(splash).toBeVisible();
+    await expect(splash).toHaveCSS("background-color", "rgb(0, 0, 0)");
+    const bounds = await splash.boundingBox();
+    expect(bounds).toEqual({ x: 0, y: 0, width: 393, height: 852 });
+    const logo = splash.locator("img");
+    await expect.poll(() => logo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+    const logoBounds = (await logo.boundingBox())!;
+    expect(logoBounds.x + logoBounds.width / 2).toBeCloseTo(393 / 2, 0);
+    expect(logoBounds.y + logoBounds.height / 2).toBeCloseTo(852 / 2, 0);
+    expect(logoBounds.width).toBeCloseTo(393 * 0.625, 0);
+    await page.screenshot({ path: testInfo.outputPath("startup-mobile.png") });
+  } finally {
+    releaseOverview();
+  }
+  await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "View current-fitness details" })).toBeVisible();
+});
+
 test("online dashboard stays useful while the local device and Second Brain are stale", async ({ page }) => {
   await mockDashboard(page);
   await page.goto("/dashboard");
+  await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
   await page.getByRole("button", { name: "View current-fitness details" }).click();
   await page.getByText("Data freshness", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Independent freshness signals" })).toBeVisible();
@@ -87,6 +119,7 @@ test("online dashboard exposes a recoverable service error", async ({ page }) =>
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "Unavailable", details: [] } }) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: status }) }));
   await page.goto("/dashboard");
+  await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
   await page.getByRole("button", { name: "View current-fitness details" }).click();
   await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
   await expect(page.getByText("Online dashboard data is temporarily unavailable.")).toBeVisible();

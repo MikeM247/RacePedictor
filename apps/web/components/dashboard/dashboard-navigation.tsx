@@ -14,6 +14,7 @@ export function DashboardNavigation({ activePage }: DashboardNavigationProps) {
   const primaryLinks: Array<{ page: DashboardPage; href: string; label: string }> = [
     { page: "home", href: "/dashboard", label: "Home" },
     { page: "calendar", href: "/dashboard/calendar", label: "Calendar" },
+    { page: "readiness", href: "/dashboard/readiness", label: "Readiness" },
   ];
   const secondaryLinks: Array<{ page: DashboardPage; href: string; label: string }> = [
     { page: "settings", href: "/dashboard/settings", label: "Settings" },
@@ -26,8 +27,8 @@ export function DashboardNavigation({ activePage }: DashboardNavigationProps) {
   const renderLink = (link: { page: DashboardPage; href: string; label: string }) => {
     const current = isCurrent(link);
     return (
-      <Link key={link.page} href={link.href} aria-current={current ? "page" : undefined}>
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d={link.page === "home" ? "M3 10 12 3l9 7v11h-6v-7H9v7H3Z" : link.page === "calendar" ? "M4 5h16v16H4ZM4 10h16M8 2v6M16 2v6" : "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z"} /></svg>
+      <Link key={link.page} href={link.href} id={link.page === "readiness" ? "view-readiness" : undefined} aria-current={current ? "page" : undefined} aria-label={link.page === "settings" ? "Settings" : undefined}>
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d={link.page === "home" ? "M3 10 12 3l9 7v11h-6v-7H9v7H3Z" : link.page === "calendar" ? "M4 5h16v16H4ZM4 10h16M8 2v6M16 2v6" : link.page === "readiness" ? "M4 19V9M10 19V5M16 19v-7M22 19H2" : "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z"} /></svg>
         <span>{link.label}</span>
       </Link>
     );

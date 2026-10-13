@@ -15,7 +15,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   outputDir: path.join(e2eRoot, "readiness-local-test-results"),
   reporter: [["list"], ["json", { outputFile: path.join(e2eRoot, "results", "readiness-local.json") }]],
-  use: { baseURL, trace: "retain-on-failure", screenshot: "only-on-failure" },
+  use: { baseURL, trace: "retain-on-failure", screenshot: "only-on-failure", launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { DashboardFetchResult } from "../../../../packages/core/src/contracts/dashboard.ts";
 import type { OnlineStatus } from "../../../../packages/core/src/contracts/sync.ts";
 import { toDashboardViewModel } from "../../lib/dashboard-view-model.ts";
-import { DashboardShell } from "./dashboard-shell.tsx";
+import { ReadinessShell } from "./readiness-shell.tsx";
 import { StartupSplash } from "../startup-splash.tsx";
 
 type State =
@@ -55,7 +55,7 @@ export function OnlineDashboardShell() {
   return <>
     {state.kind === "loading" ? <StartupSplash /> : null}
     <div hidden={state.kind === "loading"}>
-      <DashboardShell
+      <ReadinessShell
         {...viewModel}
         analyticsLoading={state.kind === "loading"}
         onlineStatus={statusState.kind === "ready" ? statusState.status : null}

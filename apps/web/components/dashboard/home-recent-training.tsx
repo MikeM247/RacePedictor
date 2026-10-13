@@ -10,10 +10,10 @@ import { createRecoveryContext, dataQualityHref, readRecoveryContext, restoreRec
 import { compactHomeTakeaway } from "../../lib/home-summary";
 
 type State = "loading" | "ready" | "empty" | "error";
-export function HomeRecentTraining({ timezone = "Africa/Johannesburg" }: { timezone?: string }) {
+export function HomeRecentTraining({ timezone = "Africa/Johannesburg", compact = false }: { timezone?: string; compact?: boolean }) {
   const [state, setState] = useState<State>("loading");
   const [activity, setActivity] = useState<ActivitiesListResponse["items"][number] | null>(null);
-  const reviewRead = useActivityCoachReview(activity?.id ?? null);
+  const reviewRead = useActivityCoachReview(compact ? null : activity?.id ?? null);
   const fullReviewLauncher = useRef<HTMLAnchorElement | null>(null);
   const focusedReviewLauncher = useRef<HTMLAnchorElement | null>(null);
   const [retry, setRetry] = useState(0);
@@ -37,9 +37,6 @@ export function HomeRecentTraining({ timezone = "Africa/Johannesburg" }: { timez
   if (state === "empty" || !activity) return <div className="home-state"><p>No recorded training yet. Add a session to make recent training available.</p><Link className="button button-secondary" href="/dashboard/data-quality" onClick={(event) => { event.preventDefault(); const context = createRecoveryContext({ kind: "home", path: "/dashboard", scrollY: window.scrollY, focusKey: "recent-training-heading", issue: "No recorded training is available for the recent-training assessment." }); window.location.assign(dataQualityHref(context)); }}>Add training</Link></div>;
 
   const activityLabel = activity.title || `${sportLabel(activity.sport)} session`;
-  const feedback = reviewRead.data;
-  const review = feedback?.review;
-  const presentation = review ? compactHomeTakeaway(review) : null;
   const fullReviewLauncherId = `full-review-${activity.id}`;
   const sessionHref = `/dashboard/activities?activityId=${encodeURIComponent(activity.id)}&returnTo=%2Fdashboard#coach-review-${encodeURIComponent(activity.id)}`;
   const openFullReview = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -63,6 +60,14 @@ export function HomeRecentTraining({ timezone = "Africa/Johannesburg" }: { timez
     restoreRecoveryFocus(context);
     window.requestAnimationFrame(() => node.focus({ preventScroll: true }));
   };
+  if (compact) return <article className="home-session-summary home-session-summary--compact">
+    <div className="home-session-heading"><div><p className="eyebrow">{activity.sport === "run" ? "Your last run" : "Latest activity"}</p><h3>{activityLabel}</h3><p className="metadata"><time dateTime={activity.occurredAt}>{new Intl.DateTimeFormat("en-ZA", { timeZone: timezone, weekday: "long", day: "numeric", month: "long" }).format(new Date(activity.occurredAt))}</time></p></div></div>
+    <div className="home-latest-facts"><span>{formatDistance(activity.distanceM)}</span><span>{formatDuration(activity.elapsedTimeS)}</span>{activity.avgPaceSecPerKm ? <span>{formatPace(activity.avgPaceSecPerKm)}</span> : null}</div>
+    <div className="home-session-footer"><span className="home-recorded-label">Recorded</span><Link id={fullReviewLauncherId} ref={restoreFullReviewLauncher} className="text-link" href={sessionHref} onClick={openFullReview}>{activity.sport === "run" ? "Review run →" : "Review activity →"}</Link></div>
+  </article>;
+  const feedback = reviewRead.data;
+  const review = feedback?.review;
+  const presentation = review ? compactHomeTakeaway(review) : null;
   return <article className="home-session-summary">
     <div className="home-session-heading"><div><h3>{activityLabel}</h3><p className="metadata"><time dateTime={activity.occurredAt}>{new Intl.DateTimeFormat("en-ZA", { timeZone: timezone, weekday: "short", day: "numeric", month: "short" }).format(new Date(activity.occurredAt))}</time> · {formatDistance(activity.distanceM)} · {formatDuration(activity.elapsedTimeS)} elapsed · {formatPace(activity.avgPaceSecPerKm)}</p></div><span className="home-recorded-label">Recorded</span></div>
     {review && presentation ? <>

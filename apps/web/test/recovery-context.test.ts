@@ -13,10 +13,13 @@ test("recovery paths retain only supported dashboard destinations and presentati
   assert.equal(safeRecoveryPath("/dashboard/activities?activityId=run_1&token=secret"), "/dashboard/activities?activityId=run_1");
   assert.equal(safeRecoveryPath("/dashboard/data-quality?source=strava&returnTo=%2Fdashboard"), "/dashboard/data-quality?source=strava");
   assert.equal(safeRecoveryPath("/dashboard/calendar?activityId=run_1"), "/dashboard/calendar?activityId=run_1");
+  assert.equal(safeRecoveryPath("/dashboard/readiness?recovery=recovery_12345678"), "/dashboard/readiness?recovery=recovery_12345678");
   assert.equal(safeRecoveryPath("https://attacker.example/dashboard"), "/dashboard/activities");
   assert.equal(safeRecoveryPath("//attacker.example/dashboard"), "/dashboard/activities");
   assert.equal(safeRecoveryPath("/dashboard-private"), "/dashboard/activities");
   assert.equal(recoveryReturnHref(context, "/dashboard/activities"), "/dashboard/activities?activityId=run_1&recovery=recovery_12345678");
+  const oldReadiness: RecoveryContext = { ...context, kind: "home", path: "/dashboard", activityId: undefined, disclosure: "readiness" };
+  assert.equal(recoveryReturnHref(oldReadiness, "/dashboard"), "/dashboard/readiness?recovery=recovery_12345678");
 });
 
 test("recovery context stores metadata rather than records, warning contents, credentials, or raw paths", () => {

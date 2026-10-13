@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   formatCoachingDate,
+  localDateInTimezone,
   normalizeCalendarSessions,
   weekRange,
   type CalendarSessionView,
@@ -154,7 +155,7 @@ function CurrentWeek({
   );
 }
 
-export function TodayCoachingCard({ compact = false, headingLevel = 2, onTimezone }: { compact?: boolean; headingLevel?: 2 | 3; onTimezone?: (timezone: string) => void }) {
+export function TodayCoachingCard({ compact = false, headingLevel = 2, homeAction = false, currentDate, onTimezone }: { compact?: boolean; headingLevel?: 2 | 3; homeAction?: boolean; currentDate?: string; onTimezone?: (timezone: string) => void }) {
   const [requestState, setRequestState] = useState<RequestState>("loading");
   const [payload, setPayload] = useState<JsonRecord | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -202,7 +203,7 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, onTimezon
       setRequestState("error");
     });
     return () => { current = false; };
-  }, [requestVersion]);
+  }, [requestVersion, currentDate]);
 
   useEffect(() => {
     const plan = asRecord(payload?.plan);
@@ -288,22 +289,33 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, onTimezon
     : scheduleKind === "unscheduled" ? "Unscheduled"
       : scheduleKind === "unavailable" ? "Schedule unavailable"
         : stateLabels[state];
+  const homeEyebrow = scheduleKind === "prescribed_rest"
+    ? "Today · Recovery"
+    : scheduleKind === "prescribed_session" && state !== "missed" && state !== "skipped"
+      ? "Up next · Today"
+      : "Today’s schedule";
+  const homeActionLabel = state === "missed" || state === "skipped"
+    ? "Review session →"
+    : hasPrescribedSession || nextWorkout.id ? "View workout →" : "View calendar →";
+  const showDateAndStatus = !homeAction || date !== localDateInTimezone(timezone)
+    || amendments.length > 0 || !["upcoming", "rest"].includes(state);
 
   if (compact) return <section className={`today-coach-card today-coach-card--compact today-coach-card--${state}`} aria-labelledby="today-coaching-heading">
     <div className="today-coach-main">
+      {homeAction ? <p className="eyebrow">{homeEyebrow}</p> : null}
       <ContextHeading id="today-coaching-heading">{heading}</ContextHeading>
-      <p className="metadata"><time dateTime={date}>{formatCoachingDate(date, timezone)}</time> · {statusLabel}{amendments.length > 0 ? " · Amended" : ""}</p>
+      {showDateAndStatus ? <p className="metadata"><time dateTime={date}>{formatCoachingDate(date, timezone)}</time> · {statusLabel}{amendments.length > 0 ? " · Amended" : ""}</p> : null}
       {scheduleKind === "prescribed_session" || scheduleKind === "prescribed_rest" ? <>
         <p className="today-prescription">{String(session.prescription ?? "Prescription unavailable; open Calendar.")}</p>
-        <p className="today-focus-purpose"><strong>Purpose:</strong> {String(session.purpose ?? "Purpose not supplied.")}{hasPrescribedSession && session.durationMinutes && !String(session.prescription ?? "").includes(String(session.durationMinutes)) ? ` · ${String(session.durationMinutes)} min` : ""}</p>
+        {!homeAction ? <p className="today-focus-purpose"><strong>Purpose:</strong> {String(session.purpose ?? "Purpose not supplied.")}{hasPrescribedSession && session.durationMinutes && !String(session.prescription ?? "").includes(String(session.durationMinutes)) ? ` · ${String(session.durationMinutes)} min` : ""}</p> : null}
       </> : <p>{scheduleDescription}</p>}
       {state === "stale" || state === "missed" || state === "skipped" ? <p className="home-inline-status" role="status">{String(payload.message ?? statusLabel)}</p> : null}
       {warnings.map((warning) => <p className="home-inline-status" role="status" key={warning}>{warning}</p>)}
       {Array.isArray(session.warnings) ? session.warnings.map((warning) => <p className="home-inline-status" role="status" key={String(warning)}>{String(warning)}</p>) : null}
       {Array.isArray(session.cautions) && session.cautions.length > 0 ? <p className="home-session-caveat"><strong>Cautions:</strong> {session.cautions.map(String).join("; ")}</p> : null}
-      {nextWorkout.id && nextWorkout.scheduledDate && !hasPrescribedSession ? <p className="today-next-workout"><strong>Next workout:</strong> {String(nextWorkout.title)} · {formatCoachingDate(String(nextWorkout.scheduledDate), timezone)}</p> : null}
+      {nextWorkout.id && nextWorkout.scheduledDate && !hasPrescribedSession ? <p className="today-next-workout"><strong>Next workout:</strong> {String(nextWorkout.title)} · {formatCoachingDate(String(nextWorkout.scheduledDate), timezone)}{homeAction ? "" : " · View in Calendar"}</p> : null}
     </div>
-    <div className="today-meta">{session.id && links.session ? <Link id="view-today-session" ref={restoreCalendarLauncher} className="text-link" href={String(links.session)} onClick={openCalendar}>View session →</Link> : <Link id="view-today-calendar" ref={restoreCalendarLauncher} className="text-link" href={String(links.calendar ?? "/dashboard/calendar")} onClick={openCalendar}>View calendar →</Link>}</div>
+    <div className="today-meta">{session.id && links.session && (!homeAction || hasPrescribedSession) ? <Link id="view-today-session" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={String(links.session)} onClick={openCalendar}>{homeAction ? homeActionLabel : "View session →"}</Link> : nextWorkout.id && nextWorkout.scheduledDate ? <Link id="view-today-session" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={`/dashboard/calendar?date=${encodeURIComponent(String(nextWorkout.scheduledDate))}&session=${encodeURIComponent(String(nextWorkout.id))}`} onClick={openCalendar}>{homeAction ? homeActionLabel : "View calendar →"}</Link> : <Link id="view-today-calendar" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={String(links.calendar ?? "/dashboard/calendar")} onClick={openCalendar}>{homeAction ? homeActionLabel : "View calendar →"}</Link>}</div>
   </section>;
 
   return <section className={`today-coach-card today-coach-card--${state}${compact ? " today-coach-card--compact" : ""}`} aria-labelledby="today-coaching-heading">

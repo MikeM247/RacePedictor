@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { coachingFixtures, fixturePlan } from "./coaching-fixtures.ts";
+import { coachingFixtures, fixturePlan, fixtureCalendarSession } from "./coaching-fixtures.ts";
 import { assertHomeLayout } from "./home-layout-assertions.ts";
+import { expectAxeClean } from "./test-helpers.ts";
+import type { RaceMilestone } from "../../../packages/core/src/contracts/coaching.ts";
 
 const overview = {
   fetchStatus: "success",
@@ -37,12 +39,27 @@ async function mockHome(page: Page, options: {
   reviewData?: ReturnType<typeof review> | null;
   reviewFailure?: boolean;
   goalState?: "ready" | "projection_pending" | "goal_only" | "no_active_plan" | "unavailable";
+  checkIn?: { revision: number; status: "saved" | "skipped"; answers: Record<string, unknown> };
+  milestones?: RaceMilestone[];
+  today?: ReturnType<typeof coachingFixtures.today>;
 } = {}) {
   const activities = options.activities ?? [latest];
   const reviewStatus = options.reviewStatus ?? "ready";
   const reviewData = options.reviewData === undefined ? review() : options.reviewData;
+  let checkIn = options.checkIn;
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(overview) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: status }) }));
+  await page.route("**/api/v1/wellbeing-check-ins**", async (route) => {
+    const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    if (route.request().method() === "GET") {
+      const entry = checkIn ? { id: "f02-checkin", athleteId: "f02-athlete", localDate: date, timezone: "Africa/Johannesburg", answers: checkIn.answers, status: checkIn.status, recordedAt: "2026-10-12T08:00:00.000Z", skippedAt: null, revision: checkIn.revision, questionnaireVersion: "daily-wellbeing.v1", createdAt: "2026-10-12T08:00:00.000Z", updatedAt: "2026-10-12T08:00:00.000Z" } : null;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items: entry ? [entry] : [] } }) });
+    }
+    const request = route.request().postDataJSON() as { expectedRevision: number; status: "saved" | "skipped"; answers: Record<string, unknown> };
+    const entry = { id: "f02-checkin", athleteId: "f02-athlete", localDate: date, timezone: "Africa/Johannesburg", answers: request.answers, status: request.status, recordedAt: new Date().toISOString(), revision: request.expectedRevision + 1 };
+    checkIn = { revision: entry.revision, status: entry.status, answers: entry.answers };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: entry }) });
+  });
   await page.route("**/api/v1/activities**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/v1/activities") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items: activities } }) });
@@ -67,14 +84,15 @@ async function mockHome(page: Page, options: {
     } : {
       state: "ready", plan,
       goal,
-      milestones: [{ id: "f02-half", title: "Half marathon", distanceMeters: 21_097.5, targetDate: "2027-02-01", targetTimeSeconds: 7_200, eventName: "February Half" }],
+      milestones: options.milestones ?? [{ id: "f02-half", title: "Oldies 10 km sub-60", distanceMeters: 10_000, targetDate: "2027-02-01", targetTimeSeconds: 3_600, eventName: "JGS Oldies 10 km" }],
       projection: { contextHash: "b".repeat(64), publishedAt: "2026-09-15T08:00:00.000Z" },
     };
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { context } }) });
   });
+  if (options.today) await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(options.today) }));
 }
 
-test("F02 Home keeps three groups ordered, presents a qualified latest review, and reads without writes", async ({ page }) => {
+test("Home shows the approved goal, next workout, latest run and milestone without a page-load write", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => { if (!["GET", "HEAD"].includes(request.method())) writes.push(`${request.method()} ${request.url()}`); });
   await mockHome(page);
@@ -85,21 +103,24 @@ test("F02 Home keeps three groups ordered, presents a qualified latest review, a
   await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "today-focus-heading");
   await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "latest-activity-heading");
   await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "View milestone in Plan: Half marathon" })).toContainText("Half marathon · February Half");
-  await expect(page.getByText("No race-day assessment.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Next milestone: JGS Oldies 10 km, sub-60. View plan" })).toBeVisible();
+  await expect(page.getByText("Next milestone", { exact: true })).toBeVisible();
+  await expect(page.getByText("sub-60", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Intentional recovery day" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
-  await expect(page.getByText("This one session does not establish a target-race change.")).toBeVisible();
-  await expect(page.getByText("Plan adherence", { exact: true })).toBeVisible();
+  await expect(page.getByText("This one session does not establish a target-race change.")).toHaveCount(0);
+  await expect(page.getByText("Plan adherence", { exact: true })).toHaveCount(0);
   await expect(page.locator(".home-activity")).not.toContainText("Plan version 2");
-  await expect(page.getByText("Heart-rate data was not supplied.")).toBeVisible();
-  await expect(page.getByText("Performance", { exact: true })).toBeVisible();
-  const sessionLink = page.getByRole("link", { name: "View full session review" });
+  await expect(page.getByText("Heart-rate data was not supplied.")).toHaveCount(0);
+  await expect(page.getByText("Performance", { exact: true })).toHaveCount(0);
+  const sessionLink = page.getByRole("link", { name: "Review run" });
   await expect(sessionLink).toHaveAttribute("href", /activityId=f02-latest.*returnTo=%2Fdashboard/);
   await expect(page.getByRole("link", { name: "View calendar" })).toHaveAttribute("href", "/dashboard/calendar");
-  await page.getByRole("button", { name: "View current-fitness details" }).click();
+  await page.getByRole("link", { name: "Readiness" }).click();
+  await expect(page).toHaveURL(/\/dashboard\/readiness/);
   await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
-  await page.getByRole("button", { name: "Back to Home" }).click();
-  await expect(page.getByRole("button", { name: "View current-fitness details" })).toBeFocused();
+  await page.getByRole("link", { name: "Back to Home" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
   await Promise.all([
     page.waitForURL(/\/dashboard\/activities\?activityId=f02-latest/),
     sessionLink.click(),
@@ -107,11 +128,11 @@ test("F02 Home keeps three groups ordered, presents a qualified latest review, a
   await expect(page).toHaveURL(/recovery=/);
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
   const telemetry = page.locator("details.detail-disclosure").first();
-  await telemetry.locator("summary").click();
+  if (!await telemetry.evaluate((element) => element.hasAttribute("open"))) await telemetry.locator("summary").click();
   await expect(telemetry).toHaveAttribute("open", "");
   await page.getByRole("button", { name: "← Back to Home" }).click();
   await expect(page).toHaveURL(/recovery=/);
-  await expect(page.getByRole("link", { name: "View full session review" })).toBeFocused();
+  await expect(page.getByRole("link", { name: "Review run" })).toBeFocused();
   expect(writes).toEqual([]);
 });
 
@@ -120,12 +141,12 @@ test("F02 restores the Home session launcher after Calendar browser Back", async
   page.on("request", (request) => { if (!["GET", "HEAD"].includes(request.method())) writes.push(`${request.method()} ${new URL(request.url()).pathname}`); });
   await mockHome(page);
   await page.unroute("**/api/v1/coaching/today");
-  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.today()) }));
+  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.today({ todayScheduleKind: "prescribed_session", nextWorkout: null })) }));
   await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.activePlan(fixturePlan())) }));
   await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coachingFixtures.calendar()) }));
 
   await page.goto("/dashboard");
-  const launcher = page.getByRole("link", { name: "View session" });
+  const launcher = page.getByRole("link", { name: "View workout" });
   await expect(launcher).toBeVisible();
   await launcher.click();
   await expect(page).toHaveURL(/\/dashboard\/calendar\?session=session_resume/);
@@ -140,33 +161,32 @@ test("F02 keeps the newest pending activity instead of substituting an older rev
   await mockHome(page, { activities: [older, latest], reviewStatus: "queued", reviewData: null });
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
-  await expect(page.getByText("No takeaway available yet.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review run" })).toBeVisible();
   await expect(page.getByText("Older reviewed run", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("No takeaway available yet.", { exact: true })).toBeVisible();
 });
 
 test("F02 makes review failure local to Recent training while the other groups remain usable", async ({ page }) => {
   await mockHome(page, { reviewFailure: true });
   await page.goto("/dashboard");
-  await expect(page.getByText(/Takeaway unavailable/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Your goal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Intentional recovery day" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review run" })).toBeVisible();
 });
 
 test("F02 Home reports cloud projection pending without displaying inferred goal values", async ({ page }) => {
   await mockHome(page, { goalState: "projection_pending" });
   await page.goto("/dashboard");
-  await expect(page.getByText(/Goal details are not available yet/)).toBeVisible();
+  await expect(page.getByText("Your approved goal is syncing.")).toBeVisible();
   await expect(page.getByText("City marathon", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "View calendar" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /View calendar/ })).toBeVisible();
 });
 
-test("F02 Home distinguishes a settled goal without a plan from unavailable cloud goal context", async ({ page }) => {
+test("Home distinguishes a settled goal without a plan from unavailable cloud goal context", async ({ page }) => {
   await mockHome(page, { goalState: "goal_only" });
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
-  await expect(page.getByText(/No active plan. Adherence and performance are not assessed/)).toBeVisible();
+  await expect(page.getByText("Your approved plan is not available right now.")).toBeVisible();
   await expect(page.getByText(/Race-day progress cannot yet be assessed/)).toHaveCount(0);
 
   await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({
@@ -177,12 +197,38 @@ test("F02 Home distinguishes a settled goal without a plan from unavailable clou
   await expect(page.getByText("City marathon", { exact: true })).toHaveCount(0);
 });
 
+test("Recovery choices save a new feeling while retaining the rest of the saved check-in", async ({ page }) => {
+  await mockHome(page, { checkIn: { revision: 4, status: "saved", answers: { overallFeeling: "very_good", sleepQuality: "good", readiness: "normal", notes: "Keep this note" } } });
+  await page.goto("/dashboard");
+  const good = page.getByRole("button", { name: "Good", exact: true });
+  const okay = page.getByRole("button", { name: "Okay", exact: true });
+  const low = page.getByRole("button", { name: "Low", exact: true });
+  await expect(good).toHaveAttribute("aria-pressed", "false");
+  await expect(okay).toHaveAttribute("aria-pressed", "false");
+  await expect(low).toHaveAttribute("aria-pressed", "false");
+  const saveRequest = page.waitForRequest((request) => request.method() === "PUT" && request.url().includes("/api/v1/wellbeing-check-ins/"));
+  await okay.click();
+  const request = await saveRequest;
+  const body = request.postDataJSON() as { expectedRevision: number; status: string; answers: Record<string, unknown> };
+  expect(body).toMatchObject({ expectedRevision: 4, status: "saved", answers: { overallFeeling: "normal", sleepQuality: "good", readiness: "normal", notes: "Keep this note" } });
+  await expect(page.getByText("Check-in saved.")).toBeVisible();
+  await expect(okay).toHaveAttribute("aria-pressed", "true");
+  for (const [label, value, revision] of [["Good", "good", 5], ["Low", "poor", 6]] as const) {
+    const saved = page.waitForRequest((request) => request.method() === "PUT" && request.url().includes("/api/v1/wellbeing-check-ins/"));
+    await page.getByRole("button", { name: label, exact: true }).click();
+    expect((await saved).postDataJSON()).toMatchObject({ expectedRevision: revision, answers: { overallFeeling: value, notes: "Keep this note" } });
+    await expect(page.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
+  }
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Low", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
 for (const [state, label] of [["suggested", "Suggested plan match — not confirmed"], ["confirmed", "Confirmed plan match"], ["ambiguous", "Plan match is uncertain"], ["unplanned", "Unplanned session"], ["none", "No planned session linked"]] as const) {
   test(`F02 preserves the ${state} match qualification`, async ({ page }) => {
     await mockHome(page, { reviewData: review(state) });
     await page.goto("/dashboard");
-    if (state !== "confirmed") await expect(page.getByText(/planned.session.*(link|confirmed)/i)).toBeVisible();
-    await page.getByRole("link", { name: /View full session review/ }).click();
+    await expect(page.locator(".home-activity")).not.toContainText(/planned.session.*(link|confirmed)/i);
+    await page.getByRole("link", { name: "Review run" }).click();
     await expect(page.locator(".activity-review-context strong").filter({ hasText: label })).toBeVisible();
     await expect(page.locator(".activity-review-context").filter({ hasText: /does not establish race readiness/ })).toBeVisible();
   });
@@ -194,7 +240,7 @@ for (const [state, label] of [["not_requested", "No review requested"], ["queued
     await mockHome(page, { reviewStatus: state, reviewData: data });
     await page.goto("/dashboard");
     await expect(page.locator(".home-activity")).not.toContainText(label);
-    await page.getByRole("link", { name: /View (full session review|latest session)/ }).click();
+    await page.getByRole("link", { name: "Review run" }).click();
     await expect(page.locator(".activity-coach-review")).toContainText(state === "not_requested" ? "No review has been requested" : state === "retry_wait" ? "retry" : state === "attention" ? "attention" : state === "ready" ? "Reviewed:" : label);
     if (state !== "ready") await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
   });
@@ -209,8 +255,8 @@ test("F02 keeps long caveats readable without horizontal overflow at contract wi
   for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/dashboard");
-    await expect(page.getByText(/A short takeaway is unavailable/)).toBeVisible();
-    await page.getByRole("link", { name: /View full session review/ }).click();
+    await expect(page.locator(".home-latest-facts")).toContainText("8.00 km");
+    await page.getByRole("link", { name: "Review run" }).click();
     await expect(page.getByText(/This material limitation is intentionally long/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
@@ -227,11 +273,88 @@ test("F02 Home reflows without overflow at the 200% zoom effective viewport", as
 
 test("F02 verifies readable ordered summaries and actual viewport fit at phone and desktop heights", async ({ page }) => {
   await mockHome(page);
-  for (const viewport of [{ width: 390, height: 844 }, { width: 1024, height: 900 }, { width: 1440, height: 900 }]) {
+  for (const viewport of [{ width: 320, height: 844 }, { width: 390, height: 780 }, { width: 390, height: 844 }, { width: 768, height: 900 }, { width: 1024, height: 900 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
     await expect(page.getByRole("heading", { name: latest.title, exact: true })).toBeVisible();
     await assertHomeLayout(page, test.info(), "home-rest-day");
   }
+});
+
+test("Home keeps an active workout readable and all summaries visible on mobile", async ({ page }) => {
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const session = fixtureCalendarSession({ title: "Easy supporting run", scheduledDate: date, effectiveDate: date, prescription: "Up to 5 km at conversational effort, RPE 2–3. Shorten according to recovery." });
+  await mockHome(page, { today: coachingFixtures.today({ date, todayScheduleKind: "prescribed_session", nextWorkout: null, session }) });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: "Easy supporting run" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Good", exact: true })).toBeVisible();
+    await assertHomeLayout(page, test.info(), "home-active-workout");
+    await expectAxeClean(page, "Home daily briefing");
+  }
+});
+
+test("Home advances milestones and the check-in date at local midnight without writing", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-10-13T21:59:40.000Z") });
+  const reads: string[] = [];
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/wellbeing-check-ins")) reads.push(request.url());
+    if (["PUT", "POST", "PATCH", "DELETE"].includes(request.method())) writes.push(request.url());
+  });
+  await mockHome(page, { milestones: [
+    { id: "race-today", title: "Today's race", eventName: "Today's race", targetDate: "2026-10-13", distanceMeters: 5000, targetTimeSeconds: 1800 },
+    { id: "race-tomorrow", title: "Tomorrow's race", eventName: "Tomorrow's race", targetDate: "2026-10-14", distanceMeters: 10_000, targetTimeSeconds: 3600 },
+  ] });
+  await page.goto("/dashboard");
+  await expect(page.locator(".home-milestone-name")).toHaveText("Today's race");
+  await expect(page.getByRole("button", { name: "Good", exact: true })).toBeVisible();
+  await page.clock.fastForward(60_000);
+  await expect(page.locator(".home-milestone-name")).toHaveText("Tomorrow's race");
+  await expect.poll(() => reads.some((url) => url.includes("from=2026-10-14"))).toBe(true);
+  await expect(page.locator(".home-toolbar")).toContainText("Wednesday, 14 October");
+  expect(writes).toEqual([]);
+});
+
+test("A failed conflict reload blocks another check-in save until the latest answers load", async ({ page }) => {
+  await mockHome(page, { checkIn: { revision: 4, status: "saved", answers: { overallFeeling: "normal", notes: "Original" } } });
+  let conflicted = false;
+  let reloadAllowed = false;
+  const saves: Array<Record<string, unknown>> = [];
+  await page.route("**/api/v1/wellbeing-check-ins**", async (route) => {
+    if (route.request().method() === "GET") {
+      if (!conflicted) return route.fallback();
+      if (!reloadAllowed) return route.fulfill({ status: 503, json: { error: { message: "Offline" } } });
+      return route.fulfill({ json: { data: { items: [{ revision: 5, timezone: "Africa/Johannesburg", status: "saved", answers: { overallFeeling: "poor", notes: "Updated elsewhere", sleepQuality: "good" } }] } } });
+    }
+    const body = route.request().postDataJSON();
+    saves.push(body);
+    if (!conflicted) { conflicted = true; return route.fulfill({ status: 409, json: { error: { message: "Conflict" } } }); }
+    return route.fulfill({ json: { data: { ...body, revision: 6 } } });
+  });
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Good", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "could not be reloaded" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Choose your overall feeling" })).toHaveCount(0);
+  expect(saves).toHaveLength(1);
+  reloadAllowed = true;
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByRole("button", { name: "Good", exact: true }).click();
+  await expect(page.getByText("Check-in saved.")).toBeVisible();
+  expect(saves[1]).toMatchObject({ expectedRevision: 5, answers: { overallFeeling: "good", notes: "Updated elsewhere", sleepQuality: "good" } });
+});
+
+test("Cancelling check-in details does not include unsaved edits in a quick answer", async ({ page }) => {
+  await mockHome(page, { checkIn: { revision: 4, status: "saved", answers: { overallFeeling: "very_good", sleepQuality: "good", notes: "Saved note" } } });
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Edit check-in details" }).click();
+  await expect(page.getByLabel("How do you feel overall?")).toHaveValue("very_good");
+  await page.getByLabel("How did you sleep?").selectOption("poor");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  const saved = page.waitForRequest((request) => request.method() === "PUT" && request.url().includes("/api/v1/wellbeing-check-ins/"));
+  await page.getByRole("button", { name: "Low", exact: true }).click();
+  expect((await saved).postDataJSON()).toMatchObject({ expectedRevision: 4, answers: { overallFeeling: "poor", sleepQuality: "good", notes: "Saved note" } });
+  await expect(page.getByText("Check-in saved.")).toBeVisible();
 });

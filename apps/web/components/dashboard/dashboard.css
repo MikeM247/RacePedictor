@@ -935,6 +935,102 @@
 .home-layout .text-link, .dashboard-nav .text-link { min-height: 44px; display: inline-flex; align-items: center; font-size: 16px; }
 .supporting-management nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
 
+/* Daily briefing Home: one compact goal banner, then workout and history together. */
+.home-layout .dashboard-content.home-content {
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, .95fr);
+  grid-template-areas: "goal goal" "today activity";
+  gap: 20px;
+  align-items: start;
+}
+.home-layout .home-goal { grid-area: goal; }
+.home-layout .home-today { grid-area: today; min-width: 0; }
+.home-layout .home-activity { grid-area: activity; min-width: 0; }
+.home-layout .home-goal-panel { padding: 18px 20px; }
+.home-layout .home-goal-content--ready {
+  grid-template-columns: minmax(0, 1fr) minmax(185px, .42fr);
+  grid-template-areas: "goal milestone" "action milestone";
+  gap: 4px 22px;
+  align-items: center;
+}
+.home-layout .home-goal-target { grid-area: goal; }
+.home-layout .home-goal-target > .eyebrow { margin: 0; }
+.home-layout .home-goal-target h2 { margin: 0; color: var(--rp-text); font-size: clamp(21px, 2vw, 27px); line-height: 1.22; overflow-wrap: anywhere; }
+.home-layout .home-milestone {
+  grid-area: milestone;
+  align-content: center;
+  gap: 2px;
+  min-height: 54px;
+  padding: 4px 0 4px 18px;
+  border: 0;
+  border-left: 1px solid var(--rp-border);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  text-decoration: none;
+}
+.home-layout .home-milestone .eyebrow { color: var(--rp-text-muted); font-size: 12px; }
+.home-layout .home-milestone-name { color: var(--rp-text); font-size: 15px; font-weight: 650; line-height: 1.45; overflow-wrap: anywhere; }
+.home-layout .home-milestone-target { color: var(--rp-text-muted); font-size: 14px; line-height: 1.45; }
+.home-layout .home-milestone:hover .home-milestone-name { color: var(--rp-cyan-strong); text-decoration: underline; }
+.home-layout .home-plan-link { grid-area: action; justify-self: start; min-height: 44px; }
+.home-layout .home-workout-surface {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--rp-border);
+  border-radius: 10px;
+  background: var(--rp-surface);
+}
+.home-layout .home-workout-surface > .today-coach-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.home-layout .home-workout-surface .today-coach-main { gap: 5px; }
+.home-layout .home-workout-surface .today-coach-main > .eyebrow { margin: 0; color: var(--rp-cyan-strong); }
+.home-layout .home-workout-surface .today-coach-main > .metadata { margin: 0; }
+.home-layout .home-workout-surface .today-coach-main h2 { margin: 0; font-size: clamp(21px, 2vw, 26px); }
+.home-layout .home-workout-surface .today-coach-main > p { margin: 0; }
+.home-layout .home-workout-surface .today-prescription { font-size: 16px !important; line-height: 1.5 !important; }
+.home-layout .home-workout-surface .today-meta { align-self: center; justify-items: start; }
+.home-layout .home-workout-surface .today-meta .button { min-height: 44px; white-space: nowrap; }
+.home-layout .daily-check-in--compact {
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 14px 0 0;
+  border: 0;
+  border-top: 1px solid var(--rp-border);
+  background: transparent;
+}
+.home-layout .daily-check-in--compact .eyebrow { margin: 0 0 2px; font-size: 11px; }
+.home-layout .daily-check-in--compact h3 { font-size: 16px; }
+.daily-check-in-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+.daily-check-in-choice { min-height: 44px; min-width: 76px; padding: 8px 16px; border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius-sm); background: var(--rp-surface-soft); color: var(--rp-text); font: inherit; cursor: pointer; }
+.daily-check-in-choice:hover { border-color: var(--rp-cyan); }
+.daily-check-in-choice:disabled { opacity: .65; cursor: wait; }
+.daily-check-in-choice[aria-pressed="true"] { border-color: var(--rp-cyan); color: var(--rp-text); box-shadow: inset 0 0 0 1px var(--rp-cyan); }
+.daily-check-in-edit { justify-self: start; min-height: 44px; }
+.home-layout .home-session-summary--compact { display: grid; gap: 12px; padding: 20px; border-radius: 10px; }
+.home-layout .home-session-summary--compact .home-session-heading { align-items: start; }
+.home-layout .home-session-summary--compact .home-session-heading h3 { margin: 2px 0 0; font-size: 21px; overflow-wrap: anywhere; }
+.home-layout .home-session-summary--compact .home-session-heading .eyebrow { margin: 0; color: var(--rp-text-muted); font-size: 12px; }
+.home-layout .home-session-summary--compact .home-session-heading .metadata { margin: 4px 0 0; }
+.home-latest-facts { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--rp-text); font-size: 15px; font-variant-numeric: tabular-nums; }
+.home-session-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.home-layout .home-calendar-shortcut { align-self: center; }
+.readiness-layout .dashboard-content { max-width: 960px; }
+.readiness-layout .home-evidence { width: 100%; padding: 20px; border: 1px solid var(--rp-border); border-radius: 10px; background: var(--rp-surface); }
+.readiness-layout .home-evidence-heading h2,
+.readiness-layout .home-evidence-section h3 { color: var(--rp-text); }
+.readiness-layout .home-evidence-section h3 { margin: 0; font-size: 18px; }
+.readiness-layout .group-heading-row h3 { margin: 0; color: var(--rp-text); }
+.readiness-layout .home-evidence a[id="readiness-data-quality"] { margin-top: 8px; }
+.dashboard-nav-primary a[aria-current="page"] { border-left: 3px solid var(--rp-cyan); background: var(--rp-surface-raised); color: var(--rp-text); }
+
 @media (min-width: 768px) and (max-width: 1199px) {
   .dashboard-layout { display: grid; }
   .dashboard-nav { position: sticky; display: flex; flex-direction: column; top: 0; width: auto; height: 100vh; align-items: stretch; border-right: 1px solid var(--rp-border); border-bottom: 0; }
@@ -946,39 +1042,64 @@
 
 @media (max-width: 1099px) and (min-width: 768px) {
   .dashboard-layout { grid-template-columns: 160px minmax(0, 1fr); }
-  .home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1fr); }
+  .home-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "today" "activity"; }
+  .home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "milestone" "action"; }
+  .home-layout .home-milestone { padding-left: 0; border-left: 0; }
 }
 @media (max-width: 767px) {
   .dashboard-layout { display: block; padding-top: 64px; padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
-  .dashboard-nav { position: fixed; z-index: 20; inset: 0 0 auto; height: 64px; width: 100%; padding: 6px 16px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; border-right: 0; border-bottom: 1px solid var(--rp-border); }
+  .dashboard-nav { position: fixed; z-index: 20; inset: 0 0 auto; height: 64px; width: 100%; padding: 6px 16px; display: grid; grid-template-columns: minmax(0, 1fr) 100px; grid-template-rows: 1fr; align-items: center; border-right: 0; border-bottom: 1px solid var(--rp-border); }
   .dashboard-brand { display: flex; align-items: center; gap: 12px; margin: 0; width: auto; }
   .dashboard-brand img { width: 56px; height: 50px; object-fit: contain; }
   .dashboard-brand-name { margin: 0; font-size: 16px; text-align: left; }
-  .dashboard-nav .dashboard-nav-primary { position: fixed; inset: auto 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin: 0; padding: 8px 20px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--rp-border); background: var(--rp-nav); }
+  .dashboard-nav .dashboard-nav-primary { position: fixed; inset: auto 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; margin: 0; padding: 8px 20px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--rp-border); background: var(--rp-nav); }
   .dashboard-nav .dashboard-nav-primary a { display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 14px; padding: 8px; min-height: 60px; }
-  .dashboard-nav .dashboard-nav-secondary { position: static; grid-column: auto; grid-row: auto; display: block; margin: 0 !important; padding: 0; border: 0; }
+  .dashboard-nav .dashboard-nav-secondary { position: absolute; top: 50%; right: 16px; grid-column: 2; grid-row: 1; display: block; margin: 0 !important; padding: 0; border: 0; transform: translateY(-50%); }
+  .dashboard-nav .dashboard-nav-secondary a { justify-content: center; min-width: 44px; }
+  .dashboard-nav .dashboard-nav-secondary a span { display: none; }
   .dashboard-nav-secondary a { gap: 6px; padding: 8px 0; font-size: 13px !important; }
   .dashboard-nav-secondary a svg { width: 20px; }
-  .home-layout .dashboard-toolbar { padding: 16px 16px 0; }
+  .home-layout .dashboard-toolbar { padding: 12px 16px 0; }
   .home-layout .dashboard-toolbar h1 { font-size: 24px; }
-  .home-layout .dashboard-content { padding: 16px 16px 24px; gap: 24px; }
+  .home-layout .home-toolbar .dashboard-toolbar-title > p { display: block; }
+  .home-layout .home-calendar-shortcut { display: none; }
+  .home-layout .dashboard-content { padding: 12px 16px 24px; gap: 12px; }
+  .home-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "today" "activity"; gap: 12px; }
   .home-layout .home-group { gap: 8px; }
   .home-layout .home-goal .group-heading, .home-layout .home-today .group-heading { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .home-layout .home-goal-target h3::before, .home-layout .today-coach-main h3::before { display: block; margin-bottom: 4px; color: var(--rp-text-muted); font-size: 14px; line-height: 1.5; font-weight: 600; }
   .home-layout .home-goal-target h3::before { content: "Your goal"; }
   .home-layout .today-coach-main h3::before { content: "Today’s focus"; }
   .home-layout .home-goal-panel, .home-layout .home-group > .today-coach-card, .home-layout .home-group > .home-session-summary { padding: 14px; }
-  .home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "milestone"; gap: 6px; }
+  .home-layout .home-plan-link { grid-area: goal; align-self: start; justify-self: end; font-size: 14px; }
+  .home-layout .home-goal-content--ready .home-goal-target > .eyebrow,
+  .home-layout .home-goal-content--ready .home-goal-target h2 { padding-right: 96px; }
+  .home-layout .home-goal-target h2 { font-size: 20px; }
+  .home-layout .home-goal-panel { padding: 14px 16px; }
   .home-layout .home-goal-main { gap: 8px; }
   .home-layout .home-goal-facts--performance { gap: 12px 16px; }
-  .home-layout .home-milestone { padding: 10px 12px; gap: 2px; }
-  .home-layout .home-milestone h4 { font-size: 18px; }
+  .home-layout .home-milestone { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 44px; padding: 6px 0 2px; border-top: 1px solid var(--rp-border); border-left: 0; }
+  .home-layout .home-milestone .eyebrow { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .home-layout .home-milestone-name { font-size: 14px; }
+  .home-layout .home-milestone-target { font-size: 14px; }
   .home-layout .today-coach-card--compact { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; }
   .home-layout .today-coach-card--compact .today-coach-main { display: contents; }
   .home-layout .today-coach-card--compact .today-coach-main > p { grid-column: 1 / -1; }
   .home-layout .today-coach-card--compact .today-meta { grid-column: 2; grid-row: 1; justify-self: end; align-self: start; }
   .home-layout .today-coach-main h3 { font-size: 20px; }
+  .home-layout .home-workout-surface { padding: 14px 16px; }
+  .home-layout .home-workout-surface > .today-coach-card { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .home-layout .home-workout-surface .today-coach-main h2 { font-size: 20px; }
+  .home-layout .home-workout-surface .today-meta { grid-column: auto; grid-row: auto; justify-self: stretch; }
+  .home-layout .home-workout-surface .today-meta .button { width: 100%; }
+  .home-layout .daily-check-in--compact { padding-top: 12px; }
   .home-layout .home-session-heading { flex-wrap: wrap; gap: 12px; }
+  .home-layout .home-session-summary--compact { gap: 6px; padding: 14px 16px; }
+  .home-layout .home-session-summary--compact .home-session-heading > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .home-layout .home-session-summary--compact .home-session-heading .eyebrow { flex-basis: 100%; }
+  .home-layout .home-session-summary--compact .home-session-heading .metadata { margin: 0; }
+  .home-layout .home-session-summary--compact .home-session-heading h3 { font-size: 18px; }
   .home-progress-summaries { gap: 12px; }
   .home-progress-summaries { display: block; padding-top: 8px; }
   .home-progress-summaries > div { display: block; margin-top: 4px; }

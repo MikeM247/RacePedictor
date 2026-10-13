@@ -28,7 +28,7 @@ export type RecoveryContext = {
 
 const storagePrefix = "racepredictor.recovery.v1.";
 const maxAgeMs = 2 * 60 * 60 * 1000;
-const allowedPaths = new Set(["/dashboard", "/dashboard/activities", "/dashboard/calendar", "/dashboard/data-quality", "/dashboard/settings"]);
+const allowedPaths = new Set(["/dashboard", "/dashboard/readiness", "/dashboard/activities", "/dashboard/calendar", "/dashboard/data-quality", "/dashboard/settings"]);
 const ids = /^[A-Za-z0-9_-]{8,96}$/u;
 
 export function safeRecoveryPath(value: string | null | undefined, fallback = "/dashboard/activities") {
@@ -73,7 +73,10 @@ export function readRecoveryContext(id: string | null | undefined): RecoveryCont
   try {
     const parsed = JSON.parse(window.sessionStorage.getItem(`${storagePrefix}${id}`) ?? "null") as Partial<RecoveryContext> | null;
     if (!parsed || parsed.version !== 1 || parsed.id !== id || typeof parsed.expiresAt !== "number" || parsed.expiresAt < Date.now()) return null;
-    const path = safeRecoveryPath(parsed.path, "");
+    const validatedPath = safeRecoveryPath(parsed.path, "");
+    const path = parsed.disclosure === "readiness" && validatedPath === "/dashboard"
+      ? "/dashboard/readiness"
+      : validatedPath;
     if (!path) return null;
     return {
       ...parsed,
@@ -96,10 +99,13 @@ export function dataQualityHref(context: RecoveryContext, source: "file" | "stra
 
 export function recoveryReturnHref(context: RecoveryContext | null, fallback: string) {
   if (!context) return safeRecoveryPath(fallback, "/dashboard/activities");
-  const path = safeRecoveryPath(context.path, fallback);
+  const validatedPath = safeRecoveryPath(context.path, fallback);
+  const path = context.disclosure === "readiness" && validatedPath === "/dashboard"
+    ? "/dashboard/readiness"
+    : validatedPath;
   const url = new URL(path, "https://racepredictor.invalid");
   url.searchParams.set("recovery", context.id);
-  return `${url.pathname}?${url.searchParams}${context.disclosure === "readiness" ? "#readiness" : ""}`;
+  return `${url.pathname}?${url.searchParams}`;
 }
 
 export function restoreRecoveryFocus(context: RecoveryContext | null) {

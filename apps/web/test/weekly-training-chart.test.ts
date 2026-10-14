@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { distanceCeiling, metricText, relativeValues, trainingChartData } from "../lib/weekly-training-chart-model.ts";
+import { axisTickText, distanceCeiling, metricText, overlayScale, trainingChartData } from "../lib/weekly-training-chart-model.ts";
 import { weeklyTrainingFixture } from "../lib/mock-data/weekly-training.ts";
 import { toDashboardViewModel } from "../lib/dashboard-view-model.ts";
 
@@ -10,9 +10,33 @@ test("chart domains keep distance at zero and handle constants, gaps and single 
   assert.equal(distanceCeiling(weeks.map(week => ({ ...week, distanceM: 0 }))), 10);
   assert.ok(distanceCeiling(weeks.map(week => ({ ...week, distanceM: 155000 }))) >= 155);
   const constant = weeks.map((week, index) => ({ ...week, avgPaceSecPerKm: index === 3 ? null : 360 }));
-  assert.deepEqual(relativeValues(constant, "avgPaceSecPerKm"), [0.5, 0.5, 0.5, null, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
-  assert.equal(relativeValues(weeks.map((week, index) => ({ ...week, avgPaceSecPerKm: index === 0 ? 400 : null })), "avgPaceSecPerKm")[0], 0.5);
+  const scale = overlayScale(constant, "avgPaceSecPerKm")!;
+  assert.equal(scale.values[3], null);
+  assert.ok(scale.domainMin < 360 && scale.domainMax > 360);
+  assert.ok(Number.isFinite(scale.normalize(360)));
+  const single = overlayScale(weeks.map((week, index) => ({ ...week, avgPaceSecPerKm: index === 0 ? 400 : null })), "avgPaceSecPerKm")!;
+  assert.ok(single.domainMin <= 400 && single.domainMax >= 400);
+  assert.equal(overlayScale(weeks.map(week => ({ ...week, avgPaceSecPerKm: null })), "avgPaceSecPerKm"), null);
   assert.equal(metricText("avgPaceSecPerKm", 359.9), "6:00 /km");
+});
+
+test("numeric overlay axes bracket observations and format source units", () => {
+  for (const key of ["avgPaceSecPerKm", "elapsedTimeS", "elevationGainM"] as const) {
+    const scale = overlayScale(weeklyTrainingFixture.weeks, key)!;
+    for (const value of scale.values) if (value !== null) assert.ok(scale.normalize(value) >= 0 && scale.normalize(value) <= 1);
+    assert.equal(new Set(scale.ticks.map(value => axisTickText(key, value, scale.step))).size, scale.ticks.length);
+    assert.equal(scale.normalize(scale.domainMin), 0);
+    assert.equal(scale.normalize(scale.domainMax), 1);
+  }
+  for (const key of ["elapsedTimeS", "elevationGainM"] as const) {
+    const zero = overlayScale(weeklyTrainingFixture.weeks.map(week => ({ ...week, [key]: 0 })), key)!;
+    assert.equal(zero.domainMin, 0);
+    assert.ok(zero.domainMax > 0);
+    assert.equal(zero.normalize(0), 0);
+  }
+  assert.equal(axisTickText("avgPaceSecPerKm", 360, 30), "6:00");
+  assert.equal(axisTickText("elapsedTimeS", 90000, 3600), "25:00");
+  assert.equal(axisTickText("elapsedTimeS", 5, 1), "0:00:05");
 });
 
 test("legacy distance adapts both production keys, preserving gaps and true zeros", () => {

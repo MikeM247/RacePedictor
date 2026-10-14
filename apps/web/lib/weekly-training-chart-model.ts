@@ -38,11 +38,61 @@ export function distanceCeiling(weeks: WeeklyTrainingWeek[]) {
   const step = [1, 2, 5, 10].map(value => value * magnitude).find(value => value >= maximum / 5)!;
   return Math.ceil(maximum / step) * step;
 }
-export function relativeValues(weeks: WeeklyTrainingWeek[], key: OverlayKey) {
+const niceStep = (range: number, targetIntervals: number, key: OverlayKey) => {
+  const raw = Math.max(key === "elevationGainM" ? 1 : Number.EPSILON, range / targetIntervals);
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const fraction = raw / power;
+  if (key === "avgPaceSecPerKm" || key === "elapsedTimeS") {
+    const choices = key === "avgPaceSecPerKm"
+      ? [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]
+      : [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 18000, 36000];
+    return choices.find(step => step >= raw) ?? 10 ** Math.ceil(Math.log10(raw));
+  }
+  const multiplier = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return multiplier * power;
+};
+
+export function overlayScale(weeks: WeeklyTrainingWeek[], key: OverlayKey) {
   const values = weeks.map(week => week[key]);
-  const valid = values.filter((value): value is number => value !== null);
+  const valid = values.filter((value): value is number => value !== null && Number.isFinite(value));
+  if (!valid.length) return null;
   const min = Math.min(...valid), max = Math.max(...valid);
-  return values.map(value => value === null ? null : min === max ? 0.5 : (value - min) / (max - min));
+  const targetIntervals = 5;
+  let step: number, domainMin: number, domainMax: number;
+  if (key === "elevationGainM" || key === "elapsedTimeS") {
+    step = max === 0 && key === "elapsedTimeS" ? 60 : niceStep(max || 1, targetIntervals, key);
+    domainMin = 0;
+    domainMax = Math.max(step, Math.ceil(max / step) * step);
+  } else {
+    step = niceStep(max - min || Math.max(30, min * 0.1), targetIntervals, key);
+    domainMin = Math.max(0, Math.floor(min / step) * step);
+    domainMax = Math.max(domainMin + step, Math.ceil(max / step) * step);
+    const tickCount = Math.floor((domainMax - domainMin) / step) + 1;
+    if (tickCount < 4) {
+      domainMin = Math.max(0, domainMin - step);
+      domainMax += step;
+    }
+  }
+  const ticks = Array.from({ length: Math.floor((domainMax - domainMin) / step) + 1 }, (_, index) => domainMin + index * step);
+  return {
+    domainMin,
+    domainMax,
+    step,
+    ticks,
+    values,
+    normalize: (value: number) => (value - domainMin) / (domainMax - domainMin),
+  };
+}
+
+export function axisTickText(key: OverlayKey, value: number, step: number) {
+  const rounded = Math.round(value);
+  if (key === "avgPaceSecPerKm") return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, "0")}`;
+  if (key === "elevationGainM") return Math.round(value).toLocaleString("en-ZA");
+  if (step < 60) return `${Math.floor(rounded / 3600)}:${String(Math.floor(rounded % 3600 / 60)).padStart(2, "0")}:${String(rounded % 60).padStart(2, "0")}`;
+  const totalMinutes = Math.round(value / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}` : `0:${String(minutes).padStart(2, "0")}`;
 }
 export const weekLabel = (date: string) => new Intl.DateTimeFormat("en-ZA", { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${date}T00:00:00Z`));
 export function metricText(key: OverlayKey | "distanceM", value: number | null) {

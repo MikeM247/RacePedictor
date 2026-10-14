@@ -15,10 +15,16 @@
 .weekly-avgPaceSecPerKm { color: #d39bff; }
 .weekly-elapsedTimeS { color: #ffd16b; }
 .weekly-elevationGainM { color: #62edbd; }
-.weekly-training-axis-labels { display: flex; justify-content: space-between; font-size: 12px; margin-top: 12px; }
+.weekly-training-axis-labels { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-top: 12px; }
+.weekly-training-axis-labels span:last-child { text-align: right; }
+.weekly-training-axis-select { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin: 4px 0; font-size: 13px; }
+.weekly-training-axis-select select { min-height: 40px; max-width: 100%; padding: 6px 30px 6px 9px; border: 1px solid var(--rp-border); border-radius: 6px; background: var(--rp-surface); color: var(--rp-text); font: inherit; }
 .weekly-training-plot { width: 100%; min-width: 0; border-radius: 4px; }
-.weekly-training-plot svg { display: block; overflow: visible; }
+.weekly-training-plot svg { display: block; overflow: hidden; }
 .weekly-training-plot text { font: 11px system-ui, sans-serif; fill: var(--rp-text-muted); }
+.weekly-right-axis { stroke: currentColor; stroke-width: 1; }
+.weekly-training-plot .weekly-right-axis text { fill: currentColor; stroke: none; }
+.weekly-training-plot .weekly-right-axis line { vector-effect: non-scaling-stroke; }
 .weekly-bar { fill: var(--rp-cyan); }
 .weekly-grid { stroke: var(--rp-border); stroke-dasharray: 3 4; }
 .weekly-baseline { stroke: var(--rp-text-muted); }
@@ -47,10 +53,13 @@
   .weekly-training-heading { flex-wrap: wrap; }
   .weekly-training-badge { font-size: 11px; }
   .weekly-toggle { font-size: 13px; padding: 5px 8px; }
+  .weekly-training-axis-labels { font-size: 11px; }
+  .weekly-training-axis-select { margin-top: 0; }
   .weekly-training-readout { max-width: none; font-size: 14px; }
 }
 @media (forced-colors: active) {
   .weekly-bar { fill: Highlight; }
   .weekly-line { color: CanvasText; }
+  .weekly-right-axis { color: CanvasText; }
   .weekly-grid, .weekly-baseline, .weekly-selection { stroke: CanvasText; }
 }

@@ -6,6 +6,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { runLocalAnalytics } from "../src/local-analytics.js";
 import { importGarminCsv } from "../src/local-garmin-pipeline.js";
+import { aggregateWeeklyTraining } from "../../core/src/services/weekly-training.ts";
 
 const header = "Activity Type,Date,Favorite,Title,Distance,Time,Avg HR,Max HR,Aerobic TE,Avg Run Cadence,Max Run Cadence,Avg Pace,Best Pace,Total Ascent,Total Descent,Moving Time,Elapsed Time";
 const activity = (date, distance, elapsed, pace, trainingEffect) =>
@@ -27,7 +28,7 @@ test("reconciles weekly features and writes a dashboard snapshot", async () => {
     "utf8",
   );
   await importGarminCsv({ sourcePath, vaultPath: path.join(directory, "vault"), databasePath });
-  const result = await runLocalAnalytics({ databasePath, snapshotPath });
+  const result = await runLocalAnalytics({ databasePath, snapshotPath, now: () => new Date("2026-07-28T12:00:00.000Z") });
 
   assert.equal(result.weeklyFeatureCount, 3);
   assert.equal(result.reconciliation.activityCount, 3);
@@ -44,6 +45,10 @@ test("reconciles weekly features and writes a dashboard snapshot", async () => {
   );
   assert.equal(snapshot.data.importProgress.normalizedCount, 3);
   assert.equal(snapshot.data.featureTrendPoints.length, 3);
+  const expected = aggregateWeeklyTraining({ athleteId: "athlete_001", generatedAt: "2026-07-28T12:00:00.000Z", activities: [
+    ["2026-07-13", 10000, 3300, 330], ["2026-07-20", 12000, 3840, 320], ["2026-07-27", 18000, 5580, 310],
+  ].map(([date, distanceM, elapsedTimeS, avgPaceSecPerKm]) => ({ athleteId: "athlete_001", occurredAt: `${date}T04:00:00.000Z`, sport: "run", distanceM, elapsedTimeS, avgPaceSecPerKm, elevationGainM: 80 })) });
+  assert.deepEqual(snapshot.weeklyTraining, expected);
 
   const database = new DatabaseSync(databasePath, { readOnly: true });
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM weekly_features").get().count, 3);

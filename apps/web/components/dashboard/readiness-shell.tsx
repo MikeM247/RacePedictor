@@ -11,6 +11,8 @@ import { OnlineStatusPanel } from "./online-status-panel";
 import { createRecoveryContext, dataQualityHref, readRecoveryContext, restoreRecoveryFocus } from "../../lib/recovery-context";
 import { groupTrendSeries, selectOutlookReason } from "../../lib/readiness-evidence";
 import "./dashboard.css";
+import { WeeklyTrainingChart } from "./weekly-training-chart";
+import { trainingChartData, isDistanceSeries } from "../../lib/weekly-training-chart-model";
 
 type ReadinessShellProps = DashboardViewModel & {
   onlineStatus?: OnlineStatus | null;
@@ -36,6 +38,8 @@ export function ReadinessShell({
   predictionOptions,
   driverContributions,
   featureTrendPoints,
+  weeklyTraining,
+  weeklyTrainingError,
   onlineStatus,
   analyticsLoading = false,
   onlineStatusLoading = false,
@@ -48,7 +52,8 @@ export function ReadinessShell({
   const selectedPrediction = predictionOptions.find((candidate) => candidate.targetDistanceM === selectedDistanceM) ?? predictionSummary;
   const selectedKpis = toSummaryKpis(selectedPrediction);
   const outlookReason = selectOutlookReason(driverContributions, featureTrendPoints);
-  const trendSeries = groupTrendSeries(featureTrendPoints);
+  const chart = trainingChartData(weeklyTraining, featureTrendPoints, weeklyTrainingError);
+  const trendSeries = groupTrendSeries(chart.consumedDistance ? featureTrendPoints.filter(point => !isDistanceSeries(point)) : featureTrendPoints);
 
   useEffect(() => {
     let active = true;
@@ -93,9 +98,19 @@ export function ReadinessShell({
             {uiState.showStaleState ? <p className="home-inline-status state-panel--stale" role="status">Showing the last available estimate. {staleInfo.staleReason ?? "Live updates are delayed."}{staleInfo.staleAtIso ? ` Last update: ${formatDate(staleInfo.staleAtIso, timezone, true)}.` : ""}</p> : null}
             <div className="home-outlook-main"><div><strong className="home-outlook-value">{selectedKpis[0]?.value}</strong><span className="home-outlook-label">current-fitness estimate · {selectedKpis[1]?.value}</span></div><div className="home-outlook-copy"><p><strong>Training signal:</strong> {outlookReason.text}</p><p><strong>Estimate range:</strong> {selectedKpis[2]?.value}. This is the model&apos;s low-to-high estimate span, not a probability or race-day forecast.</p></div></div>
             <p className="home-evidence-caveat">Race-day progress cannot yet be assessed from this current-fitness estimate.</p>
-            <DriverEvidence drivers={driverContributions} /><TrendEvidence series={trendSeries} />
+            <DriverEvidence drivers={driverContributions} />
             <div className="home-evidence-actions"><RecoveryDataQualityLink label="Review data coverage" issue="Current-fitness details are limited by the available imported history." selectedDistanceM={selectedDistanceM} /><Link className="text-link" href="/dashboard/activities">Review training history</Link></div>
           </> : null}
+          <WeeklyTrainingChart
+            key={weeklyTraining?.windowStart ?? "legacy"}
+            {...chart}
+            loading={analyticsLoading}
+            stale={staleInfo.isStale}
+            timezone={weeklyTraining?.timezone}
+            generatedAt={weeklyTraining?.generatedAt}
+            onRetry={weeklyTrainingError || weeklyTraining?.status === "unavailable" || uiState.showErrorState ? onAnalyticsRetry ?? (() => window.location.reload()) : undefined}
+          />
+          {!analyticsLoading && trendSeries.length > 0 ? <TrendEvidence series={trendSeries} /> : null}
           {onlineStatus ? <details className="home-freshness"><summary>Data freshness</summary><OnlineStatusPanel status={onlineStatus} /></details> : null}
           {onlineStatusLoading ? <p className="quiet-copy" role="status">Checking data freshness…</p> : null}
           {onlineStatusError ? <p className="quiet-copy" role="status">Freshness details are unavailable. Goal and coaching reads are independent.</p> : null}

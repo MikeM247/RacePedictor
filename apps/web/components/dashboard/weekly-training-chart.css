@@ -1,0 +1,56 @@
+.weekly-training { min-width: 0; margin-top: 24px; padding: 20px; border: 1px solid var(--rp-border); border-radius: 10px; background: var(--rp-surface); color: var(--rp-text); }
+.weekly-training-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.weekly-training h3 { margin: 0; font-size: 22px; }
+.weekly-training-heading p { color: var(--rp-text-muted); }
+.weekly-training-badge { border: 1px solid var(--rp-cyan); border-radius: 6px; padding: 6px 9px; color: var(--rp-cyan); font-size: 12px; white-space: nowrap; }
+.weekly-training-controls { display: block; margin: 20px 0; }
+.weekly-training-controls fieldset { display: block; border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
+.weekly-training-controls legend { font-size: 13px; color: var(--rp-text-muted); margin-bottom: 8px; }
+.weekly-toggle { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 5px 10px; border: 1px solid currentColor; border-radius: 6px; cursor: pointer; }
+.weekly-training-controls .weekly-toggle { display: inline-flex; margin: 0 8px 8px 0; }
+.weekly-toggle input { width: 17px; height: 17px; margin: 0; accent-color: currentColor; }
+.weekly-toggle:has(input:disabled) { border-color: var(--rp-border); cursor: default; color: var(--rp-text-muted); }
+.weekly-toggle small { font-size: 11px; }
+.weekly-distance-key { color: var(--rp-cyan); }
+.weekly-avgPaceSecPerKm { color: #d39bff; }
+.weekly-elapsedTimeS { color: #ffd16b; }
+.weekly-elevationGainM { color: #62edbd; }
+.weekly-training-axis-labels { display: flex; justify-content: space-between; font-size: 12px; margin-top: 12px; }
+.weekly-training-plot { width: 100%; min-width: 0; border-radius: 4px; }
+.weekly-training-plot svg { display: block; overflow: visible; }
+.weekly-training-plot text { font: 11px system-ui, sans-serif; fill: var(--rp-text-muted); }
+.weekly-bar { fill: var(--rp-cyan); }
+.weekly-grid { stroke: var(--rp-border); stroke-dasharray: 3 4; }
+.weekly-baseline { stroke: var(--rp-text-muted); }
+.weekly-line { stroke: currentColor; fill: currentColor; stroke-width: 2; pointer-events: none; }
+.weekly-line.weekly-elapsedTimeS line { stroke-dasharray: 6 4; }
+.weekly-line.weekly-elevationGainM line { stroke-dasharray: 2 4; }
+.weekly-selection { stroke: var(--rp-text); stroke-dasharray: 3 3; pointer-events: none; }
+.weekly-training-week-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.weekly-training-week-controls button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--rp-border); border-radius: 6px; background: transparent; color: var(--rp-text); cursor: pointer; font: inherit; font-size: 13px; }
+.weekly-training-week-controls button:disabled { color: var(--rp-text-muted); cursor: default; }
+.weekly-training :focus-visible { outline: 2px solid var(--rp-cyan); outline-offset: 3px; }
+.weekly-training-readout { border: 1px solid var(--rp-border); border-radius: 8px; padding: 14px; margin-top: 14px; max-width: 420px; }
+.weekly-training-readout dl { margin: 10px 0 0; }
+.weekly-training-readout dl > div { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--rp-border); }
+.weekly-training-readout dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.weekly-training-footnotes { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--rp-text-muted); font-size: 12px; margin: 16px 0; }
+.weekly-training summary { cursor: pointer; padding: 12px 0; min-height: 44px; color: var(--rp-cyan); }
+.weekly-training-table-wrap { overflow-x: auto; max-width: 100%; }
+.weekly-training table { border-collapse: collapse; width: 100%; font-size: 13px; text-align: left; }
+.weekly-training caption { text-align: left; padding: 8px 0; }
+.weekly-training th, .weekly-training td { padding: 10px; border-bottom: 1px solid var(--rp-border); white-space: nowrap; }
+.weekly-training-definitions { font-size: 13px; color: var(--rp-text-muted); }
+.weekly-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 540px) {
+  .weekly-training { padding: 12px; }
+  .weekly-training-heading { flex-wrap: wrap; }
+  .weekly-training-badge { font-size: 11px; }
+  .weekly-toggle { font-size: 13px; padding: 5px 8px; }
+  .weekly-training-readout { max-width: none; font-size: 14px; }
+}
+@media (forced-colors: active) {
+  .weekly-bar { fill: Highlight; }
+  .weekly-line { color: CanvasText; }
+  .weekly-grid, .weekly-baseline, .weekly-selection { stroke: CanvasText; }
+}

@@ -1,6 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { aggregateWeeklyTraining, DEFAULT_TRAINING_TIMEZONE } from "../../core/src/services/weekly-training.ts";
 
 export const DEFAULT_TARGET_DISTANCE_M = 21097.5;
 export const STANDARD_TARGET_DISTANCES_M = [5000, 10000, DEFAULT_TARGET_DISTANCE_M, 42195];
@@ -255,12 +256,13 @@ export const runLocalAnalytics = async ({
   snapshotPath,
   athleteId = "athlete_001",
   targetDistanceM = DEFAULT_TARGET_DISTANCE_M,
+  now = () => new Date(),
 }) => {
   const database = new DatabaseSync(databasePath);
   createAnalyticsSchema(database);
   const activities = database.prepare(`
     SELECT
-      id, athlete_id AS athleteId, occurred_at AS occurredAt,
+      id, athlete_id AS athleteId, sport, occurred_at AS occurredAt,
       local_occurred_at AS localOccurredAt, elapsed_time_s AS elapsedTimeS,
       distance_m AS distanceM, avg_pace_sec_per_km AS avgPaceSecPerKm,
       elevation_gain_m AS elevationGainM, avg_hr_bpm AS avgHrBpm,
@@ -273,7 +275,7 @@ export const runLocalAnalytics = async ({
   }
 
   const weeklyRows = computeWeeklyRows(activities);
-  const generatedAt = new Date().toISOString();
+  const generatedAt = now().toISOString();
   const targetDistancesM = [...new Set([...STANDARD_TARGET_DISTANCES_M, targetDistanceM])]
     .sort((left, right) => left - right);
   const predictions = targetDistancesM
@@ -371,7 +373,11 @@ export const runLocalAnalytics = async ({
     value: round(week.totalDistanceM / 1000, 1),
     unit: "km",
   }));
+  const hasProfiles = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'coaching_profiles'").get();
+  const timezone = (hasProfiles ? database.prepare("SELECT timezone FROM coaching_profiles WHERE athlete_id = ?").get(athleteId)?.timezone : null) ?? DEFAULT_TRAINING_TIMEZONE;
+  const weeklyTraining = aggregateWeeklyTraining({ athleteId, activities, generatedAt, timezone });
   const snapshot = {
+    weeklyTraining,
     fetchStatus: "success",
     stale: { isStale: false },
     data: {

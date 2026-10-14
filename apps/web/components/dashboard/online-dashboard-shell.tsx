@@ -61,7 +61,7 @@ export function OnlineDashboardShell() {
         onlineStatus={statusState.kind === "ready" ? statusState.status : null}
         onlineStatusLoading={statusState.kind === "loading"}
         onlineStatusError={statusState.kind === "error" ? statusState.message : null}
-        onAnalyticsRetry={state.kind === "error" ? () => window.location.reload() : undefined}
+        onAnalyticsRetry={() => window.location.reload()}
       />
     </div>
   </>;

@@ -1,3 +1,4 @@
+import { weeklyTrainingReadSchema, type WeeklyTrainingRead } from "../../../packages/core/src/contracts/weekly-training.ts";
 import type {
   DashboardFetchResult,
   DriverContribution,
@@ -36,6 +37,8 @@ export type DashboardKpiView = {
 };
 
 export type DashboardViewModel = {
+  weeklyTraining?: WeeklyTrainingRead;
+  weeklyTrainingError?: string;
   fetchStatus: DashboardFetchResult["fetchStatus"];
   errorMessage: string | null;
   staleInfo: {
@@ -137,6 +140,10 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     throw new Error("Dashboard payload must be an object");
   }
 
+  const weeklyResult = input.weeklyTraining === undefined ? null : weeklyTrainingReadSchema.safeParse(input.weeklyTraining);
+  const weeklyFields = weeklyResult === null ? {} : weeklyResult.success
+    ? { weeklyTraining: weeklyResult.data }
+    : { weeklyTrainingError: "Weekly training data could not be validated." };
   const fetchStatus = readString(input.fetchStatus, "fetchStatus");
   if (fetchStatus !== "success" && fetchStatus !== "empty" && fetchStatus !== "error") {
     throw new Error("Invalid dashboard fetch status");
@@ -187,6 +194,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
 
   if (fetchStatus !== "success") {
     return {
+      ...weeklyFields,
       fetchStatus,
       errorMessage,
       staleInfo,
@@ -287,6 +295,7 @@ export const toDashboardViewModel = (input: unknown): DashboardViewModel => {
     : [normalizedPredictionSummary];
 
   return {
+    ...weeklyFields,
     fetchStatus,
     errorMessage,
     staleInfo,

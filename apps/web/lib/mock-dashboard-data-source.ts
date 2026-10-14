@@ -1,3 +1,4 @@
+import { weeklyTrainingFixture } from "./mock-data/weekly-training";
 import type { DashboardFetchResult } from "../../../packages/core/src/contracts";
 import type { DashboardDataSource } from "./dashboard-data-source";
 import { driverContributionsFixture } from "./mock-data/driver-contributions";
@@ -8,6 +9,7 @@ import { predictionSummaryFixture } from "./mock-data/prediction-summary";
 export class MockDashboardDataSource implements DashboardDataSource {
   async getDashboardData(): Promise<DashboardFetchResult> {
     return {
+      weeklyTraining: weeklyTrainingFixture,
       fetchStatus: "success",
       stale: {
         isStale: false,

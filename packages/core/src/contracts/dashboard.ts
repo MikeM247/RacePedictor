@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { weeklyTrainingReadSchema, type WeeklyTrainingRead } from "./weekly-training.ts";
 
 export const predictionSummarySchema = z.object({
   athleteId: z.string().min(1),
@@ -62,6 +63,7 @@ export const dashboardStaleMetadataSchema = z.object({
 });
 
 const dashboardSuccessResultSchema = z.object({
+  weeklyTraining: weeklyTrainingReadSchema.optional(),
   fetchStatus: z.literal("success"),
   stale: dashboardStaleMetadataSchema,
   data: dashboardOverviewDataSchema,
@@ -69,6 +71,7 @@ const dashboardSuccessResultSchema = z.object({
 });
 
 const dashboardEmptyResultSchema = z.object({
+  weeklyTraining: weeklyTrainingReadSchema.optional(),
   fetchStatus: z.literal("empty"),
   stale: dashboardStaleMetadataSchema,
   data: z.never().optional(),
@@ -76,6 +79,7 @@ const dashboardEmptyResultSchema = z.object({
 });
 
 const dashboardErrorResultSchema = z.object({
+  weeklyTraining: weeklyTrainingReadSchema.optional(),
   fetchStatus: z.literal("error"),
   stale: dashboardStaleMetadataSchema,
   errorMessage: z.string().min(1),
@@ -145,15 +149,18 @@ export type DashboardStaleMetadata = {
 
 export type DashboardFetchResult =
   | {
+      weeklyTraining?: WeeklyTrainingRead;
       fetchStatus: "success";
       data: DashboardOverviewData;
       stale: DashboardStaleMetadata;
     }
   | {
+      weeklyTraining?: WeeklyTrainingRead;
       fetchStatus: "empty";
       stale: DashboardStaleMetadata;
     }
   | {
+      weeklyTraining?: WeeklyTrainingRead;
       fetchStatus: "error";
       errorMessage: string;
       stale: DashboardStaleMetadata;

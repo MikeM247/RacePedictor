@@ -1,9 +1,10 @@
+import { weeklyTrainingFixture } from "../lib/mock-data/weekly-training.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { e2eSnapshotPath } from "./fixture-paths.ts";
 
-export default async function prepareReadinessLocalFixture() {
-  const snapshot = {
+export const readinessSnapshot = {
+    weeklyTraining: weeklyTrainingFixture,
     fetchStatus: "success",
     stale: { isStale: true, staleReason: "A previous assessment is shown.", staleAtIso: "2026-08-18T08:00:00.000Z" },
     data: {
@@ -25,6 +26,7 @@ export default async function prepareReadinessLocalFixture() {
       importProgress: { importId: "f01-local-import", status: "completed", stagedCount: 1, normalizedCount: 1, duplicateCount: 0, rejectedCount: 0, updatedAt: "2026-08-18T07:00:00.000Z" },
     },
   };
+export default async function prepareReadinessLocalFixture() {
   await mkdir(path.dirname(e2eSnapshotPath), { recursive: true });
-  await writeFile(e2eSnapshotPath, JSON.stringify(snapshot), "utf8");
+  await writeFile(e2eSnapshotPath, JSON.stringify(readinessSnapshot), "utf8");
 }

@@ -72,6 +72,39 @@ test("cloud coaching returns only approved structured projections for the actor 
   assert.doesNotMatch(JSON.stringify(active), /relativePath|vault|storageKey|credential/u);
 });
 
+test("weekly chart reads the full bounded window independently of the 500-row prediction slice", async () => {
+  const calls = [];
+  const rows = Array.from({ length: 501 }, (_, index) => row("athlete-a", `run-${index}`, "2026-08-10T10:00:00.000Z", { distanceM: 1000, elapsedTimeS: 400, avgPaceSecPerKm: 360, elevationGainM: 10 }));
+  const repository = new PrismaCloudDashboardRepository({ prisma: {
+    activity: { findMany: async query => { calls.push(query); return query.take ? rows.slice(0, query.take) : rows; } },
+    import: { findFirst: async () => null },
+  } });
+  const result = await repository.getOverview(scopeA, NOW);
+  assert.equal(result.fetchStatus, "empty"); // Short runs cannot establish the existing estimate.
+  assert.equal(result.weeklyTraining.status, "ready");
+  assert.equal(result.weeklyTraining.weeks[11].distanceM, 501000);
+  assert.equal(result.weeklyTraining.weeks[11].runCount, 501);
+  const query = calls.find(call => !call.take);
+  assert.equal(query.where.athleteId, "athlete-a");
+  assert.equal(query.where.deletedAt, null);
+  assert.deepEqual(query.where.sport.in, ["run", "trail_run", "treadmill_run"]);
+  assert.ok(query.where.occurredAt.gte instanceof Date);
+  assert.ok(query.where.occurredAt.lt instanceof Date);
+});
+
+test("weekly read failures do not discard a valid fitness estimate", async () => {
+  const repository = new PrismaCloudDashboardRepository({ prisma: {
+    activity: { findMany: async query => {
+      if (!query.take) throw new Error("Chart read unavailable");
+      return [row("athlete-a", "run", "2026-08-10T10:00:00.000Z")];
+    } },
+    import: { findFirst: async () => null },
+  } });
+  const result = await repository.getOverview(scopeA, NOW);
+  assert.equal(result.fetchStatus, "success");
+  assert.equal(result.weeklyTraining.status, "unavailable");
+});
+
 test("sync changes support empty, pagination, replay, tombstones, and foreign cursor denial", async () => {
   const repository = new PrismaSyncChangeRepository({ prisma: syncPrisma() });
   const first = await repository.list(scopeA, { after: null, limit: 1 });

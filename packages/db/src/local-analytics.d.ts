@@ -5,6 +5,7 @@ export function runLocalAnalytics(options: {
   snapshotPath: string;
   athleteId?: string;
   targetDistanceM?: number;
+  now?: () => Date;
 }): Promise<{
   snapshotPath: string;
   weeklyFeatureCount: number;

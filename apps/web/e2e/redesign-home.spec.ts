@@ -65,6 +65,7 @@ async function mockHome(page: Page, options: {
     if (path === "/api/v1/activities") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items: activities } }) });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail(path.endsWith(older.id) ? older : latest)) });
   });
+  await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { from: "2026-09-14", to: "2026-09-20", timezone: "Africa/Johannesburg", sessions: [], activities: [], activitiesReadStatus: "available" } }) }));
   await page.route("**/api/v1/activities/*/coach-review", (route) => {
     if (options.reviewFailure) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "Review service unavailable" } }) });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { activityId: latest.id, status: reviewStatus, review: reviewData, requestId: reviewStatus === "not_requested" ? null : "f02-request", updatedAt: "2026-09-15T08:01:00.000Z", readRevision: reviewData?.revision ?? null } }) });
@@ -294,6 +295,40 @@ test("Home keeps an active workout readable and all summaries visible on mobile"
     await assertHomeLayout(page, test.info(), "home-active-workout");
     await expectAxeClean(page, "Home daily briefing");
   }
+});
+
+for (const startTime of ["06:00", undefined]) {
+test(`Home advances Up next to Thursday when today's run arrives, without reloading (${startTime ? "timed" : "untimed"} workout)`, async ({ page }) => {
+  const today = "2026-09-15";
+  const thursday = "2026-09-17";
+  const tuesdayRun = fixtureCalendarSession({ id: "session-tuesday", title: "Tuesday easy run", scheduledDate: today, effectiveDate: today, startTime, prescription: "Run easily for 35 minutes.", durationMinutes: 35 });
+  const thursdayRun = fixtureCalendarSession({ id: "session-thursday", title: "Thursday steady run", scheduledDate: thursday, effectiveDate: thursday, startTime: "06:00", prescription: "Run steadily for 45 minutes.", durationMinutes: 45 });
+  const nextWorkout = { id: thursdayRun.id, kind: "run", scheduledDate: thursday, startTime: "06:00", title: thursdayRun.title, purpose: thursdayRun.purpose, prescription: thursdayRun.prescription, cautions: thursdayRun.cautions, durationMinutes: thursdayRun.durationMinutes };
+  await mockHome(page, { today: coachingFixtures.today({ date: today, todayScheduleKind: "prescribed_session", nextWorkout, session: tuesdayRun }) });
+  let activities: Array<Record<string, unknown>> = [];
+  await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { from: "2026-09-14", to: "2026-09-20", timezone: "Africa/Johannesburg", sessions: [tuesdayRun, thursdayRun], activities, activitiesReadStatus: "available" } }) }));
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "Tuesday easy run" })).toBeVisible();
+  activities = [{ id: "recorded-tuesday-run", localDate: today, occurredAt: "2026-09-15T06:00:00.000Z", sport: "run", elapsedTimeS: 2_100 }];
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByRole("heading", { name: "Thursday steady run" })).toBeVisible();
+  await expect(page.getByText("Up next · Thu, 17 Sept", { exact: true })).toBeVisible();
+  await expect(page.getByText("Run steadily for 45 minutes.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View workout" })).toHaveAttribute("href", /date=2026-09-17&session=session-thursday/);
+  await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Good", exact: true })).toBeVisible();
+});
+}
+
+test("Home asks for a calendar check when multiple sessions could remain today", async ({ page }) => {
+  const today = "2026-09-15";
+  const first = fixtureCalendarSession({ id: "session-morning", title: "Morning run", scheduledDate: today, effectiveDate: today, startTime: undefined });
+  const second = fixtureCalendarSession({ id: "session-later", title: "Second run", scheduledDate: today, effectiveDate: today, startTime: undefined });
+  await mockHome(page, { today: coachingFixtures.today({ date: today, todayScheduleKind: "prescribed_session", session: first }) });
+  await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { from: "2026-09-14", to: "2026-09-20", timezone: "Africa/Johannesburg", sessions: [first, second], activities: [{ id: "recorded-morning", localDate: today, occurredAt: "2026-09-15T06:00:00.000Z", sport: "run", elapsedTimeS: 2_100 }], activitiesReadStatus: "available" } }) }));
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "Today's sessions need review" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review calendar" })).toHaveAttribute("href", /\/dashboard\/calendar\?date=2026-09-15/);
 });
 
 test("Home advances milestones and the check-in date at local midnight without writing", async ({ page }) => {

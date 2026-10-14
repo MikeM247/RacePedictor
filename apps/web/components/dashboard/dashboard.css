@@ -808,6 +808,7 @@
 .plan-assumptions summary { color: var(--rp-text); cursor: pointer; font-weight: 680; }
 .plan-assumptions p { margin: 8px 0 0; }
 .home-inline-status { margin: 0; padding: 10px 12px; border-left: 3px solid var(--rp-amber); color: var(--rp-text-muted); }
+.home-inline-status button.text-link { min-height: 0; padding: 0; border: 0; background: transparent; color: var(--rp-cyan-strong); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .home-state, .home-session-summary { padding: 16px; border: 1px solid var(--rp-border); border-radius: var(--rp-radius-md); background: var(--rp-surface); }
 .home-state p, .home-session-summary p { margin: 0; color: var(--rp-text-muted); line-height: 1.5; }
 .home-state .button { margin-top: 12px; }

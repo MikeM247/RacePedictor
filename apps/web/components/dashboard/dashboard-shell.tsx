@@ -30,17 +30,28 @@ function LegacyReadinessRedirect() {
 
 export function DashboardShell({ initialNow }: { initialNow: string }) {
   const [now, setNow] = useState(() => new Date(initialNow));
+  const [refreshKey, setRefreshKey] = useState(0);
   const [planTimezone, setPlanTimezone] = useState<string | null>(null);
   const [coachingTimezone, setCoachingTimezone] = useState<string | null>(null);
   const timezone = planTimezone ?? coachingTimezone ?? "Africa/Johannesburg";
   const date = localDateInTimezone(timezone, now);
 
   useEffect(() => {
-    const refresh = () => setNow(new Date());
+    const refresh = () => {
+      setNow(new Date());
+      if (document.visibilityState === "visible") setRefreshKey((value) => value + 1);
+    };
     refresh();
     const timer = window.setInterval(refresh, 60_000);
     window.addEventListener("focus", refresh);
-    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("pageshow", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("pageshow", refresh);
+    };
   }, []);
   return <div className="dashboard-layout home-layout">
     <LegacyReadinessRedirect />
@@ -58,13 +69,13 @@ export function DashboardShell({ initialNow }: { initialNow: string }) {
         <section className="content-group home-group home-today" aria-labelledby="today-focus-heading">
           <h2 id="today-focus-heading" className="sr-only">Today&apos;s focus</h2>
           <div className="home-workout-surface">
-            <TodayCoachingCard compact headingLevel={2} homeAction currentDate={date} onTimezone={setCoachingTimezone} />
+            <TodayCoachingCard compact headingLevel={2} homeAction currentDate={date} refreshKey={refreshKey} onTimezone={setCoachingTimezone} />
             <DailyWellbeingCheckIn key={`${timezone}:${date}`} timezone={timezone} date={date} compact />
           </div>
         </section>
         <section className="content-group home-group home-activity" aria-labelledby="latest-activity-heading">
           <h2 id="latest-activity-heading" className="sr-only">Latest activity</h2>
-          <HomeRecentTraining timezone={timezone} compact />
+          <HomeRecentTraining timezone={timezone} compact refreshKey={refreshKey} />
         </section>
       </section>
     </main>

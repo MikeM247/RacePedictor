@@ -10,7 +10,7 @@ import { createRecoveryContext, dataQualityHref, readRecoveryContext, restoreRec
 import { compactHomeTakeaway } from "../../lib/home-summary";
 
 type State = "loading" | "ready" | "empty" | "error";
-export function HomeRecentTraining({ timezone = "Africa/Johannesburg", compact = false }: { timezone?: string; compact?: boolean }) {
+export function HomeRecentTraining({ timezone = "Africa/Johannesburg", compact = false, refreshKey = 0 }: { timezone?: string; compact?: boolean; refreshKey?: number }) {
   const [state, setState] = useState<State>("loading");
   const [activity, setActivity] = useState<ActivitiesListResponse["items"][number] | null>(null);
   const reviewRead = useActivityCoachReview(compact ? null : activity?.id ?? null);
@@ -20,17 +20,17 @@ export function HomeRecentTraining({ timezone = "Africa/Johannesburg", compact =
 
   useEffect(() => {
     let active = true;
-    setState("loading");
+    setState((current) => current === "ready" ? "ready" : "loading");
     void fetch("/api/v1/activities?limit=40", { cache: "no-store" }).then(readActivitiesListResponse).then((activities) => {
       if (!active) return;
       const latest = [...activities.items].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id.localeCompare(left.id))[0] ?? null;
       setActivity(latest);
       setState(latest ? "ready" : "empty");
     }).catch(() => {
-      if (active) setState("error");
+      if (active) setState((current) => current === "ready" ? "ready" : "error");
     });
     return () => { active = false; };
-  }, [retry]);
+  }, [retry, refreshKey]);
 
   if (state === "loading") return <p className="state-copy" role="status" aria-busy="true">Loading the latest recorded session…</p>;
   if (state === "error") return <div className="home-state home-state--error" role="alert"><p>Recent training could not be loaded.</p><button className="button button-secondary" onClick={() => setRetry((value) => value + 1)}>Retry activity</button><Link className="text-link" href="/dashboard/activities">Open Training</Link></div>;

@@ -28,6 +28,7 @@ export type HistoricalCalendarSessionView = CalendarSessionView & {
 export type CalendarActivityView = {
   id: string;
   localDate: string;
+  occurredAt?: string;
   title: string;
   sport: string;
   distanceMeters: number;
@@ -262,6 +263,7 @@ export function normalizeCalendarActivities(payload: unknown): CalendarActivityV
     return [{
       id,
       localDate,
+      ...(typeof item.occurredAt === "string" ? { occurredAt: item.occurredAt } : {}),
       title: typeof item.title === "string" && item.title.trim() ? item.title : "Recorded run",
       sport: typeof item.sport === "string" ? item.sport : "run",
       distanceMeters: Number(item.distanceM ?? 0),

@@ -6,7 +6,9 @@ import {
   formatCoachingDate,
   localDateInTimezone,
   normalizeCalendarSessions,
+  normalizeCalendarActivities,
   weekRange,
+  type CalendarActivityView,
   type CalendarSessionView,
 } from "../../lib/coaching-ui-state";
 import { todayCoachingStates, type TodayCoachingState } from "../../lib/today-coaching";
@@ -44,7 +46,9 @@ async function loadToday(): Promise<JsonRecord> {
   return asRecord(body.data ?? body);
 }
 
-async function loadCurrentWeek(date: string): Promise<CalendarSessionView[]> {
+type CurrentWeekData = { sessions: CalendarSessionView[]; activities: CalendarActivityView[]; activitiesReadStatus: "available" | "unavailable"; timezone: string };
+
+async function loadCurrentWeek(date: string): Promise<CurrentWeekData> {
   const range = weekRange(date);
   const params = new URLSearchParams(range);
   const response = await fetch(`/api/v1/coaching/calendar?${params}`, { cache: "no-store" });
@@ -53,10 +57,26 @@ async function loadCurrentWeek(date: string): Promise<CalendarSessionView[]> {
     const error = asRecord(asRecord(body).error);
     throw new Error(typeof error.message === "string" ? error.message : "The current week could not be loaded.");
   }
-  return normalizeCalendarSessions(body).sort((left, right) => {
+  const data = asRecord(asRecord(body).data ?? body);
+  const sessions = normalizeCalendarSessions(body).sort((left, right) => {
     const byDate = left.effectiveDate.localeCompare(right.effectiveDate);
     return byDate || (left.startTime ?? "").localeCompare(right.startTime ?? "") || left.title.localeCompare(right.title);
   });
+  return {
+    sessions,
+    activities: normalizeCalendarActivities(body),
+    activitiesReadStatus: data.activitiesReadStatus === "unavailable" || !Array.isArray(data.activities) ? "unavailable" : "available",
+    timezone: typeof data.timezone === "string" ? data.timezone : "Africa/Johannesburg",
+  };
+}
+
+function localClock(value: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value));
+  return `${parts.find((part) => part.type === "hour")?.value ?? "00"}:${parts.find((part) => part.type === "minute")?.value ?? "00"}`;
+}
+
+function homeNextDate(date: string, timezone: string) {
+  return new Intl.DateTimeFormat("en-ZA", { timeZone: timezone, weekday: "short", day: "numeric", month: "short" }).format(new Date(`${date}T12:00:00.000Z`));
 }
 
 function GoalSummary({ goal, noPlan = false }: { goal: JsonRecord; noPlan?: boolean }) {
@@ -155,13 +175,13 @@ function CurrentWeek({
   );
 }
 
-export function TodayCoachingCard({ compact = false, headingLevel = 2, homeAction = false, currentDate, onTimezone }: { compact?: boolean; headingLevel?: 2 | 3; homeAction?: boolean; currentDate?: string; onTimezone?: (timezone: string) => void }) {
+export function TodayCoachingCard({ compact = false, headingLevel = 2, homeAction = false, currentDate, refreshKey = 0, onTimezone }: { compact?: boolean; headingLevel?: 2 | 3; homeAction?: boolean; currentDate?: string; refreshKey?: number; onTimezone?: (timezone: string) => void }) {
   const [requestState, setRequestState] = useState<RequestState>("loading");
   const [payload, setPayload] = useState<JsonRecord | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [requestVersion, setRequestVersion] = useState(0);
   const [weekState, setWeekState] = useState<WeekRequestState>("idle");
-  const [weekSessions, setWeekSessions] = useState<CalendarSessionView[]>([]);
+  const [weekData, setWeekData] = useState<CurrentWeekData | null>(null);
   const [weekError, setWeekError] = useState("");
   const [weekRequestVersion, setWeekRequestVersion] = useState(0);
   const focusedCalendarLauncher = useRef<HTMLAnchorElement | null>(null);
@@ -190,7 +210,7 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
 
   useEffect(() => {
     let current = true;
-    setRequestState("loading");
+    setRequestState((current) => current === "success" ? "success" : "loading");
     setErrorMessage("");
     void loadToday().then((response) => {
       if (!current) return;
@@ -198,37 +218,36 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
       setRequestState("success");
     }).catch((error) => {
       if (!current) return;
-      setPayload(null);
       setErrorMessage(error instanceof Error ? error.message : "Today could not be loaded.");
-      setRequestState("error");
+      setRequestState((state) => state === "success" ? "success" : "error");
     });
     return () => { current = false; };
-  }, [requestVersion, currentDate]);
+  }, [requestVersion, currentDate, refreshKey]);
 
   useEffect(() => {
     const plan = asRecord(payload?.plan);
     const date = String(payload?.date ?? "");
-    if (compact || requestState !== "success" || !plan.id || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    if ((compact && !homeAction) || requestState !== "success" || !plan.id || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       setWeekState("idle");
-      setWeekSessions([]);
+      setWeekData(null);
       setWeekError("");
       return;
     }
     let current = true;
     setWeekState("loading");
     setWeekError("");
-    void loadCurrentWeek(date).then((sessions) => {
+    void loadCurrentWeek(date).then((data) => {
       if (!current) return;
-      setWeekSessions(sessions);
+      setWeekData(data);
       setWeekState("success");
     }).catch((error) => {
       if (!current) return;
-      setWeekSessions([]);
+      setWeekData(null);
       setWeekError(error instanceof Error ? error.message : "The current week could not be loaded.");
       setWeekState("error");
     });
     return () => { current = false; };
-  }, [compact, payload, requestState, weekRequestVersion]);
+  }, [compact, homeAction, payload, requestState, weekRequestVersion, refreshKey]);
 
   const ContextHeading = headingLevel === 3 ? "h3" : "h2";
 
@@ -266,7 +285,48 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
     : "unavailable";
   const hasPrescribedSession = Boolean(session.id) && scheduleKind === "prescribed_session";
   const nextWorkout = asRecord(payload.nextWorkout);
-  const heading = scheduleKind === "prescribed_rest"
+  const apiNextSession = nextWorkout.id && nextWorkout.scheduledDate
+    ? normalizeCalendarSessions({ sessions: [{ ...nextWorkout, scheduledDate: String(nextWorkout.scheduledDate), effectiveDate: String(nextWorkout.scheduledDate), prescribedDate: String(nextWorkout.scheduledDate), originalDate: String(nextWorkout.scheduledDate), status: "upcoming" }] })[0]
+    : undefined;
+  const today = date;
+  const todaySessions = (weekData?.sessions ?? []).filter((candidate) => candidate.effectiveDate === today && candidate.kind !== "rest" && candidate.status !== "skipped");
+  const todayCandidates = todaySessions.filter((candidate) => candidate.kind === "run");
+  const todayRuns = (weekData?.activities ?? []).filter((activity) => activity.localDate === today && ["run", "trail_run", "treadmill_run"].includes(activity.sport) && (!activity.occurredAt || Date.parse(activity.occurredAt) <= Date.now()));
+  const latestRunFinish = todayRuns.reduce<string | null>((latest, activity) => {
+    if (!activity.occurredAt) return latest;
+    const finish = new Date(new Date(activity.occurredAt).valueOf() + activity.elapsedTimeSeconds * 1000);
+    if (!Number.isFinite(finish.valueOf())) return latest;
+    const clock = localClock(finish.toISOString(), weekData?.timezone ?? timezone);
+    return latest === null || clock > latest ? clock : latest;
+  }, null);
+  const laterTodayCandidates = latestRunFinish
+    ? todaySessions.filter((candidate) => candidate.kind !== "run" || !candidate.startTime || candidate.startTime > latestRunFinish)
+    : [];
+  const weekDataUsable = weekData !== null && weekData.activitiesReadStatus === "available" && (weekState === "success" || weekState === "loading");
+  const upNextAmbiguous = homeAction && weekDataUsable && (
+    todayRuns.length > 0 && (todayCandidates.length !== 1 || laterTodayCandidates.length > 1)
+    || todayRuns.length === 0 && todaySessions.length > 1
+  );
+  const recordedRunAdvancesToday = homeAction && weekDataUsable && todayRuns.length > 0 && todaySessions.length === 1 && todayCandidates.length === 1 && !(todayCandidates[0].startTime && latestRunFinish && todayCandidates[0].startTime > latestRunFinish);
+  const selectedNext = homeAction && weekDataUsable && !upNextAmbiguous
+    ? recordedRunAdvancesToday
+      ? weekData.sessions.find((candidate) => candidate.effectiveDate > today && candidate.kind !== "rest" && candidate.status !== "skipped") ?? apiNextSession
+      : todayRuns.length > 0
+        ? laterTodayCandidates[0] ?? (laterTodayCandidates.length === 0 ? weekData.sessions.find((candidate) => candidate.effectiveDate > today && candidate.kind !== "rest" && candidate.status !== "skipped") ?? apiNextSession : undefined)
+        : todaySessions[0] ?? weekData.sessions.find((candidate) => candidate.effectiveDate > today && candidate.kind !== "rest" && candidate.status !== "skipped") ?? apiNextSession
+    : undefined;
+  const displayingNextWorkout = Boolean(homeAction && selectedNext && (selectedNext.effectiveDate > today || recordedRunAdvancesToday || (todayRuns.length > 0 && selectedNext.id !== session.id)));
+  const displaySession = displayingNextWorkout ? selectedNext : session;
+  const displaySessionRecord = asRecord(displaySession);
+  const displayCautions = Array.isArray(displaySessionRecord.cautions) ? displaySessionRecord.cautions.map(String) : [];
+  const displayWarnings = displayingNextWorkout
+    ? Array.isArray(displaySessionRecord.warnings) ? displaySessionRecord.warnings.map(String) : []
+    : warnings;
+  const heading = upNextAmbiguous
+    ? "Today's sessions need review"
+    : displayingNextWorkout
+      ? String(displaySession?.title ?? "Next approved workout")
+    : scheduleKind === "prescribed_rest"
     ? "Intentional recovery day"
     : scheduleKind === "unscheduled"
       ? "No session scheduled today"
@@ -277,7 +337,7 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
       : state === "skipped"
         ? "Scheduled session skipped"
         : String(session.title ?? "Today's approved session");
-  const sessionDate = String(session.effectiveDate ?? session.scheduledDate ?? date);
+  const sessionDate = String(displaySession?.effectiveDate ?? displaySession?.scheduledDate ?? date);
   const scheduleDescription = scheduleKind === "prescribed_rest"
     ? "The approved plan prescribes rest today."
     : scheduleKind === "unscheduled"
@@ -289,12 +349,16 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
     : scheduleKind === "unscheduled" ? "Unscheduled"
       : scheduleKind === "unavailable" ? "Schedule unavailable"
         : stateLabels[state];
-  const homeEyebrow = scheduleKind === "prescribed_rest"
+  const homeEyebrow = upNextAmbiguous
+    ? "Today · Check calendar"
+    : displayingNextWorkout
+      ? `${scheduleKind === "prescribed_rest" ? "Today · Recovery · Next" : "Up next"} · ${homeNextDate(sessionDate, weekData?.timezone ?? timezone)}`
+    : scheduleKind === "prescribed_rest"
     ? "Today · Recovery"
     : scheduleKind === "prescribed_session" && state !== "missed" && state !== "skipped"
       ? "Up next · Today"
       : "Today’s schedule";
-  const homeActionLabel = state === "missed" || state === "skipped"
+  const homeActionLabel = upNextAmbiguous ? "Review calendar →" : displayingNextWorkout ? "View workout →" : state === "missed" || state === "skipped"
     ? "Review session →"
     : hasPrescribedSession || nextWorkout.id ? "View workout →" : "View calendar →";
   const showDateAndStatus = !homeAction || date !== localDateInTimezone(timezone)
@@ -304,18 +368,24 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
     <div className="today-coach-main">
       {homeAction ? <p className="eyebrow">{homeEyebrow}</p> : null}
       <ContextHeading id="today-coaching-heading">{heading}</ContextHeading>
-      {showDateAndStatus ? <p className="metadata"><time dateTime={date}>{formatCoachingDate(date, timezone)}</time> · {statusLabel}{amendments.length > 0 ? " · Amended" : ""}</p> : null}
-      {scheduleKind === "prescribed_session" || scheduleKind === "prescribed_rest" ? <>
+      {showDateAndStatus && !displayingNextWorkout ? <p className="metadata"><time dateTime={date}>{formatCoachingDate(date, timezone)}</time> · {statusLabel}{amendments.length > 0 ? " · Amended" : ""}</p> : displayingNextWorkout && scheduleKind === "prescribed_rest" ? <p className="metadata">Today is a prescribed recovery day.</p> : null}
+      {upNextAmbiguous ? <p>More than one workout could still be due today. Check the approved calendar.</p> : displayingNextWorkout && displaySession ? <>
+        <p className="metadata"><time dateTime={sessionDate}>{formatCoachingDate(sessionDate, weekData?.timezone ?? timezone)}</time>{displaySession.startTime ? ` · ${displaySession.startTime}` : ""}</p>
+        <p className="today-prescription">{String(displaySession.prescription ?? "Prescription unavailable; open Calendar.")}</p>
+      </> : scheduleKind === "prescribed_session" || scheduleKind === "prescribed_rest" ? <>
         <p className="today-prescription">{String(session.prescription ?? "Prescription unavailable; open Calendar.")}</p>
         {!homeAction ? <p className="today-focus-purpose"><strong>Purpose:</strong> {String(session.purpose ?? "Purpose not supplied.")}{hasPrescribedSession && session.durationMinutes && !String(session.prescription ?? "").includes(String(session.durationMinutes)) ? ` · ${String(session.durationMinutes)} min` : ""}</p> : null}
       </> : <p>{scheduleDescription}</p>}
+      {homeAction && weekState === "error" ? <p className="home-inline-status" role="status">The schedule and recorded runs could not be checked. <button className="text-link" type="button" onClick={() => setWeekRequestVersion((value) => value + 1)}>Retry calendar check</button></p> : null}
+      {homeAction && requestState === "success" && errorMessage ? <p className="home-inline-status" role="status">The latest schedule could not be refreshed. <button className="text-link" type="button" onClick={() => setRequestVersion((value) => value + 1)}>Retry schedule</button></p> : null}
+      {homeAction && weekState === "success" && weekData?.activitiesReadStatus === "unavailable" ? <p className="home-inline-status" role="status">Recorded runs could not be checked; today’s approved schedule is shown.</p> : null}
       {state === "stale" || state === "missed" || state === "skipped" ? <p className="home-inline-status" role="status">{String(payload.message ?? statusLabel)}</p> : null}
-      {warnings.map((warning) => <p className="home-inline-status" role="status" key={warning}>{warning}</p>)}
-      {Array.isArray(session.warnings) ? session.warnings.map((warning) => <p className="home-inline-status" role="status" key={String(warning)}>{String(warning)}</p>) : null}
-      {Array.isArray(session.cautions) && session.cautions.length > 0 ? <p className="home-session-caveat"><strong>Cautions:</strong> {session.cautions.map(String).join("; ")}</p> : null}
-      {nextWorkout.id && nextWorkout.scheduledDate && !hasPrescribedSession ? <p className="today-next-workout"><strong>Next workout:</strong> {String(nextWorkout.title)} · {formatCoachingDate(String(nextWorkout.scheduledDate), timezone)}{homeAction ? "" : " · View in Calendar"}</p> : null}
+      {displayWarnings.map((warning) => <p className="home-inline-status" role="status" key={warning}>{warning}</p>)}
+      {Array.isArray(displaySessionRecord.warnings) && !displayingNextWorkout ? displaySessionRecord.warnings.map((warning) => <p className="home-inline-status" role="status" key={String(warning)}>{String(warning)}</p>) : null}
+      {displayCautions.length > 0 ? <p className="home-session-caveat"><strong>Cautions:</strong> {displayCautions.join("; ")}</p> : null}
+      {!homeAction && nextWorkout.id && nextWorkout.scheduledDate && !hasPrescribedSession ? <p className="today-next-workout"><strong>Next workout:</strong> {String(nextWorkout.title)} · {formatCoachingDate(String(nextWorkout.scheduledDate), timezone)} · View in Calendar</p> : null}
     </div>
-    <div className="today-meta">{session.id && links.session && (!homeAction || hasPrescribedSession) ? <Link id="view-today-session" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={String(links.session)} onClick={openCalendar}>{homeAction ? homeActionLabel : "View session →"}</Link> : nextWorkout.id && nextWorkout.scheduledDate ? <Link id="view-today-session" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={`/dashboard/calendar?date=${encodeURIComponent(String(nextWorkout.scheduledDate))}&session=${encodeURIComponent(String(nextWorkout.id))}`} onClick={openCalendar}>{homeAction ? homeActionLabel : "View calendar →"}</Link> : <Link id="view-today-calendar" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={String(links.calendar ?? "/dashboard/calendar")} onClick={openCalendar}>{homeAction ? homeActionLabel : "View calendar →"}</Link>}</div>
+    <div className="today-meta">{upNextAmbiguous ? <Link id="view-today-calendar" ref={restoreCalendarLauncher} className="button button-primary" href={`/dashboard/calendar?date=${encodeURIComponent(today)}`} onClick={openCalendar}>{homeActionLabel}</Link> : displayingNextWorkout && selectedNext ? <Link id="view-today-session" ref={restoreCalendarLauncher} className="button button-primary" href={`/dashboard/calendar?date=${encodeURIComponent(selectedNext.effectiveDate)}&session=${encodeURIComponent(selectedNext.id)}`} onClick={openCalendar}>{homeActionLabel}</Link> : session.id && links.session && (!homeAction || hasPrescribedSession) ? <Link id="view-today-session" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={String(links.session)} onClick={openCalendar}>{homeAction ? homeActionLabel : "View session →"}</Link> : selectedNext ? <Link id="view-today-session" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={`/dashboard/calendar?date=${encodeURIComponent(selectedNext.effectiveDate)}&session=${encodeURIComponent(selectedNext.id)}`} onClick={openCalendar}>{homeAction ? homeActionLabel : "View calendar →"}</Link> : <Link id="view-today-calendar" ref={restoreCalendarLauncher} className={homeAction ? "button button-primary" : "text-link"} href={String(links.calendar ?? "/dashboard/calendar")} onClick={openCalendar}>{homeAction ? homeActionLabel : "View calendar →"}</Link>}</div>
   </section>;
 
   return <section className={`today-coach-card today-coach-card--${state}${compact ? " today-coach-card--compact" : ""}`} aria-labelledby="today-coaching-heading">
@@ -350,7 +420,7 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
       date={date}
       timezone={timezone}
       state={weekState}
-      sessions={weekSessions}
+      sessions={weekData?.sessions ?? []}
       errorMessage={weekError}
       onRetry={() => setWeekRequestVersion((value) => value + 1)}
     /> : null}

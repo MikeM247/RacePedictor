@@ -179,7 +179,7 @@
 .status-chip--active{border-color:var(--rp-lime,#9ddd3b);background:color-mix(in srgb,var(--rp-lime,#9ddd3b) 12%,var(--rp-surface,#0e1b2b));color:var(--rp-lime,#9ddd3b)}
 .status-chip--draft{border-color:var(--rp-amber,#f4b942);background:color-mix(in srgb,var(--rp-amber,#f4b942) 10%,var(--rp-surface,#0e1b2b));color:var(--rp-amber,#f4b942)}
 .summary-list dt,.status-list dt,.session-card dt,.result-grid dt,.sync-device-card dt,.sync-provider-facts dt{color:var(--rp-text-muted,#a9b6c6)}
-.summary-list dd,.status-list dd,.session-card dd,.result-grid dd{color:var(--rp-text,#f5f8fc);font-variant-numeric:tabular-nums}
+.summary-list dd,.status-list dd,.session-card dd,.result-grid dd{min-width:0;overflow-wrap:anywhere;color:var(--rp-text,#f5f8fc);font-variant-numeric:tabular-nums}
 .summary-list{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
 .summary-list div{min-width:0;padding:4px 10px;border-left:1px solid var(--rp-border,#293b4e)}
 .text-link{color:var(--rp-cyan,#20c7f5)}

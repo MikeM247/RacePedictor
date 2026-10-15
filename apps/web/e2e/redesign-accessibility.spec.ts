@@ -46,7 +46,10 @@ test("F05 provides a usable skip link, landmarks, visible focus, and no automate
   await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
   for (const [href, heading] of routes) {
     await page.goto(href);
-    await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toHaveCount(1);
+    const pageHeading = href === "/dashboard"
+      ? page.locator("main#dashboard-main-content h1")
+      : page.getByRole("heading", { level: 1, name: heading, exact: true });
+    await expect(pageHeading).toHaveCount(1);
     await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
     await expectAxeClean(page, `initial ${heading} route`);
   }
@@ -76,7 +79,10 @@ test("F05 scans expanded disclosures across redesigned routes with actionable ax
       scannedByRoute[href].push(label);
       await expectAxeClean(page, `${heading} expanded disclosure: ${label}`);
     }
-    await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toHaveCount(1);
+    const pageHeading = href === "/dashboard"
+      ? page.locator("main#dashboard-main-content h1")
+      : page.getByRole("heading", { level: 1, name: heading, exact: true });
+    await expect(pageHeading).toHaveCount(1);
   }
   for (const href of ["/dashboard/activities", "/dashboard/plan", "/dashboard/settings"]) {
     expect(scannedByRoute[href].length, `Expected an expanded disclosure scan on ${href}`).toBeGreaterThan(0);

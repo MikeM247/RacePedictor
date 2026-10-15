@@ -36,7 +36,7 @@ async function loadFixtureTrainingHistory(page: Page) {
   await expect(page.getByRole("button", { name: /F04 first/ })).toBeVisible();
 }
 
-test("F04 opens a full-screen selected detail and preserves its list context when returning", async ({ page }) => {
+test("F04 opens an in-page selected detail and preserves its list context when returning", async ({ page }) => {
   await fixtureTraining(page);
   await page.goto("/dashboard/activities");
   await loadFixtureTrainingHistory(page);
@@ -46,10 +46,9 @@ test("F04 opens a full-screen selected detail and preserves its list context whe
   await selected.click();
   const detail = page.getByRole("dialog", { name: "F04 selected beyond page one" });
   await expect(detail).toBeVisible();
-  await expect(detail).toHaveClass(/activity-detail-dialog/);
-  expect(await detail.boundingBox()).toMatchObject({ x: 0, y: 0, width: 1280, height: 720 });
-  expect(await page.locator(".activities-layout").evaluate(element => Boolean(element.closest("[inert]")))).toBe(true);
-  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+  await expect(detail).toHaveClass(/activity-detail-inline/);
+  await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" })).toBeVisible();
+  expect(await page.locator(".activities-layout").evaluate(element => Boolean(element.closest("[inert]")))).toBe(false);
   await page.getByRole("button", { name: "← Back to Training" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(selected).toBeFocused();

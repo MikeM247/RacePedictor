@@ -970,6 +970,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const pendingLauncherRef = useRef<HTMLElement | null>(null);
   const amendmentLauncherRef = useRef<HTMLElement | null>(null);
   const detailLauncherRef = useRef<HTMLElement | null>(null);
+  const lastCalendarActivityId = useRef<string | null>(null);
   const calendarRequestRef = useRef<AbortController | null>(null);
   const loadedOnce = useRef(false);
   const pendingModal = useModalKeyboard<HTMLFormElement>(Boolean(pending), () => {
@@ -978,7 +979,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const amendmentModal = useModalKeyboard<HTMLElement>(Boolean(amendDraft), () => {
     if (actionState !== "loading") setAmendDraft(null);
   }, amendmentLauncherRef);
-  const detailModal = useModalKeyboard<HTMLElement>(Boolean(selectedDetail), () => setSelectedDetail(null), detailLauncherRef, () => document.getElementById(`calendar-day-${selectedDate}`), true);
+  const detailModal = useModalKeyboard<HTMLElement>(Boolean(selectedDetail) && !selectedCalendarActivity, () => setSelectedDetail(null), detailLauncherRef, () => document.getElementById(`calendar-day-${selectedDate}`), true);
   const range = calendarMonthRange(anchorDate, planTimezone);
 
   useEffect(() => {
@@ -1347,7 +1348,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }
 
   function renderCalendarDetail() {
-    if (!selectedDetail) return null;
+    if (!selectedDetail || selectedCalendarActivity) return null;
     const date = selectedDetail.date;
     const dayActivities = activities.filter((activity) => activity.localDate === date);
     const daySessions = sessions.filter((session) => session.effectiveDate === date);
@@ -1363,7 +1364,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       {hasRecords ? <section className="calendar-detail-records" aria-label="Activity records">
         {dayActivities.map((activity) => {
           const metrics = [activity.distanceMeters > 0 ? formatDistance(activity.distanceMeters) : null, activity.elapsedTimeSeconds > 0 ? formatDuration(activity.elapsedTimeSeconds) : null, activity.averagePaceSecondsPerKm > 0 ? `${formatPace(activity.averagePaceSecondsPerKm)}/km` : null].filter(Boolean).join(" · ");
-          return <article className="calendar-activity-summary" key={activity.id}><p className="eyebrow">Recorded activity</p><h3>{activity.title}</h3><p>{metrics || "Recorded metrics unavailable"}</p><button className="text-link" type="button" aria-haspopup="dialog" aria-label={`View activity: ${activity.title}`} onClick={(event) => { detailLauncherRef.current = event.currentTarget; setSelectedCalendarActivity(activity.id); }}>Open activity details →</button></article>;
+          return <article className="calendar-activity-summary" key={activity.id}><p className="eyebrow">Recorded activity</p><h3>{activity.title}</h3><p>{metrics || "Recorded metrics unavailable"}</p><button ref={(node) => { if (activity.id === lastCalendarActivityId.current) detailLauncherRef.current = node; }} className="text-link" type="button" aria-haspopup="dialog" aria-label={`View activity: ${activity.title}`} onClick={(event) => { lastCalendarActivityId.current = activity.id; detailLauncherRef.current = event.currentTarget; setSelectedCalendarActivity(activity.id); }}>Open activity details →</button></article>;
         })}
       </section> : selectedDetail.kind === "day" ? activitiesReadStatus === "available" ? <p className="adjustment-cue">No recorded activity.</p> : null : date <= today ? <p className="adjustment-cue">{activitiesReadStatus === "unavailable" ? "Activity records could not be loaded. Retry the calendar to check recorded runs." : "No run recorded."}</p> : null}
       <DailyWellbeingHistory localDate={date} timezone={planTimezone} />
@@ -1451,7 +1452,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       const record = activityDetails[selectedCalendarActivity];
       const summary = activities.find(activity => activity.id === selectedCalendarActivity);
       const status = record?.status === "error" ? "error" : record?.status === "success" && record.activity ? "ready" : "loading";
-      return <ActivityDetailDialog open title={record?.activity?.title || summary?.title || "Activity details"} parentLabel="Back to Calendar" onClose={() => setSelectedCalendarActivity(null)} returnFocusRef={detailLauncherRef} fallbackFocus={() => document.getElementById(`calendar-day-${selectedDate}`)} status={status} error={record?.error} onRetry={status === "error" ? () => { setActivityDetails(current => { const next = { ...current }; delete next[selectedCalendarActivity]; return next; }); setActivityDetailRetry(value => value + 1); } : undefined}>
+      return <ActivityDetailDialog presentation="inline" open title={record?.activity?.title || summary?.title || "Activity details"} parentLabel="Back to Calendar" onClose={() => { setSelectedCalendarActivity(null); requestAnimationFrame(() => requestAnimationFrame(() => detailLauncherRef.current?.focus({ preventScroll: true }))); }} returnFocusRef={detailLauncherRef} fallbackFocus={() => document.getElementById(`calendar-day-${selectedDate}`)} status={status} error={record?.error} onRetry={status === "error" ? () => { setActivityDetails(current => { const next = { ...current }; delete next[selectedCalendarActivity]; return next; }); setActivityDetailRetry(value => value + 1); } : undefined}>
         {record?.activity ? <ActivityRecordContent activity={record.activity} headingId="calendar-activity-dialog-heading" headingLevel={1} showTitle={false} /> : null}
       </ActivityDetailDialog>;
     })() : null}

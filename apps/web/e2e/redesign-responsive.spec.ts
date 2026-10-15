@@ -41,7 +41,10 @@ test("F05 keeps every redesigned route within the contract widths", async ({ pag
     await page.setViewportSize({ width, height: 900 });
     for (const [href, heading] of routes) {
       await page.goto(href);
-      await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
+      const pageHeading = href === "/dashboard"
+        ? page.locator("main#dashboard-main-content h1")
+        : page.getByRole("heading", { level: 1, name: heading, exact: true });
+      await expect(pageHeading).toBeVisible();
       await expect(page.locator("main#dashboard-main-content")).toBeVisible();
       await expectNoPageOverflow(page, width);
     }

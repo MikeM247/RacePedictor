@@ -19,7 +19,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } } }],
   webServer: {
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
     cwd: path.join(e2eRepositoryRoot, "apps", "web"),

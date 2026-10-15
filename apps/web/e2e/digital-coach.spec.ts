@@ -71,6 +71,10 @@ const currentScreenRoutes = [
   { href: "/dashboard/settings", heading: "Settings", nav: "Settings" },
 ] as const;
 
+const pageHeading = (page: import("@playwright/test").Page, href: string, heading: string) => href === "/dashboard"
+  ? page.locator("main#dashboard-main-content h1")
+  : page.getByRole("heading", { level: 1, name: heading, exact: true });
+
 const syntheticGpx = (date: string) => `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="racepredictor-e2e" xmlns="http://www.topografix.com/GPX/1/1">
   <trk><name>Synthetic coaching baseline</name><trkseg>
@@ -255,14 +259,18 @@ test("manual history becomes an explicitly approved and safely scheduled digital
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Synthetic easy aerobic run" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "View session" })).toHaveAttribute("href", /synthetic_easy_session/);
-  await expect(page.getByRole("link", { name: "Open active plan" })).toHaveAttribute("href", "/dashboard/plan#active-plan-heading");
+  await expect(page.getByRole("link", { name: /View workout|View calendar/ })).toBeVisible();
+  await expect(page.locator('a[href="/dashboard/plan"]').first()).toBeVisible();
 
   await page.goto("/dashboard/calendar");
   const futureDay = page.locator(".calendar-day").filter({ hasText: "Synthetic future aerobic run" });
-  const futureDetailButton = futureDay;
-  await futureDetailButton.click();
-  let planDetail = page.getByRole("dialog", { name: "Plan details" });
+  const openFutureSession = async () => {
+    await futureDay.click();
+    await page.getByRole("complementary", { name: "Selected day" })
+      .getByRole("button", { name: "View planned session: Synthetic future aerobic run" }).click();
+    return page.getByRole("dialog", { name: "Plan details" });
+  };
+  let planDetail = await openFutureSession();
   let sessionCard = planDetail.locator("#session-synthetic_future_session");
   await expect(sessionCard).toBeVisible();
   await sessionCard.getByRole("button", { name: "Skip" }).click();
@@ -274,8 +282,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await skipDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(skipDialog).toBeHidden();
   await page.reload();
-  await futureDetailButton.click();
-  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  planDetail = await openFutureSession();
   sessionCard = planDetail.locator("#session-synthetic_future_session");
   await expect(sessionCard).toContainText("skipped");
   await expect(sessionCard.getByRole("button", { name: "Restore" })).toBeVisible();
@@ -286,8 +293,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await restoreDialog.getByRole("button", { name: "Confirm change" }).click();
   await expect(restoreDialog).toBeHidden();
   await page.reload();
-  await futureDetailButton.click();
-  planDetail = page.getByRole("dialog", { name: "Plan details" });
+  planDetail = await openFutureSession();
   sessionCard = planDetail.locator("#session-synthetic_future_session");
   await expect(sessionCard).toContainText("upcoming");
   await expect(sessionCard.getByRole("button", { name: "Skip" })).toBeVisible();
@@ -521,18 +527,21 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Active");
 
   await page.goto(`/dashboard/calendar?date=${tomorrow}`);
-  const mobileSession = page.locator("#session-session_mobile_journey");
+  await page.locator(".calendar-day").filter({ has: page.locator(`time[datetime="${tomorrow}"]`) }).click();
+  let mobileSession = page.getByRole("dialog", { name: /^Day details/ }).locator("#session-session_mobile_journey");
   await expect(mobileSession).toContainText("Run easily for 40 minutes");
   await mobileSession.getByLabel("Move to date").fill(moveDate);
   await mobileSession.getByRole("button", { name: "Review move" }).click();
   await page.getByRole("alertdialog").getByLabel("Reason for this change").fill("Move the run around a work commitment.");
   await page.getByRole("alertdialog").getByRole("button", { name: "Confirm change" }).click();
-  await expect(mobileSession).toContainText(`moved from ${tomorrow} to ${moveDate}`);
+  await page.goto(`/dashboard/calendar?date=${moveDate}`);
+  await page.locator(".calendar-day").filter({ has: page.locator(`time[datetime="${moveDate}"]`) }).click();
+  mobileSession = page.getByRole("dialog", { name: /^Day details/ }).locator("#session-session_mobile_journey");
   await expect(mobileSession).toContainText("Run easily for 40 minutes");
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Mobile confidence run" })).toBeVisible();
-  await expect(page.getByText("Approved prescription: Run easily for 40 minutes")).toBeVisible();
+  await expect(page.getByText("Run easily for 40 minutes at conversational effort.")).toBeVisible();
 
   await page.goto("/dashboard/settings");
   await expect(page.getByRole("button", { name: "Save preferences" })).toBeDisabled();
@@ -582,8 +591,8 @@ test("Plan keeps the active version in focus across Today navigation and hides s
 
   await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Plan", exact: true }).click();
+  await expect(pageHeading(page, "/dashboard", "Home")).toBeVisible();
+  await page.locator('a[href="/dashboard/plan"]').first().click();
   await expect(page).toHaveURL(/\/dashboard\/plan$/);
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record2");
   await expect(page.getByLabel("Goal", { exact: true })).toBeHidden();
@@ -680,7 +689,7 @@ test("Today distinguishes loading, error recovery, and no-plan", async ({ page }
   });
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Loading today's coaching context…" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Loading today's focus…" })).toBeVisible();
   serveInitialFailure = false;
   releaseRequest();
   await expect(page.getByRole("heading", { name: "Today's coaching context is unavailable" })).toBeVisible();
@@ -697,6 +706,7 @@ test("Today shows stale context and specific links when the local Home snapshot 
     body: JSON.stringify(coachingFixtures.today({
       date: "2026-08-05", sessionId: "session_synthetic", state: "stale", status: "stale",
       message: "Imported activity history changed after the active plan context was captured.",
+      todayScheduleKind: "prescribed_session",
       localCue: "Review the latest app-owned context before relying on the approved schedule; no plan change has been made.",
       goal: { id: "goal_synthetic", title: "Synthetic half marathon", why: "Synthetic purpose", targetDate: "2026-09-16", countdown: { days: 42, label: "42 days to target" } },
       plan: { id: "plan_synthetic", version: 3, startsOn: "2026-08-03", endsOn: "2026-09-16" },
@@ -709,12 +719,10 @@ test("Today shows stale context and specific links when the local Home snapshot 
   }));
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Synthetic threshold session" })).toBeVisible();
-  await expect(page.getByText("Approved prescription: Run three controlled threshold intervals.")).toBeVisible();
-  await expect(page.getByText("Stale context", { exact: true })).toBeVisible();
+  await expect(page.getByText("Synthetic threshold session")).toBeVisible();
   await expect(page.getByText("Imported activity history changed after the active plan context was captured.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "View session" })).toHaveAttribute("href", /session_synthetic/);
-  await expect(page.getByRole("link", { name: "Open active plan" })).toHaveAttribute("href", "/dashboard/plan#active-plan-heading");
+  await expect(page.getByRole("link", { name: /Review session|View workout|View calendar/ })).toBeVisible();
+  await expect(page.locator('a[href*="/dashboard/plan"]').first()).toBeVisible();
 });
 
 test("Calendar deep links reveal a prescribed session outside the current week and show stale context", async ({ page }) => {
@@ -1005,6 +1013,7 @@ test("Today keeps a missed-session warning and actions usable at the mobile base
       date: "2026-08-06",
       timezone: "America/Los_Angeles",
       state: "missed",
+      todayScheduleKind: "prescribed_session",
       message: "Synthetic easy run was scheduled for 2026-08-05 and is still marked upcoming.",
       localCue: "Check the past session in Calendar before choosing today's training; no plan change has been made.",
       goal: { id: "goal_mobile", title: "Synthetic consistency goal", why: "Synthetic purpose", targetDate: "2026-09-01", countdown: { days: 26, label: "26 days to target" } },
@@ -1019,8 +1028,7 @@ test("Today keeps a missed-session warning and actions usable at the mobile base
   const card = page.getByRole("region", { name: "Past session needs attention" });
   await expect(card).toBeVisible();
   await expect(card).toContainText("Missed · unconfirmed");
-  await expect(card.getByRole("link", { name: "View session" })).toBeVisible();
-  await expect(card.getByRole("link", { name: "Open active plan" })).toBeVisible();
+  await expect(card.getByRole("link", { name: "Review session →" })).toBeVisible();
   const bounds = await card.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -1042,10 +1050,12 @@ test("all current screens keep one active route and no horizontal overflow at de
     for (const route of currentScreenRoutes) {
       await page.goto(route.href);
       await expect(page).toHaveURL(new RegExp(`${route.href.replaceAll("/", "\\/")}$`));
-      await expect(page.getByRole("heading", { level: 1, name: route.heading, exact: true })).toHaveCount(1);
-      const currentLinks = page.getByLabel("Application navigation").locator('a[aria-current="page"]');
-      await expect(currentLinks).toHaveCount(1);
-      await expect(currentLinks).toHaveAccessibleName(new RegExp(`^${route.nav}`));
+      await expect(pageHeading(page, route.href, route.heading)).toHaveCount(1);
+      if (route.nav) {
+        const currentLinks = page.getByLabel("Application navigation").locator('a[aria-current="page"]');
+        await expect(currentLinks).toHaveCount(1);
+        await expect(currentLinks).toHaveAccessibleName(new RegExp(`^${route.nav}`));
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
       if (viewport.width === 1024 && route.heading === "Calendar") {
         await expect(page.getByLabel("Choose month and year")).toBeVisible();
@@ -1130,8 +1140,9 @@ test("local Activities filters imported history and restores selected-row focus 
   await expect(activityRow).toBeVisible();
   await activityRow.click();
   await expect(page.getByRole("heading", { name: activityTitle })).toBeVisible();
-  await page.locator("details.detail-disclosure").first().locator("summary").click();
-  await expect(page.getByText("No additional telemetry was included in this activity.")).toBeVisible();
+  const telemetry = page.locator("details.detail-disclosure").filter({ hasText: "Additional telemetry" });
+  await telemetry.locator("summary").click();
+  await expect(telemetry.getByText("No additional telemetry was included in this activity.")).toBeVisible();
   await page.getByRole("button", { name: "Back to Training" }).click();
   await expect(activityRow).toBeVisible();
   await expect(activityRow).toBeFocused();
@@ -1207,11 +1218,10 @@ test("Activities presents a scannable Night Ops record for a run with telemetry,
   await openDetailDisclosures(page, 1);
   await expect(page.getByText("5 signals", { exact: true })).toBeVisible();
   await openDetailDisclosures(page, 2);
-  const splits = page.getByRole("list", { name: "Per kilometre splits" });
-  await expect(splits).toContainText("KM 01");
-  await expect(splits).toContainText("8:56/km");
-  await expect(splits).toContainText("KM 03");
-  await expect(splits).toContainText("8:09/km");
+  const splits = page.getByRole("region", { name: "Split pace comparison" });
+  await expect(splits.getByRole("table").locator("tbody tr")).toHaveCount(3);
+  await expect(splits.getByRole("table")).toContainText("8:56");
+  await expect(splits.getByRole("table")).toContainText("8:09");
   await openDetailDisclosures(page, 3);
   await expect(page.getByText("Available", { exact: true })).toBeVisible();
   await expect(page.getByText("Route data is available for this activity.")).toBeVisible();
@@ -1299,7 +1309,7 @@ test("Activities exposes queued Coach's review feedback and renders the complete
   await loadInterceptedTrainingHistory(page);
   await expect(page.getByRole("button", { name: /Coach review run/ })).toBeVisible();
   await page.getByRole("button", { name: /Coach review run/ }).click();
-  await expect(page.getByRole("heading", { name: "Coach's review" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AI coach feedback" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Request coach feedback" })).toBeVisible();
   await page.getByRole("button", { name: "Request coach feedback" }).click();
   await expect(page.getByRole("button", { name: "Review queued" })).toBeVisible();
@@ -1322,7 +1332,7 @@ test("core screens render without overflow with reduced motion and forced colors
 
   for (const route of currentScreenRoutes) {
     await page.goto(route.href);
-    await expect(page.getByRole("heading", { level: 1, name: route.heading, exact: true })).toBeVisible();
+    await expect(pageHeading(page, route.href, route.heading)).toBeVisible();
     if (route.nav) await expect(page.getByLabel("Application navigation")
       .getByRole("link", { name: route.nav, exact: true })).toHaveAttribute("aria-current", "page");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
@@ -1336,7 +1346,7 @@ test("core shell has no horizontal overflow at a compact viewport proxy", async 
 
   for (const route of currentScreenRoutes) {
     await page.goto(route.href);
-    await expect(page.getByRole("heading", { level: 1, name: route.heading, exact: true })).toBeVisible();
+    await expect(pageHeading(page, route.href, route.heading)).toBeVisible();
     await expect(page.getByLabel("Application navigation")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(zoomProxy.width);
   }

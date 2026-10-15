@@ -44,6 +44,7 @@ async function mockCompanion(page: Page, options: { planned?: Array<Omit<typeof 
   });
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ fetchStatus: "empty", stale: { isStale: false } }) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Fixture freshness unavailable" } }) }));
+  await page.route("**/api/v1/wellbeing-check-ins?**", (route) => route.fulfill(reply({ items: [] })));
 }
 
 test("mixed multiple records open independently with original/history and feedback intact", async ({ page }) => {
@@ -78,16 +79,15 @@ test("mixed multiple records open independently with original/history and feedba
     await expect(dialog).toBeVisible();
     await expect(dialog.locator(".activity-dialog-header .detail-back-button")).toBeFocused();
     await expect(dialog.locator(".activity-dialog-logo")).toHaveCount(0);
-    await expect(dialog).toHaveClass(/activity-detail-dialog/);
+    await expect(dialog).toHaveClass(/activity-detail-inline/);
     await expect(dialog).toContainText("Run at a glance");
     await expect(dialog).toContainText("Athlete feedback");
     await expect(dialog.getByRole("heading", { name: "AI coach feedback", exact: true })).toHaveCount(1);
     await expect(dialog).not.toContainText(activity.id === "recorded-1" ? "Recorded run 2" : "Recorded run 1");
-    expect(await dialog.boundingBox()).toMatchObject({ x: 0, y: 0, width: 1440, height: 900 });
-    expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(true);
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
-    if (activity.id === "recorded-1") await expectAxeClean(page, "full-screen Activity detail dialog");
-    await page.keyboard.press("Escape");
+    await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" })).toBeVisible();
+    expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(false);
+    if (activity.id === "recorded-1") await expectAxeClean(page, "in-page Activity detail panel");
+    await dialog.locator(".detail-back-button").click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(launcher).toBeFocused();
   }
@@ -120,7 +120,7 @@ test("compact day summary opens one full activity, preserves deep links, history
   await expect(activityDialog).toContainText("Run at a glance");
   await expect(activityDialog).toContainText("Athlete feedback");
   await expect(activityDialog.getByRole("heading", { name: "AI coach feedback", exact: true })).toHaveCount(1);
-  await page.keyboard.press("Escape");
+  await activityDialog.locator(".detail-back-button").click();
   await expect(dialog).toBeVisible();
   await expect(activityLauncher).toBeFocused();
   await dialog.locator("#session-planned-2 .session-source summary").click();
@@ -136,7 +136,7 @@ test("compact day summary opens one full activity, preserves deep links, history
   await page.screenshot({ path: path.join(e2eRoot, "companion-calendar-mobile.png"), fullPage: true });
 });
 
-test("activity dialog fills the viewport and restores focus, scroll and background state responsively", async ({ page }) => {
+test("activity detail keeps dashboard navigation available across responsive widths", async ({ page }) => {
   await mockCompanion(page);
   for (const width of [320, 390, 768, 1024, 1440, 720]) {
     await page.setViewportSize({ width, height: 844 });
@@ -145,25 +145,25 @@ test("activity dialog fills the viewport and restores focus, scroll and backgrou
     await launcher.click();
     const dialog = page.getByRole("dialog", { name: "Recorded run 1" });
     await expect(dialog).toBeVisible();
-    expect(await dialog.boundingBox()).toMatchObject({ x: 0, y: 0, width, height: 844 });
+    await expect(dialog).toHaveClass(/activity-detail-inline/);
+    expect((await dialog.boundingBox())?.width).toBeLessThanOrEqual(width);
     await expect(dialog.locator(".activity-dialog-logo")).toHaveCount(0);
     await expect(dialog.locator(".detail-primary-metrics")).toBeVisible();
     const metricColumns = await dialog.locator(".detail-primary-metrics").evaluate(element => getComputedStyle(element).gridTemplateColumns.split(" ").length);
     expect(metricColumns).toBe(width <= 767 ? 2 : 4);
     expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(true);
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
-    // 720 CSS px approximates a 1440px desktop viewport at 200% browser zoom.
-    await page.screenshot({ path: path.join(e2eRoot, `activity-dialog-${width}.png`) });
-    await page.keyboard.press("Shift+Tab");
-    expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
-    await page.keyboard.press("Escape");
+    await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" })).toBeVisible();
+    expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(false);
+    await dialog.locator(".detail-back-button").click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(launcher).toBeFocused();
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
     expect(await page.locator("#dashboard-main-content").evaluate(element => !element.closest("[inert]"))).toBe(true);
   }
+  await page.goto(`/dashboard/calendar?date=${date}`);
+  await page.getByRole("button", { name: "Open activity: Recorded run 1" }).click();
+  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test("one-kind overflow, unavailable records and API timezone stay truthful", async ({ page }) => {
@@ -211,24 +211,18 @@ test("Calendar initial date resolves across saved-zone midnight without hanging 
   await expect(dayCell(page, "2026-10-02")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("long approved explanations remain complete in disclosures and scroll readably at narrow widths", async ({ page }) => {
+test("Home keeps the approved goal and run review reachable at narrow widths", async ({ page }) => {
   await mockCompanion(page, { longNarrative: true });
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/dashboard");
-    const narratives = page.locator(".home-narrative-detail");
-    await expect(narratives).toHaveCount(2);
-    for (const label of ["Why", "Plan"]) {
-      const disclosure = narratives.filter({ has: page.locator("summary", { hasText: new RegExp(`^${label}$`) }) });
-      await disclosure.locator("summary").click();
-      await expect(disclosure).toHaveAttribute("open", "");
-      expect((await disclosure.locator("p").innerText()).trim().split(/\s+/).length).toBeGreaterThan(100);
-      expect(await disclosure.locator("p").evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(16);
-    }
+    await expect(page.getByRole("heading", { name: "Approved autumn goal" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Review run/ })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    await page.getByRole("link", { name: /View full session review/ }).click();
-    await expect(page.getByRole("heading", { name: "Recorded run 2", exact: true })).toBeVisible();
   }
+  await page.getByRole("link", { name: /Review run/ }).click();
+  await expect(page).toHaveURL(/activityId=recorded-2/);
+  await expect(page.getByRole("heading", { name: "Recorded run 2", exact: true })).toBeVisible();
 });
 
 test("one record read can recover independently and future-dated records remain openable", async ({ page }) => {
@@ -250,7 +244,7 @@ test("one record read can recover independently and future-dated records remain 
   expect(detailReads).toBe(2);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(dialog).toBeVisible();
-  await page.keyboard.press("Escape");
+  await dialog.locator(".detail-back-button").click();
   const future = "2026-10-04";
   await mockCompanion(page, { planned: [], recorded: [{ ...activities[0], localDate: future }] });
   await page.goto(`/dashboard/calendar?date=${future}`);
@@ -336,7 +330,7 @@ test("mobile day unavailable status and individual record retries preserve other
   await activityDialog.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(activityDialog).toContainText("Run at a glance");
   expect(reads).toBe(2);
-  await page.keyboard.press("Escape");
+  await activityDialog.locator(".detail-back-button").click();
   await expect(activityDialog).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: /^Day details/ })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -459,22 +453,19 @@ test("logo-only nav and mobile month reflow at required widths and 200 percent",
   }
 });
 
-test("Home preserves supported narrative, separate progress gaps and safe short feedback", async ({ page }) => {
+test("Home keeps approved goal, schedule and recent-run summaries concise", async ({ page }) => {
   const writes = recordApplicationWrites(page);
-  await mockCompanion(page);
+  await mockCompanion(page, { planned: [sessions[0]] });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/dashboard");
   await expect(page.locator(".home-group")).toHaveCount(3);
   await expect(page.getByRole("heading", { name: "Approved autumn goal" })).toBeVisible();
-  await expect(page.getByText("Build confidence through consistent training.", { exact: false })).toBeVisible();
-  await expect(page.getByText("Continue with a gradual build.", { exact: false })).toBeVisible();
-  await expect(page.getByText("Plan adherence", { exact: true })).toBeVisible();
-  await expect(page.getByText("Performance", { exact: true })).toBeVisible();
-  await expect(page.locator(".home-milestone")).toContainText("Tomorrow");
+  await expect(page.locator(".home-target-line")).toContainText("21,1 km");
+  await expect(page.locator(".home-milestone")).toContainText("Target 55 min");
+  await expect(page.getByText("Run easily for 45 minutes.")).toBeVisible();
   await expect(page.locator(".home-activity")).toContainText("Recorded run 2");
-  await expect(page.locator(".home-activity")).toContainText("Heart-rate data was unavailable.");
-  await expect(page.locator(".home-activity")).not.toContainText(/Plan version|Processing|Checking review/);
-  await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(2);
+  await expect(page.locator(".home-activity")).not.toContainText(/Plan version|Processing|Checking review|Heart-rate data was unavailable/);
+  await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(3);
   await expect(page.getByRole("link", { name: "Race Predictor Home", exact: true })).toHaveText("");
   await page.screenshot({ path: path.join(e2eRoot, "companion-home-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -485,9 +476,6 @@ test("Home preserves supported narrative, separate progress gaps and safe short 
     const layout = await assertHomeLayout(page, test.info(), "companion-home");
     if (viewport.width === 390) expect(layout.goalAndTodayFit, "The normal short Goal and Today cards must fit above phone navigation").toBe(true);
   }
-  await mockCompanion(page, { longReview: true });
-  await page.reload();
-  await expect(page.locator(".home-activity")).toContainText("A short takeaway is unavailable");
-  await expect(page.getByRole("link", { name: /View full session review/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review run →" })).toBeVisible();
   expectNoApplicationWrites(writes);
 });

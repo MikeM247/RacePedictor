@@ -69,7 +69,7 @@ async function mockDashboard(page: Page, overview = dashboard) {
   } }) }));
 }
 
-test("mobile startup is black with a centered logo until dashboard data arrives", async ({ page }, testInfo) => {
+test("mobile readiness startup is black with a centered logo until dashboard data arrives", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 393, height: 852 });
   await mockDashboard(page);
   let releaseOverview!: () => void;
@@ -80,7 +80,7 @@ test("mobile startup is black with a centered logo until dashboard data arrives"
   });
 
   try {
-    await page.goto("/dashboard");
+    await page.goto("/dashboard/readiness");
     const splash = page.getByRole("status", { name: "Loading Race Predictor" });
     await expect(splash).toBeVisible();
     await expect(splash).toHaveCSS("background-color", "rgb(0, 0, 0)");
@@ -97,14 +97,13 @@ test("mobile startup is black with a centered logo until dashboard data arrives"
     releaseOverview();
   }
   await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "View current-fitness details" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
 });
 
-test("online dashboard stays useful while the local device and Second Brain are stale", async ({ page }) => {
+test("online readiness details stay useful while the local device and Second Brain are stale", async ({ page }) => {
   await mockDashboard(page);
-  await page.goto("/dashboard");
+  await page.goto("/dashboard/readiness");
   await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
-  await page.getByRole("button", { name: "View current-fitness details" }).click();
   await page.getByText("Data freshness", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Independent freshness signals" })).toBeVisible();
   await expect(page.getByText("Workout data").locator("..").getByText("Current", { exact: true })).toBeVisible();
@@ -118,9 +117,8 @@ test("online dashboard stays useful while the local device and Second Brain are 
 test("online dashboard exposes a recoverable service error", async ({ page }) => {
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "Unavailable", details: [] } }) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: status }) }));
-  await page.goto("/dashboard");
+  await page.goto("/dashboard/readiness");
   await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
-  await page.getByRole("button", { name: "View current-fitness details" }).click();
   await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
   await expect(page.getByText("Online dashboard data is temporarily unavailable.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
@@ -153,11 +151,11 @@ test("online Activities renders cloud-enveloped Strava data without a client cra
   await expect(page.getByText("Morning Strava Run")).toBeVisible();
   await page.getByRole("button", { name: /Morning Strava Run/u }).click();
   await expect(page).toHaveURL(/activityId=activity-a/u);
-  await expect(page.getByRole("heading", { name: "Morning Strava Run" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Back to Training" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Morning Strava Run" })).toBeFocused();
-  await page.locator("details.detail-disclosure").filter({ hasText: "Splits" }).locator("summary").click();
-  await expect(page.getByText("No split data was included in this imported activity.")).toBeVisible();
+  const detail = page.getByRole("dialog", { name: "Morning Strava Run" });
+  await expect(detail).toBeVisible();
+  await expect(detail.getByRole("heading", { name: "Morning Strava Run" })).toBeFocused();
+  await expect(detail.locator(".detail-back-button")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Recent activities" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Morning Strava Run" })).toBeFocused();

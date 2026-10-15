@@ -19,23 +19,17 @@ async function mockHome(page: Page) {
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { state: "no_plan", date: "2026-08-10", timezone: "Africa/Johannesburg", message: "Settle a goal before relying on daily coaching." } }) }));
 }
 
-test("redesign Home protects reading order, prediction display, and confidence messaging", async ({ page }) => {
+test("Readiness protects the current-fitness estimate and confidence messaging", async ({ page }) => {
   await mockHome(page);
-  await page.goto("/dashboard");
-  const groups = page.locator(".home-group");
-  await expect(groups).toHaveCount(3);
-  await expect(groups.nth(0)).toHaveAttribute("aria-labelledby", "race-outlook-heading");
-  await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "recent-training-heading");
-  await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "next-action-heading");
-  await expect(page.getByRole("heading", { name: "10 km prediction" })).toBeVisible();
+  await page.goto("/dashboard/readiness");
+  await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "10 km estimate" })).toBeVisible();
   await expect(page.getByText("50:00", { exact: true })).toBeVisible();
-  await expect(page.getByText(/not a probability or confidence score/)).toBeVisible();
+  await expect(page.getByText(/not a probability or race-day forecast/)).toBeVisible();
   await expect(page.locator(".home-outlook-label")).toContainText("current-fitness estimate");
-  await expect(page.getByText(/Could not load your settled target/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry target" })).toBeVisible();
 });
 
-test("redesign Home keeps its shell during loading and reports an error instead of empty data", async ({ page }) => {
+test("Readiness keeps navigation during loading and reports an error instead of empty data", async ({ page }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   await page.route("**/api/v1/dashboard/overview", async (route) => {
@@ -43,11 +37,12 @@ test("redesign Home keeps its shell during loading and reports an error instead 
     await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "temporarily unavailable" } }) });
   });
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: status }) }));
-  await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Loading supported outlook…" })).toBeVisible();
-  await expect(page.getByText(/approved coaching remains available while prediction data loads/)).toBeVisible();
+  await page.goto("/dashboard/readiness");
+  await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toBeVisible();
   release();
-  await expect(page.getByRole("heading", { name: "Outlook unavailable" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+  await expect(page.getByText("Online dashboard data is temporarily unavailable.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "No supported outlook yet" })).toHaveCount(0);
 });
@@ -65,14 +60,14 @@ test("redesign import flow protects schema-valid partial-result messaging and re
   await expect(page.getByRole("button", { name: "Correct file" })).toBeVisible();
 });
 
-test("redesign mobile navigation stays labeled, current, and within the viewport", async ({ page }) => {
+test("mobile activity filters stay usable beside the shared dashboard navigation", async ({ page }) => {
   for (const width of [320, 768]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/dashboard/activities");
     const primary = page.getByRole("navigation", { name: "Primary navigation" });
     await expect(primary.getByRole("link", { name: "Home", exact: true })).toBeVisible();
-    await expect(primary.getByRole("link", { name: "Training", exact: true })).toHaveAttribute("aria-current", "page");
-    await expect(primary.getByRole("link", { name: "Plan", exact: true })).toBeVisible();
+    await expect(primary.getByRole("link", { name: "Readiness", exact: true })).toBeVisible();
+    await expect(primary.getByRole("link", { name: "Calendar", exact: true })).toBeVisible();
     await page.locator(".activity-filter-disclosure summary").click();
     const dateInputs = page.locator('.activity-filters input[type="date"]');
     const firstDate = await dateInputs.nth(0).boundingBox();

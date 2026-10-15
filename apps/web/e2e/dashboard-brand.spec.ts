@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 const viewports = [
-  { name: "desktop", width: 1280, height: 900, logoWidth: 190 },
-  { name: "mobile", width: 390, height: 844, logoWidth: 160 },
-  { name: "narrow mobile", width: 320, height: 740, logoWidth: 160 },
+  { name: "desktop", width: 1280, height: 900, logoWidth: 145 },
+  { name: "mobile", width: 390, height: 844, logoWidth: 56, logoHeight: 50 },
+  { name: "narrow mobile", width: 320, height: 740, logoWidth: 56, logoHeight: 50 },
 ] as const;
 
 test("dashboard brand shows the full proportional logo and links home on desktop and mobile", async ({ page }) => {
@@ -26,7 +26,8 @@ test("dashboard brand shows the full proportional logo and links home on desktop
     });
 
     expect(box?.width, `${viewport.name} logo width`).toBe(viewport.logoWidth);
-    expect(Math.abs((box?.height ?? 0) - viewport.logoWidth / ratio), `${viewport.name} logo preserves its proportions`).toBeLessThan(0.5);
+    if ("logoHeight" in viewport) expect(box?.height, `${viewport.name} logo frame height`).toBe(viewport.logoHeight);
+    else expect(Math.abs((box?.height ?? 0) - viewport.logoWidth / ratio), `${viewport.name} logo preserves its proportions`).toBeLessThan(0.5);
     await expect(logo).toHaveCSS("border-width", "0px");
     await expect(logo).toHaveCSS("box-shadow", "none");
     expect(await logo.evaluate((image) => {

@@ -39,7 +39,7 @@ try {
   } else if (command === "publish") {
     const artifact = paceArtifactSchema.parse(await read("artifact"));
     const { artifactHash, ...content } = artifact;
-    if (paceHash(content) !== artifactHash) throw new Error("Approved artifact changed; review again");
+    if (paceHash(content) !== artifactHash) throw new Error("The approved artifact changed; review again");
     const { client, token } = await connection();
     const result = await client.publishPaceComparison(token, artifact);
     // Keep the cloud receipt separately: if caching fails, retrying publish is idempotent.

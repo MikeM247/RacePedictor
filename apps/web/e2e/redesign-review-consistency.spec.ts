@@ -37,16 +37,17 @@ async function mockReviewSurfaces(page: Page) {
   return { failFutureReviewReads: () => { failFutureReviewReads = true; } };
 }
 
-test("F03 reuses the same persisted review, qualification, and evidence on Home, Training, and Calendar", async ({ page }) => {
+test("F03 opens the persisted review from Home and Calendar without a write", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => { if (!["GET", "HEAD"].includes(request.method())) writes.push(request.url()); });
   await mockReviewSurfaces(page);
 
   await page.goto("/dashboard");
-  await expect(page.getByText("Possible planned session; link unconfirmed.", { exact: true })).toBeVisible();
-  await expect(page.getByText("Heart-rate data was not supplied.")).toBeVisible();
-  await page.getByRole("link", { name: "View full session review" }).click();
+  await expect(page.getByRole("heading", { name: "F03 recorded run" })).toBeVisible();
+  await page.getByRole("link", { name: "Review run →" }).click();
   await expect(page.getByRole("heading", { name: "A controlled recorded run." })).toBeVisible();
+  await expect(page.getByText("Suggested plan match — not confirmed", { exact: false })).toBeVisible();
+  await expect(page.getByText("Heart-rate data was not supplied.")).toBeVisible();
   await page.getByText("Review evidence").click();
   await expect(page.getByText("Review revision 9.")).toBeVisible();
   await expect(page.getByText(`Recorded duration (activity) · Reference: ${activity.id}`)).toBeVisible();

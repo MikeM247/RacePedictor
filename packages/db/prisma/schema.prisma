@@ -335,6 +335,8 @@ model User {
 model Athlete {
   id                      String                     @id @default(cuid())
   displayName             String?
+  raceAchievements        RaceAchievement[]
+  dashboardAppearance     DashboardAppearance?
   createdAt               DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime                   @updatedAt @db.Timestamptz(3)
   accesses                AthleteAccess[]
@@ -365,6 +367,30 @@ model Athlete {
   activityReflections     ActivityReflection[]
   wellbeingCheckIns       DailyWellbeingCheckIn[]
   @@map("athletes")
+}
+
+model RaceAchievement {
+  id        String   @id
+  athleteId String
+  revision  Int      @default(1)
+  record    Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  athlete   Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, id])
+  @@index([athleteId, updatedAt])
+  @@map("race_achievements")
+}
+
+model DashboardAppearance {
+  athleteId String @id
+  heroImage Bytes
+  version   String
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@map("dashboard_appearance")
 }
 
 model AthleteAccess {

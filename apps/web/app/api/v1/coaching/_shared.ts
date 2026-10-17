@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { ApiHttpError, failure as apiFailure } from "../../../../lib/server/api-response.ts";
 import {
   LocalCoachingServiceError,
   createLocalCoachingService,
@@ -43,6 +44,7 @@ export function success(data: unknown, status = 200) {
 }
 
 function failure(error: unknown) {
+  if (error instanceof ApiHttpError) return apiFailure(error);
   if (error instanceof CoachingHttpError) {
     return Response.json(
       { error: { code: error.code, message: error.message, details: error.details } },

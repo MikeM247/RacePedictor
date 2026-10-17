@@ -1,0 +1,173 @@
+/* The photo is decorative. All race and activity information remains live HTML. */
+.road-layout { --road-lime: #bbf359; --road-cyan: #28d8f5; background: #07121f; }
+.road-layout .dashboard-toolbar { display: flex; justify-content: space-between; width: min(1280px, 100%); padding: 28px 32px 0; align-items: center; gap: 16px; }
+.road-layout .dashboard-toolbar h1 { font-size: 25px; letter-spacing: -.035em; }
+.road-layout .dashboard-toolbar-title > p { margin-top: 3px; font-size: 13px; color: #aebfd0; }
+.road-layout .dashboard-content.home-content { width: min(1280px, 100%); padding: 20px 32px 40px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+.road-layout .home-goal-panel { padding: 0; overflow: hidden; border: 1px solid #294357; border-radius: 16px; background: #0b1b2a; }
+.road-hero { position: relative; isolation: isolate; min-height: 340px; display: flex; align-items: center; overflow: hidden; background: #0c2031; }
+.road-hero-image { object-fit: cover; object-position: center 60%; z-index: -3; }
+.road-hero-shade { position: absolute; inset: 0; z-index: -2; background: linear-gradient(90deg, rgba(4,15,27,.9) 0%, rgba(4,15,27,.62) 45%, rgba(4,15,27,.06) 100%), linear-gradient(0deg, #0b1b2a 0%, transparent 35%); }
+.road-hero-content { width: 100%; padding: 40px 36px 24px; }
+.road-hero-content .eyebrow { margin: 0 0 12px; font-size: 11px; font-weight: 700; letter-spacing: .2em; color: #b8ecff; }
+.road-hero-content h2 { max-width: 76%; margin: 0; color: #fff; font-size: clamp(30px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -.045em; font-weight: 800; text-wrap: balance; }
+.road-hero-target { margin: 10px 0 0; color: #fff; font-size: clamp(23px, 2.8vw, 34px); font-weight: 750; text-transform: uppercase; letter-spacing: -.02em; }
+.road-hero-date { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 14px 0 0; color: #e0eaf3; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.road-hero-date span { border-left: 1px solid #8c9fac; padding-left: 16px; }
+.road-hero-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 24px; }
+.road-hero-footer p { margin: 0; font-size: 14px; letter-spacing: .06em; color: #edf4fb; }
+.road-hero-footer p::before { content: ""; display: block; width: 34px; height: 3px; margin-bottom: 10px; background: var(--road-lime); }
+.road-layout .road-hero-footer .text-link { color: #bcefff; font-size: 14px; white-space: nowrap; }
+.road-journey { padding: 16px 24px 24px; }
+.road-journey-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.road-journey-header .eyebrow { margin: 0 0 4px; color: #94acbf; font-size: 10px; letter-spacing: .1em; }
+.road-journey-header h3 { margin: 0; color: #ecf5ff; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
+.road-layout .road-manage { font-size: 12px; color: #a9d8e5; text-decoration: none; background: none; border: 0; padding: 4px 0; }
+.road-timeline { display: grid; grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr); gap: 0; }
+.road-timeline-group { min-width: 0; }
+.road-timeline-group h4, .road-all-groups h4 { margin: 0 0 14px; color: #afc3d6; font-size: 10px; letter-spacing: .17em; text-transform: uppercase; }
+.road-timeline-group--achieved h4 { color: var(--road-lime); }
+.road-stops { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; list-style: none; padding: 0; margin: 0; }
+.road-stop { position: relative; display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 4px; padding: 0 8px; color: #ecf4fc; text-align: center; }
+.road-stop::before { content: ""; position: absolute; inset: 13px 0 auto; height: 2px; background: #627e94; }
+.road-stop--achieved::before { background: #8fc344; }
+.road-node { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 auto; margin-bottom: 9px; border: 3px solid #94aec3; border-radius: 50%; background: #0b1b2a; }
+.road-stop--achieved .road-node { border-color: var(--road-lime); background: var(--road-lime); color: #173608; }
+.road-stop--next .road-node { border-color: var(--road-cyan); box-shadow: 0 0 0 4px #28d8f515; }
+.road-stop-title { max-width: 100%; color: #f1f6fb; font-size: 12px; line-height: 1.4; font-weight: 650; overflow-wrap: anywhere; text-decoration: none; }
+a.road-stop-title { display: inline-flex; align-items: center; min-height: 44px; }
+a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
+.road-stop-detail { color: #cfdfed; font-size: 12px; line-height: 1.4; }
+.road-stop time { color: #9fb5c8; font-size: 10px; line-height: 1.4; }
+.road-status { color: #a8bdce; font-size: 10px; line-height: 1.6; margin-top: 3px; }
+.road-status--achieved { padding: 1px 8px; border-radius: 4px; background: #bbf3591a; color: #c6f485; }
+.road-status--next { padding: 1px 10px; border-radius: 4px; color: #03252d; background: var(--road-cyan); font-weight: 750; }
+.road-now { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; padding-top: 22px; color: var(--road-cyan); }
+.road-now::before { content: ""; position: absolute; top: 41px; width: 100%; border-top: 1px dashed #4d899e; }
+.road-now > span { position: relative; display: grid; place-items: center; width: 38px; height: 38px; background: #0a2737; border: 2px solid var(--road-cyan); border-radius: 50%; font-size: 23px; }
+.road-now strong { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.road-empty { margin: 0; min-height: 80px; padding: 8px 10px 0 0; color: #a9bdcd; font-size: 13px; line-height: 1.6; }
+.road-inline-state { margin: 0; padding: 8px 24px; color: #c9d7e2; font-size: 13px; }
+.road-inline-state .text-link { font-size: inherit; }
+.road-all-milestones { margin-top: 16px; color: #c9d7e2; font-size: 13px; }
+.road-all-milestones > summary { min-height: 44px; align-content: center; cursor: pointer; color: #8ee9f9; }
+.road-all-groups { display: grid; gap: 24px; padding-block: 16px; }
+.road-all-groups .road-stops { gap: 18px 0; }
+.road-layout .home-workout-surface, .road-layout .home-session-summary--compact { min-height: 265px; padding: 24px; border: 1px solid #294357; border-radius: 14px; background: #0c1d2e; }
+.road-layout .home-workout-surface .today-coach-main { gap: 10px; }
+.road-layout .home-workout-surface .today-coach-main > .eyebrow { font-size: 11px; letter-spacing: .12em; }
+.road-layout .home-workout-surface .today-coach-main h2 { font-size: 26px; letter-spacing: -.035em; line-height: 1.2; }
+.road-session-summary { margin: 0; color: #d6e5f0; font-size: 19px; }
+.road-session-details summary { display: inline-flex; align-items: center; min-height: 44px; color: #8ee9f9; font-size: 13px; cursor: pointer; }
+.road-session-details summary::after { content: "+"; margin-left: 10px; }
+.road-session-details[open] summary::after { content: "−"; }
+.road-layout .road-session-details .today-prescription { padding-top: 8px !important; font-size: 14px !important; color: #c1d1df; }
+.road-layout .home-session-caveat { padding: 10px 12px; margin: 0; border: 1px solid #81612e; border-radius: 7px; color: #f6d59c; background: #2e261b; font-size: 12px; line-height: 1.6; }
+.road-layout .today-meta { padding-top: 6px; }
+.road-layout .today-meta .button { border-radius: 8px; font-size: 13px; }
+.road-layout .home-session-summary--compact { overflow: hidden; padding-top: 0; gap: 10px; }
+.road-activity-image { position: relative; height: 78px; margin: 0 -24px 5px; padding: 20px 24px; display: flex; align-items: end; background: linear-gradient(90deg, #0c1d2ed9, #0c1d2e20), url('/road-to-comrades.webp') 75% 58% / cover; }
+.road-activity-image span { color: #eff8ff; font-size: 12px; letter-spacing: .03em; }
+.road-layout .home-session-summary--compact .home-session-heading h3 { font-size: 20px; }
+.road-layout .home-latest-facts { gap: 12px 24px; font-size: 21px; font-weight: 650; letter-spacing: -.02em; }
+.road-layout .home-session-footer .text-link { font-size: 13px; }
+.road-layout .home-recorded-label { font-size: 12px; color: #c6f485; }
+.road-daily-check-in { display: grid; justify-items: end; gap: 4px; }
+.road-check-in-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 9px 14px; border: 1px solid #3f647b; border-radius: 30px; color: #d4f2ff; background: #122b3b; font: inherit; font-size: 12px; cursor: pointer; }
+.road-check-in-chip > span { color: #9ce6f5; font-size: 18px; }
+.road-check-in-chip--saved > span { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 13px; background: #b4ec6d; color: #14280a; }
+.road-dialog { width: min(540px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 1px solid #35546a; border-radius: 18px; background: #0d1f30; color: #f1f7fc; box-shadow: 0 24px 100px #0008; overflow: auto; }
+.road-dialog::backdrop { background: #030c17b8; backdrop-filter: blur(5px); }
+.road-dialog-content { padding: 28px; }
+.road-dialog-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.road-dialog-heading .eyebrow { color: #85def0; font-size: 10px; letter-spacing: .16em; margin: 0 0 10px; text-transform: uppercase; }
+.road-dialog-heading h2 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
+.road-close { flex: 0 0 44px; display: grid; place-items: center; width: 44px; height: 44px; margin: -8px -8px 0 0; border: 0; border-radius: 50%; color: #bed3e3; background: #193446; font-size: 25px; cursor: pointer; }
+.road-dialog-intro { color: #b6c9d9; font-size: 14px; line-height: 1.6; margin: 12px 0 24px; }
+.road-feeling-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+.road-feeling-choice { display: grid; justify-items: center; gap: 12px; min-height: 110px; padding: 18px 8px; border: 1px solid #426075; border-radius: 12px; color: #eaf4fc; background: #142c3f; font: inherit; font-size: 14px; cursor: pointer; }
+.road-feeling-choice > span { font-size: 34px; line-height: 1; }
+.road-feeling-choice--good > span { color: #b3ed80; }
+.road-feeling-choice--normal > span { color: #efcc7d; }
+.road-feeling-choice--poor > span { color: #ffb2b9; }
+.road-feeling-choice[aria-pressed="true"] { border-color: #32d6ef; box-shadow: 0 0 0 2px #32d6ef; background: #164154; }
+.road-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.road-dialog .button { min-height: 44px; font: inherit; font-size: 14px; }
+.road-dialog .button-primary { border: 1px solid #28d8f5; border-radius: 8px; background: #28d8f5; color: #03232e; font-weight: 700; padding: 10px 20px; }
+.road-dialog .button-secondary { border: 1px solid #426075; border-radius: 8px; background: #142c3f; color: #eaf4fc; padding: 10px 16px; }
+.road-dialog .text-link { display: inline-flex; align-items: center; min-height: 44px; border: 0; background: none; padding: 4px 0; color: #8ee9f9; font: inherit; font-size: 13px; cursor: pointer; }
+.road-dialog :disabled { opacity: .55; cursor: default; }
+.road-dialog :focus-visible, .road-layout :focus-visible { outline: 2px solid #8ceaff; outline-offset: 4px; }
+.road-history-list, .road-activity-picker ul { list-style: none; margin: 0 0 16px; padding: 0; }
+.road-history-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid #294357; font-size: 14px; }
+.road-activity-picker { margin-top: 16px; border-top: 1px solid #294357; }
+.road-activity-picker > summary { color: #8ee9f9; min-height: 44px; align-content: center; cursor: pointer; font-size: 13px; }
+.road-activity-picker ul { max-height: 230px; overflow: auto; margin-top: 12px; }
+.road-activity-picker li button { display: grid; gap: 5px; width: 100%; padding: 12px 8px; border: 0; border-bottom: 1px solid #294357; background: #10293a; color: #edf6ff; text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
+.road-activity-picker li span { color: #b6c9d9; font-size: 12px; }
+.road-achievement-form { display: grid; gap: 14px; margin-top: 18px; }
+.road-achievement-form label, .road-activity-picker label { display: grid; gap: 6px; color: #c8d8e5; font-size: 13px; }
+.road-dialog input:not([type="checkbox"]), .road-dialog select, .road-dialog textarea { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #426075; border-radius: 7px; background: #071928; color: #edf6ff; font: inherit; }
+.road-dialog input[type="checkbox"] { width: 18px; height: 18px; }
+.road-achievement-form .road-confirmation { display: flex; align-items: center; min-height: 44px; gap: 12px; }
+.road-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.road-form-message { color: #d0e5f4; font-size: 14px; line-height: 1.6; }
+.road-dialog .daily-check-in-form h3 { margin: 0; font-size: 18px; }
+@media (max-width: 1099px) {
+  .road-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "today" "activity"; }
+  .road-hero-content h2 { max-width: 85%; font-size: 37px; }
+  .road-timeline { grid-template-columns: minmax(0, 1fr); }
+  .road-now { padding: 10px 0; flex-direction: row; justify-content: center; }
+  .road-now::before { inset: 0 auto 0 50%; height: 100%; width: 0; border-top: 0; border-left: 1px dashed #4d899e; }
+  .road-now strong { position: absolute; left: calc(50% + 29px); }
+  .road-timeline-group--ahead h4 { margin-bottom: 12px; }
+}
+@media (max-width: 767px) {
+  .road-layout .dashboard-toolbar { padding: 16px 16px 0; align-items: start; }
+  .road-layout .dashboard-toolbar h1 { font-size: 21px; }
+  .road-layout .dashboard-toolbar-title > p { font-size: 11px; }
+  .road-check-in-chip { padding: 8px 10px; font-size: 10px; gap: 5px; }
+  .road-layout .dashboard-content.home-content { padding: 16px 12px 24px; gap: 14px; }
+  .road-layout .home-goal-panel { border-radius: 13px; }
+  .road-hero { min-height: 240px; }
+  .road-hero-image { object-position: 68% center; }
+  .road-hero-shade { background: linear-gradient(90deg, #04101cdb, #04101c36), linear-gradient(0deg, #0b1b2a, transparent 50%); }
+  .road-hero-content { padding: 28px 20px 16px; }
+  .road-hero-content .eyebrow { font-size: 9px; margin-bottom: 10px; }
+  .road-hero-content h2 { max-width: 100%; font-size: clamp(28px, 8vw, 36px); }
+  .road-hero-target { font-size: 24px; }
+  .road-hero-date { font-size: 10px; }
+  .road-hero-footer { margin-top: 18px; gap: 8px; }
+  .road-hero-footer p { font-size: 10px; letter-spacing: .03em; }
+  .road-layout .road-hero-footer .text-link { font-size: 12px; }
+  .road-journey { padding: 12px 16px 20px; }
+  .road-journey-header { gap: 8px; margin-bottom: 18px; }
+  .road-journey-header .eyebrow { display: none; }
+  .road-journey-header h3 { font-size: 14px; }
+  .road-layout .road-manage { font-size: 10px; }
+  .road-stop { padding-inline: 4px; }
+  .road-stop-title { font-size: 11px; }
+  .road-stop-detail { font-size: 11px; }
+  .road-stop time { font-size: 9px; }
+  .road-status { font-size: 9px; }
+  .road-status--achieved { padding-inline: 5px; }
+  .road-node { width: 25px; height: 25px; margin-bottom: 5px; }
+  .road-stop::before { top: 12px; }
+  .road-now > span { width: 32px; height: 32px; font-size: 19px; }
+  .road-layout .home-workout-surface, .road-layout .home-session-summary--compact { min-height: 0; padding: 20px; }
+  .road-layout .home-workout-surface .today-coach-main { display: grid; gap: 8px; }
+  .road-layout .home-workout-surface .today-coach-main h2 { font-size: 23px; }
+  .road-layout .home-workout-surface .today-meta { justify-self: start; }
+  .road-layout .home-workout-surface .today-meta .button { width: auto; min-width: 150px; }
+  .road-layout .home-session-summary--compact { padding-top: 0; }
+  .road-activity-image { height: 85px; margin-inline: -20px; padding-inline: 20px; }
+  .road-layout .home-session-summary--compact .home-session-heading > div { display: block; }
+  .road-layout .home-session-summary--compact .home-session-heading h3 { font-size: 20px; }
+  .road-layout .home-latest-facts { font-size: 20px; gap: 10px 20px; }
+  .road-dialog-content { padding: 22px; }
+  .road-dialog-heading h2 { font-size: 25px; }
+  .road-feeling-choices { gap: 8px; }
+  .road-feeling-choice { min-height: 100px; }
+  .road-dialog .road-form-row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .road-layout *, .road-dialog * { scroll-behavior: auto; transition: none; } }

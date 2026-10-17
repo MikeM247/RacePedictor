@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { NativeModal } from "./native-modal";
 import type { DailyWellbeingCheckIn as CheckIn, SaveDailyWellbeingRequest } from "../../../../packages/core/src/contracts/athlete-journal";
 
 const empty: SaveDailyWellbeingRequest = { expectedRevision: 0, timezone: "Africa/Johannesburg", status: "saved", answers: {} };
@@ -15,7 +16,7 @@ function localDate(timezone: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
-function CheckInForm({ draft, status, canSave, message, update, save, close }: {
+function CheckInForm({ draft, status, canSave, message, update, save, close, embedded = false }: {
   draft: SaveDailyWellbeingRequest;
   status: CheckInState;
   canSave: boolean;
@@ -23,9 +24,10 @@ function CheckInForm({ draft, status, canSave, message, update, save, close }: {
   update: (patch: Partial<SaveDailyWellbeingRequest["answers"]>) => void;
   save: () => void;
   close: () => void;
+  embedded?: boolean;
 }) {
-  return <div className="daily-check-in-form" role="dialog" aria-modal="false" aria-labelledby="daily-check-in-form-heading">
-    <h4 id="daily-check-in-form-heading">Today&apos;s check-in</h4>
+  return <div className="daily-check-in-form" role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : false} aria-labelledby="daily-check-in-form-heading">
+    <h3 id="daily-check-in-form-heading">Today&apos;s check-in</h3>
     <label>How do you feel overall?<select value={draft.answers.overallFeeling ?? ""} onChange={(event) => update({ overallFeeling: event.target.value ? event.target.value as typeof draft.answers.overallFeeling : undefined })}><option value="">Unanswered</option>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
     <label>How did you sleep?<select value={draft.answers.sleepQuality ?? ""} onChange={(event) => update({ sleepQuality: event.target.value ? event.target.value as typeof draft.answers.sleepQuality : undefined })}><option value="">Unanswered</option>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
     <label>How fatigued do you feel?<select value={draft.answers.fatigue ?? ""} onChange={(event) => update({ fatigue: event.target.value ? event.target.value as typeof draft.answers.fatigue : undefined })}><option value="">Unanswered</option>{levels.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -37,7 +39,7 @@ function CheckInForm({ draft, status, canSave, message, update, save, close }: {
   </div>;
 }
 
-export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date = localDate(timezone), compact = false }: { timezone?: string; date?: string; compact?: boolean }) {
+export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date = localDate(timezone), compact = false, dailyModal = false, refreshKey = 0 }: { timezone?: string; date?: string; compact?: boolean; dailyModal?: boolean; refreshKey?: number }) {
   const [entry, setEntry] = useState<CheckIn | null>(null);
   const [draft, setDraft] = useState<SaveDailyWellbeingRequest>({ ...empty, timezone });
   const [open, setOpen] = useState(false);
@@ -45,10 +47,14 @@ export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date =
   const [message, setMessage] = useState("");
   const [retry, setRetry] = useState(0);
   const [readReady, setReadReady] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [prompted, setPrompted] = useState(false);
+  const dismissKey = `racepredictor:check-in:${timezone}:${date}`;
 
   useEffect(() => {
+    if (modalOpen) return;
     let active = true;
-    setStatus("loading");
+    setStatus((current) => current === "ready" ? "ready" : "loading");
     setReadReady(false);
     void fetch(`/api/v1/wellbeing-check-ins?from=${date}&to=${date}`, { cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("Daily check-in is temporarily unavailable.");
@@ -65,7 +71,23 @@ export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date =
       if (active) { setStatus("error"); setMessage(error instanceof Error ? error.message : "Daily check-in is unavailable."); }
     });
     return () => { active = false; };
-  }, [date, retry, timezone]);
+  }, [date, retry, timezone, refreshKey]);
+
+  useEffect(() => {
+    if (!dailyModal || !readReady || entry || prompted) return;
+    let dismissed = false;
+    try { dismissed = sessionStorage.getItem(dismissKey) === "deferred"; } catch { /* storage is optional */ }
+    setPrompted(true);
+    if (!dismissed) setModalOpen(true);
+  }, [dailyModal, readReady, entry, prompted, dismissKey]);
+
+  function dismissModal() {
+    if (status === "saving") return;
+    try { sessionStorage.setItem(dismissKey, "deferred"); } catch { /* storage is optional */ }
+    setOpen(false);
+    setDraft(entry ? { expectedRevision: entry.revision, timezone: entry.timezone, status: entry.status, answers: entry.answers } : { ...empty, timezone });
+    setModalOpen(false);
+  }
 
   function update(patch: Partial<SaveDailyWellbeingRequest["answers"]>) {
     setDraft((current) => ({ ...current, answers: { ...current.answers, ...patch }, status: "saved" }));
@@ -102,6 +124,7 @@ export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date =
       setEntry(result.data);
       setDraft({ expectedRevision: result.data.revision, timezone: result.data.timezone, status: result.data.status, answers: result.data.answers });
       setOpen(false);
+      setModalOpen(false);
       setStatus("ready");
       setMessage(statusValue === "skipped" ? "Skipped for today." : "Check-in saved.");
     } catch (error) {
@@ -121,6 +144,22 @@ export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date =
   }
 
   if (status === "loading") return <p className="daily-check-in-state" role="status" aria-busy="true">Checking today&apos;s recovery check-in…</p>;
+
+  if (dailyModal) return <div className="road-daily-check-in">
+    <button className={`road-check-in-chip${entry?.status === "saved" ? " road-check-in-chip--saved" : ""}`} type="button" onClick={() => { setModalOpen(true); setOpen(false); }}><span aria-hidden="true">{entry?.status === "saved" ? "✓" : "☺"}</span>{entry?.status === "saved" ? "Check-in saved · Edit" : entry?.status === "skipped" ? "Skipped today · Edit" : "Daily check-in"}</button>
+    {!readReady && !modalOpen ? <span className="daily-check-in-state" role="status">Check-in unavailable · <button className="text-link" type="button" onClick={() => setRetry((value) => value + 1)}>Retry</button></span> : null}
+    <NativeModal open={modalOpen} onClose={dismissModal} busy={status === "saving"} titleId="daily-feeling-heading" className="road-feeling-dialog">
+      <header className="road-dialog-heading"><div><p className="eyebrow">Start with you</p><h2 id="daily-feeling-heading">How are you feeling?</h2></div><button className="road-close" type="button" aria-label="Close daily check-in" onClick={dismissModal} disabled={status === "saving"}>×</button></header>
+      <p className="road-dialog-intro">A moment to check in before the next step.</p>
+      {readReady ? <>
+        <div className="road-feeling-choices" role="group" aria-label="Choose your overall feeling">{quickAnswers.map(([value, label], index) => <button key={value} className={`road-feeling-choice road-feeling-choice--${value}`} type="button" disabled={status === "saving"} aria-pressed={draft.answers.overallFeeling === value} onClick={() => update({ overallFeeling: value })}><span aria-hidden="true">{["☺", "−", "☹"][index]}</span>{label}</button>)}</div>
+        {!open ? <div className="road-form-actions"><button className="button button-primary" type="button" disabled={!draft.answers.overallFeeling || status === "saving"} onClick={() => void save("saved")}>{status === "saving" ? "Saving…" : "Save check-in"}</button><button className="text-link" type="button" disabled={status === "saving"} onClick={() => void save("skipped", {})}>Skip today</button></div> : null}
+        <button className="text-link" type="button" disabled={status === "saving"} onClick={() => setOpen((value) => !value)}>{open ? "Fewer details" : "Add sleep and recovery details"}</button>
+        {open ? <CheckInForm embedded draft={draft} status={status} canSave={readReady} message={message} update={update} save={() => void save("saved")} close={closeForm} /> : null}
+      </> : <button className="button button-secondary" type="button" onClick={() => { setModalOpen(false); setRetry((value) => value + 1); setPrompted(false); }}>Retry check-in</button>}
+      {message && status !== "saving" ? <p className="daily-check-in-state" role={status === "error" ? "alert" : "status"}>{message}</p> : null}
+    </NativeModal>
+  </div>;
   if (status === "error" && !compact && !open) return <p className="daily-check-in-state" role="alert">{message} <button className="text-button" type="button" onClick={() => setRetry((value) => value + 1)}>Retry</button></p>;
 
   if (compact) return <section className="daily-check-in daily-check-in--compact" aria-labelledby="daily-check-in-heading">

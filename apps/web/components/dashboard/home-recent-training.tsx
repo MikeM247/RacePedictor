@@ -17,6 +17,7 @@ export function HomeRecentTraining({ timezone = "Africa/Johannesburg", compact =
   const fullReviewLauncher = useRef<HTMLAnchorElement | null>(null);
   const focusedReviewLauncher = useRef<HTMLAnchorElement | null>(null);
   const [retry, setRetry] = useState(0);
+  const [refreshFailed, setRefreshFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -25,9 +26,10 @@ export function HomeRecentTraining({ timezone = "Africa/Johannesburg", compact =
       if (!active) return;
       const latest = [...activities.items].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id.localeCompare(left.id))[0] ?? null;
       setActivity(latest);
+      setRefreshFailed(false);
       setState(latest ? "ready" : "empty");
     }).catch(() => {
-      if (active) setState((current) => current === "ready" ? "ready" : "error");
+      if (active) { setRefreshFailed(true); setState((current) => current === "ready" ? "ready" : "error"); }
     });
     return () => { active = false; };
   }, [retry, refreshKey]);
@@ -61,8 +63,10 @@ export function HomeRecentTraining({ timezone = "Africa/Johannesburg", compact =
     window.requestAnimationFrame(() => node.focus({ preventScroll: true }));
   };
   if (compact) return <article className="home-session-summary home-session-summary--compact">
+    <div className="road-activity-image" aria-hidden="true"><span>One more step forward.</span></div>
     <div className="home-session-heading"><div><p className="eyebrow">{activity.sport === "run" ? "Your last run" : "Latest activity"}</p><h3>{activityLabel}</h3><p className="metadata"><time dateTime={activity.occurredAt}>{new Intl.DateTimeFormat("en-ZA", { timeZone: timezone, weekday: "long", day: "numeric", month: "long" }).format(new Date(activity.occurredAt))}</time></p></div></div>
     <div className="home-latest-facts"><span>{formatDistance(activity.distanceM)}</span><span>{formatDuration(activity.elapsedTimeS)}</span>{activity.avgPaceSecPerKm ? <span>{formatPace(activity.avgPaceSecPerKm)}</span> : null}</div>
+    {refreshFailed ? <p className="road-inline-state" role="status">Showing your last loaded activity. <button className="text-link" type="button" onClick={() => setRetry((value) => value + 1)}>Retry activity</button></p> : null}
     <div className="home-session-footer"><span className="home-recorded-label">Recorded</span><Link id={fullReviewLauncherId} ref={restoreFullReviewLauncher} className="text-link" href={sessionHref} onClick={openFullReview}>{activity.sport === "run" ? "Review run →" : "Review activity →"}</Link></div>
   </article>;
   const feedback = reviewRead.data;

@@ -8,6 +8,9 @@ import { GET as getDashboardOverview } from "../app/api/v1/dashboard/overview/ro
 import { GET as health } from "../app/api/v1/health/route.ts";
 import { POST as uploadActivity } from "../app/api/v1/imports/upload/route.ts";
 import { GET as session } from "../app/api/v1/auth/session/route.ts";
+import { GET as getRaceHistory, PUT as saveRaceHistory } from "../app/api/v1/coaching/race-history/route.ts";
+import { GET as getAppearance, PUT as saveAppearance } from "../app/api/v1/dashboard/appearance/route.ts";
+import { GET as getPrivateHero } from "../app/api/v1/dashboard/appearance/image/route.ts";
 import { createSyntheticTestActor } from "../lib/server/auth.ts";
 import { readCloudEnvironment } from "../lib/server/cloud-environment.ts";
 import {
@@ -89,7 +92,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
   const internalRoutes = new Set([new URL("internal/reconciliation/route.ts", apiRoot).href]);
   const backfillResume = new URL("providers/strava/backfill/resume/route.ts", apiRoot).href;
   assert.ok(routeFiles.some((route) => route.href === backfillResume), "owner-scoped backfill resume route is required");
-  assert.equal(routeFiles.length, 63, "route inventory changed; classify every new route explicitly");
+  assert.equal(routeFiles.length, 66, "route inventory changed; classify every new route explicitly");
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;
@@ -154,6 +157,11 @@ test("representative sensitive reads and writes fail before local operations in 
     RACEPREDICTOR_OWNER_AUTH_CONFIGURED: "false",
   }, async () => {
     await assertUnauthenticated(await getActivities(new Request("http://localhost/api/v1/activities")));
+    await assertUnauthenticated(await getRaceHistory(new Request("http://localhost/api/v1/coaching/race-history")));
+    await assertUnauthenticated(await saveRaceHistory(new Request("http://localhost/api/v1/coaching/race-history", { method: "PUT", body: "{}" })));
+    await assertUnauthenticated(await getAppearance(new Request("http://localhost/api/v1/dashboard/appearance")));
+    await assertUnauthenticated(await saveAppearance(new Request("http://localhost/api/v1/dashboard/appearance", { method: "PUT", body: "image" })));
+    await assertUnauthenticated(await getPrivateHero(new Request("http://localhost/api/v1/dashboard/appearance/image")));
     await assertUnauthenticated(await getDashboardOverview(new Request("http://localhost/api/v1/dashboard/overview")));
     await assertUnauthenticated(await uploadActivity(new Request("http://localhost/api/v1/imports/upload", { method: "POST" })));
     await assertUnauthenticated(await putCoachingProfile(new Request("http://localhost/api/v1/coaching/profile", {

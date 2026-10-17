@@ -44,7 +44,9 @@ async function mockCompanion(page: Page, options: { planned?: Array<Omit<typeof 
   });
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ fetchStatus: "empty", stale: { isStale: false } }) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Fixture freshness unavailable" } }) }));
-  await page.route("**/api/v1/wellbeing-check-ins?**", (route) => route.fulfill(reply({ items: [] })));
+  await page.route("**/api/v1/wellbeing-check-ins?**", (route) => route.fulfill(reply({ items: [{ id: "companion-checkin", timezone: "Africa/Johannesburg", status: "saved", answers: { overallFeeling: "good" }, revision: 1 }] })));
+  await page.route("**/api/v1/coaching/race-history", route => route.fulfill(reply({ items: [], publishedAt: null })));
+  await page.route("**/api/v1/dashboard/appearance", route => route.fulfill(reply({ heroImageUrl: "/road-to-comrades.webp" })));
 }
 
 test("mixed multiple records open independently with original/history and feedback intact", async ({ page }) => {
@@ -460,8 +462,9 @@ test("Home keeps approved goal, schedule and recent-run summaries concise", asyn
   await page.goto("/dashboard");
   await expect(page.locator(".home-group")).toHaveCount(3);
   await expect(page.getByRole("heading", { name: "Approved autumn goal" })).toBeVisible();
-  await expect(page.locator(".home-target-line")).toContainText("21,1 km");
-  await expect(page.locator(".home-milestone")).toContainText("Target 55 min");
+  await expect(page.locator(".road-hero-date")).toContainText("21,1 km");
+  await expect(page.locator(".road-timeline-group--ahead")).toContainText("Target 55:00");
+  await page.locator(".road-session-details summary").click();
   await expect(page.getByText("Run easily for 45 minutes.")).toBeVisible();
   await expect(page.locator(".home-activity")).toContainText("Recorded run 2");
   await expect(page.locator(".home-activity")).not.toContainText(/Plan version|Processing|Checking review|Heart-rate data was unavailable/);
@@ -474,7 +477,7 @@ test("Home keeps approved goal, schedule and recent-run summaries concise", asyn
   for (const viewport of [{ width: 320, height: 844 }, { width: 390, height: 844 }, { width: 768, height: 900 }, { width: 1024, height: 900 }, { width: 1440, height: 900 }, { width: 1440, height: 1200 }]) {
     await page.setViewportSize(viewport);
     const layout = await assertHomeLayout(page, test.info(), "companion-home");
-    if (viewport.width === 390) expect(layout.goalAndTodayFit, "The normal short Goal and Today cards must fit above phone navigation").toBe(true);
+    expect(layout.horizontalOverflow, "The photographic journey must reflow without horizontal scrolling").toBe(false);
   }
   await expect(page.getByRole("link", { name: "Review run →" })).toBeVisible();
   expectNoApplicationWrites(writes);

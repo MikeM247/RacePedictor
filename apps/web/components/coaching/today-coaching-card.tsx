@@ -363,6 +363,13 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
     : hasPrescribedSession || nextWorkout.id ? "View workout →" : "View calendar →";
   const showDateAndStatus = !homeAction || date !== localDateInTimezone(timezone)
     || amendments.length > 0 || !["upcoming", "rest"].includes(state);
+  const fullPrescription = String(displaySessionRecord.prescription ?? "Prescription unavailable; open Calendar.");
+  const sessionSummary = [typeof displaySessionRecord.distanceMeters === "number" ? `${(displaySessionRecord.distanceMeters / 1000).toLocaleString("en-ZA", { maximumFractionDigits: 1 })} km` : null,
+    typeof displaySessionRecord.durationMinutes === "number" && displaySessionRecord.durationMinutes > 0 ? `${displaySessionRecord.durationMinutes} min` : null].filter(Boolean).join(" · ");
+  const prescriptionView = homeAction ? <>
+    <p className="road-session-summary">{sessionSummary || (scheduleKind === "prescribed_rest" && !displayingNextWorkout ? "Recovery is part of the journey." : "Follow your approved session.")}</p>
+    <details className="road-session-details"><summary>Session instructions</summary><p className="today-prescription">{fullPrescription}</p></details>
+  </> : <p className="today-prescription">{fullPrescription}</p>;
 
   if (compact) return <section className={`today-coach-card today-coach-card--compact today-coach-card--${state}`} aria-labelledby="today-coaching-heading">
     <div className="today-coach-main">
@@ -371,9 +378,9 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
       {showDateAndStatus && !displayingNextWorkout ? <p className="metadata"><time dateTime={date}>{formatCoachingDate(date, timezone)}</time> · {statusLabel}{amendments.length > 0 ? " · Amended" : ""}</p> : displayingNextWorkout && scheduleKind === "prescribed_rest" ? <p className="metadata">Today is a prescribed recovery day.</p> : null}
       {upNextAmbiguous ? <p>More than one workout could still be due today. Check the approved calendar.</p> : displayingNextWorkout && displaySession ? <>
         <p className="metadata"><time dateTime={sessionDate}>{formatCoachingDate(sessionDate, weekData?.timezone ?? timezone)}</time>{displaySession.startTime ? ` · ${displaySession.startTime}` : ""}</p>
-        <p className="today-prescription">{String(displaySession.prescription ?? "Prescription unavailable; open Calendar.")}</p>
+        {prescriptionView}
       </> : scheduleKind === "prescribed_session" || scheduleKind === "prescribed_rest" ? <>
-        <p className="today-prescription">{String(session.prescription ?? "Prescription unavailable; open Calendar.")}</p>
+        {prescriptionView}
         {!homeAction ? <p className="today-focus-purpose"><strong>Purpose:</strong> {String(session.purpose ?? "Purpose not supplied.")}{hasPrescribedSession && session.durationMinutes && !String(session.prescription ?? "").includes(String(session.durationMinutes)) ? ` · ${String(session.durationMinutes)} min` : ""}</p> : null}
       </> : <p>{scheduleDescription}</p>}
       {homeAction && weekState === "error" ? <p className="home-inline-status" role="status">The schedule and recorded runs could not be checked. <button className="text-link" type="button" onClick={() => setWeekRequestVersion((value) => value + 1)}>Retry calendar check</button></p> : null}

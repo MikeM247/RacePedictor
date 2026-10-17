@@ -46,7 +46,9 @@ async function mockHome(page: Page, options: {
   const activities = options.activities ?? [latest];
   const reviewStatus = options.reviewStatus ?? "ready";
   const reviewData = options.reviewData === undefined ? review() : options.reviewData;
-  let checkIn = options.checkIn;
+  let checkIn = options.checkIn ?? { revision: 1, status: "saved" as const, answers: { overallFeeling: "good" } };
+  await page.route("**/api/v1/coaching/race-history", route => route.fulfill({ json: { data: { items: [], publishedAt: null } } }));
+  await page.route("**/api/v1/dashboard/appearance", route => route.fulfill({ json: { data: { heroImageUrl: "/road-to-comrades.webp" } } }));
   await page.route("**/api/v1/dashboard/overview", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(overview) }));
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: status }) }));
   await page.route("**/api/v1/wellbeing-check-ins**", async (route) => {
@@ -72,7 +74,7 @@ async function mockHome(page: Page, options: {
   });
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { athleteId: "f02-athlete", date: "2026-09-15", timezone: "Africa/Johannesburg", state: "rest", status: "rest", message: "Intentional recovery day.", goal: null, plan: { id: "f02-plan", version: 3, startsOn: "2026-09-14", endsOn: "2027-04-18" }, session: { id: "f02-rest", kind: "rest", scheduledDate: "2026-09-15", effectiveDate: "2026-09-15", status: "upcoming", title: "Rest", purpose: "Recovery", prescription: "Rest or gentle mobility.", durationMinutes: 0, amendments: [] }, todayScheduleKind: "prescribed_rest", nextWorkout: null, localCue: "Protect recovery today.", links: { plan: "/dashboard/plan", calendar: "/dashboard/calendar", session: null } } }) }));
   await page.route("**/api/v1/coaching/goal-context/active", (route) => {
-    const goal = { id: "f02-goal", athleteId: "f02-athlete", revision: 2, title: "City marathon", why: "Complete the approved marathon target", target: { kind: "performance", distanceMeters: 42_195, targetDate: "2027-04-18", targetTimeSeconds: 14_400, eventName: "City Marathon" } };
+    const goal = { id: "f02-goal", athleteId: "f02-athlete", revision: 2, title: "City marathon", why: "Complete the approved marathon target", target: { kind: "performance", distanceMeters: 42_195, targetDate: "2027-04-18", targetTimeSeconds: 14_400, eventName: "City marathon" } };
     const plan = { id: "f02-plan", version: 3, revision: 2, startsOn: "2026-09-14", endsOn: "2027-04-18", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) };
     const context = options.goalState === "projection_pending" ? {
       state: "projection_pending", plan, goal: null, milestones: null, projection: null,
@@ -104,8 +106,8 @@ test("Home shows the approved goal, next workout, latest run and milestone witho
   await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "today-focus-heading");
   await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "latest-activity-heading");
   await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Next milestone: JGS Oldies 10 km, sub-60. View plan" })).toBeVisible();
-  await expect(page.getByText("Next milestone", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "JGS Oldies 10 km", exact: true })).toBeVisible();
+  await expect(page.getByText("Next", { exact: true })).toBeVisible();
   await expect(page.getByText("sub-60", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Intentional recovery day" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
@@ -201,6 +203,7 @@ test("Home distinguishes a settled goal without a plan from unavailable cloud go
 test("Recovery choices save a new feeling while retaining the rest of the saved check-in", async ({ page }) => {
   await mockHome(page, { checkIn: { revision: 4, status: "saved", answers: { overallFeeling: "very_good", sleepQuality: "good", readiness: "normal", notes: "Keep this note" } } });
   await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Check-in saved · Edit" }).click();
   const good = page.getByRole("button", { name: "Good", exact: true });
   const okay = page.getByRole("button", { name: "Okay", exact: true });
   const low = page.getByRole("button", { name: "Low", exact: true });
@@ -209,18 +212,22 @@ test("Recovery choices save a new feeling while retaining the rest of the saved 
   await expect(low).toHaveAttribute("aria-pressed", "false");
   const saveRequest = page.waitForRequest((request) => request.method() === "PUT" && request.url().includes("/api/v1/wellbeing-check-ins/"));
   await okay.click();
+  await page.getByRole("button", { name: "Save check-in", exact: true }).click();
   const request = await saveRequest;
   const body = request.postDataJSON() as { expectedRevision: number; status: string; answers: Record<string, unknown> };
   expect(body).toMatchObject({ expectedRevision: 4, status: "saved", answers: { overallFeeling: "normal", sleepQuality: "good", readiness: "normal", notes: "Keep this note" } });
-  await expect(page.getByText("Check-in saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Check-in saved · Edit" }).click();
   await expect(okay).toHaveAttribute("aria-pressed", "true");
   for (const [label, value, revision] of [["Good", "good", 5], ["Low", "poor", 6]] as const) {
     const saved = page.waitForRequest((request) => request.method() === "PUT" && request.url().includes("/api/v1/wellbeing-check-ins/"));
     await page.getByRole("button", { name: label, exact: true }).click();
+    await page.getByRole("button", { name: "Save check-in", exact: true }).click();
     expect((await saved).postDataJSON()).toMatchObject({ expectedRevision: revision, answers: { overallFeeling: value, notes: "Keep this note" } });
+    await page.getByRole("button", { name: "Check-in saved · Edit" }).click();
     await expect(page.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
   }
   await page.reload();
+  await page.getByRole("button", { name: "Check-in saved · Edit" }).click();
   await expect(page.getByRole("button", { name: "Low", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -291,7 +298,7 @@ test("Home keeps an active workout readable and all summaries visible on mobile"
     await page.setViewportSize(viewport);
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "Easy supporting run" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Good", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Check-in saved · Edit" })).toBeVisible();
     await assertHomeLayout(page, test.info(), "home-active-workout");
     await expectAxeClean(page, "Home daily briefing");
   }
@@ -313,10 +320,11 @@ test(`Home advances Up next to Thursday when today's run arrives, without reload
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await expect(page.getByRole("heading", { name: "Thursday steady run" })).toBeVisible();
   await expect(page.getByText("Up next · Thu, 17 Sept", { exact: true })).toBeVisible();
+  await page.locator(".road-session-details summary").click();
   await expect(page.getByText("Run steadily for 45 minutes.", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "View workout" })).toHaveAttribute("href", /date=2026-09-17&session=session-thursday/);
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Good", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check-in saved · Edit" })).toBeVisible();
 });
 }
 
@@ -344,10 +352,10 @@ test("Home advances milestones and the check-in date at local midnight without w
     { id: "race-tomorrow", title: "Tomorrow's race", eventName: "Tomorrow's race", targetDate: "2026-10-14", distanceMeters: 10_000, targetTimeSeconds: 3600 },
   ] });
   await page.goto("/dashboard");
-  await expect(page.locator(".home-milestone-name")).toHaveText("Today's race");
-  await expect(page.getByRole("button", { name: "Good", exact: true })).toBeVisible();
+  await expect(page.locator(".road-stop--next .road-stop-title")).toHaveText("Today's race");
+  await expect(page.getByRole("button", { name: "Check-in saved · Edit" })).toBeVisible();
   await page.clock.fastForward(60_000);
-  await expect(page.locator(".home-milestone-name")).toHaveText("Tomorrow's race");
+  await expect(page.locator(".road-stop--next .road-stop-title")).toHaveText("Tomorrow's race");
   await expect.poll(() => reads.some((url) => url.includes("from=2026-10-14"))).toBe(true);
   await expect(page.locator(".home-toolbar")).toContainText("Wednesday, 14 October");
   expect(writes).toEqual([]);
@@ -370,26 +378,32 @@ test("A failed conflict reload blocks another check-in save until the latest ans
     return route.fulfill({ json: { data: { ...body, revision: 6 } } });
   });
   await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Check-in saved · Edit" }).click();
   await page.getByRole("button", { name: "Good", exact: true }).click();
+  await page.getByRole("button", { name: "Save check-in", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "could not be reloaded" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Choose your overall feeling" })).toHaveCount(0);
   expect(saves).toHaveLength(1);
   reloadAllowed = true;
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByRole("button", { name: "Retry check-in", exact: true }).click();
+  await page.getByRole("button", { name: "Check-in saved · Edit" }).click();
   await page.getByRole("button", { name: "Good", exact: true }).click();
-  await expect(page.getByText("Check-in saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Save check-in", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Check-in saved · Edit" })).toBeVisible();
   expect(saves[1]).toMatchObject({ expectedRevision: 5, answers: { overallFeeling: "good", notes: "Updated elsewhere", sleepQuality: "good" } });
 });
 
 test("Cancelling check-in details does not include unsaved edits in a quick answer", async ({ page }) => {
   await mockHome(page, { checkIn: { revision: 4, status: "saved", answers: { overallFeeling: "very_good", sleepQuality: "good", notes: "Saved note" } } });
   await page.goto("/dashboard");
-  await page.getByRole("button", { name: "Edit check-in details" }).click();
+  await page.getByRole("button", { name: "Check-in saved · Edit" }).click();
+  await page.getByRole("button", { name: "Add sleep and recovery details" }).click();
   await expect(page.getByLabel("How do you feel overall?")).toHaveValue("very_good");
   await page.getByLabel("How did you sleep?").selectOption("poor");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   const saved = page.waitForRequest((request) => request.method() === "PUT" && request.url().includes("/api/v1/wellbeing-check-ins/"));
   await page.getByRole("button", { name: "Low", exact: true }).click();
+  await page.getByRole("button", { name: "Save check-in", exact: true }).click();
   expect((await saved).postDataJSON()).toMatchObject({ expectedRevision: 4, answers: { overallFeeling: "poor", sleepQuality: "good", notes: "Saved note" } });
-  await expect(page.getByText("Check-in saved.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check-in saved · Edit" })).toBeVisible();
 });

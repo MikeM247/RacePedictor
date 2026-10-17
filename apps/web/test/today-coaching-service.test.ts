@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-// @ts-expect-error Runtime uses Node 22 SQLite; the project retains Node 20 type declarations.
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 // @ts-expect-error Existing local importer is JavaScript without a declaration file.

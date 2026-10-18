@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { goalContextApiResponseSchema, type GoalContextRouteData } from "../../../../packages/core/src/contracts/coaching.ts";
 import { raceHistoryResponseSchema, type RaceHistoryRecord } from "../../../../packages/core/src/contracts/race-history.ts";
@@ -36,7 +37,7 @@ function AchievementStop({ record, timezone }: { record: RaceHistoryRecord; time
   </li>;
 }
 
-export function HomeGoalContext({ now, onTimezone, refreshKey = 0 }: { now: Date; onTimezone?: (timezone: string) => void; refreshKey?: number }) {
+export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }: { now: Date; onTimezone?: (timezone: string) => void; refreshKey?: number; heroHeader?: ReactNode }) {
   const [context, setContext] = useState<GoalContextRouteData | null>(null);
   const [goalState, setGoalState] = useState<"loading" | "ready" | "error">("loading");
   const [history, setHistory] = useState<RaceHistoryRecord[]>([]);
@@ -93,6 +94,7 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0 }: { now: Date
     <div className="road-hero">
       <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes="(max-width: 767px) 100vw, (max-width: 1400px) 85vw, 1200px" priority />
       <div className="road-hero-shade" />
+      {heroHeader}
       <div className="road-hero-content">
         <p className="eyebrow">Your big goal</p>
         <h2>{goal ? performance?.eventName || goal.title : "Your next finish line."}</h2>

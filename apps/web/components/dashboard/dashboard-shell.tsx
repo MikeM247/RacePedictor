@@ -19,6 +19,19 @@ function HomeDate({ timezone, now }: { timezone: string; now: Date }) {
   return <><h1 id="dashboard-page-title">{greeting}</h1><p>{date}</p></>;
 }
 
+function HomeHeroHeader({ timezone, now, date, planTimezone, refreshKey }: {
+  timezone: string;
+  now: Date;
+  date: string;
+  planTimezone: string | null;
+  refreshKey: number;
+}) {
+  return <header className="road-hero-header">
+    <div className="road-hero-greeting"><HomeDate timezone={timezone} now={now} /></div>
+    {planTimezone ? <DailyWellbeingCheckIn key={`${timezone}:${date}`} timezone={timezone} date={date} dailyModal refreshKey={refreshKey} /> : <span className="daily-check-in-state" role="status">Preparing your daily check-in…</span>}
+  </header>;
+}
+
 function LegacyReadinessRedirect() {
   const router = useRouter();
   useEffect(() => {
@@ -56,14 +69,10 @@ export function DashboardShell({ initialNow }: { initialNow: string }) {
     <LegacyReadinessRedirect />
     <DashboardNavigation activePage="home" />
     <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="dashboard-page-title">
-      <header className="dashboard-toolbar home-toolbar">
-        <div className="dashboard-toolbar-title"><HomeDate timezone={timezone} now={now} /></div>
-        {planTimezone ? <DailyWellbeingCheckIn key={`${timezone}:${date}`} timezone={timezone} date={date} dailyModal refreshKey={refreshKey} /> : <span className="daily-check-in-state" role="status">Preparing your daily check-in…</span>}
-      </header>
       <section className="dashboard-content home-content" aria-label="Home">
         <section className="content-group home-group home-goal" aria-labelledby="goal-and-milestone-heading">
           <h2 id="goal-and-milestone-heading" className="sr-only">Your goal</h2>
-          <div className="home-goal-panel"><HomeGoalContext now={now} onTimezone={setPlanTimezone} refreshKey={refreshKey} /></div>
+          <div className="home-goal-panel"><HomeGoalContext now={now} onTimezone={setPlanTimezone} refreshKey={refreshKey} heroHeader={<HomeHeroHeader timezone={timezone} now={now} date={date} planTimezone={planTimezone} refreshKey={refreshKey} />} /></div>
         </section>
         <section className="content-group home-group home-today" aria-labelledby="today-focus-heading">
           <h2 id="today-focus-heading" className="sr-only">Today&apos;s focus</h2>

@@ -87,6 +87,7 @@ const syntheticGpx = (date: string) => `<?xml version="1.0" encoding="UTF-8"?>
 test("manual history becomes an explicitly approved and safely scheduled digital coaching plan", async ({ page }) => {
   test.setTimeout(180_000);
   const today = localDate();
+  await page.clock.install({ time: new Date(`${today}T04:00:00.000Z`) });
   const tomorrow = addDays(today, 1);
   const isSunday = new Date(`${today}T12:00:00.000Z`).getUTCDay() === 0;
   const sameWeekConflictDate = tomorrow;
@@ -437,6 +438,7 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   await page.setViewportSize({ width: 390, height: 844 });
   const today = localDate();
   const tomorrow = addDays(today, 1);
+  const firstWeek = weekStartsOn(tomorrow);
   const moveDate = addDays(tomorrow, 1);
   const targetDate = addDays(today, 42);
   let approved = false;
@@ -452,14 +454,14 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   const session = () => validCalendarSession({ ...mobileWorkout, prescribedDate: tomorrow, originalDate: tomorrow, effectiveDate: moved ? moveDate : tomorrow, scheduledDate: moved ? moveDate : tomorrow, revision: moved ? 2 : 1 });
   const proposal = validProposal({
     id: "proposal_mobile_journey", goalId: mobileGoal.id, proposedGoal: mobileGoal, version: 1, revision: 1,
-    startsOn: weekStartsOn(today), endsOn: targetDate, contextArtifactId: "context_mobile_journey", workouts: [mobileWorkout],
-    weeklyStructure: [{ weekStartsOn: weekStartsOn(today), focus: "Consistency", sessionIds: ["session_mobile_journey"] }],
+    startsOn: firstWeek, endsOn: targetDate, contextArtifactId: "context_mobile_journey", workouts: [mobileWorkout],
+    weeklyStructure: [{ weekStartsOn: firstWeek, focus: "Consistency", sessionIds: ["session_mobile_journey"] }],
     summary: "A conservative mobile coaching plan.", rationale: "Build consistent aerobic work.", goalRationale: "The mobile goal is achievable through a gradual build.",
     assumptions: ["Easy running is currently appropriate."], cautions: ["Persistent pain needs professional review."],
     review: { historyStatus: "current", requiresStaleAcknowledgement: false, goalTitle: mobileGoal.title, goalTarget: mobileGoal.target, materialDifferences: [{ field: "plan", change: "added", summary: "Creates the first approved plan." }] },
   });
   const plan = validPlan({
-    id: "plan_mobile_journey", goalId: mobileGoal.id, version: 1, revision: 1, startsOn: weekStartsOn(today), endsOn: targetDate,
+    id: "plan_mobile_journey", goalId: mobileGoal.id, version: 1, revision: 1, startsOn: firstWeek, endsOn: targetDate,
     contextArtifactId: "context_mobile_journey", workouts: [mobileWorkout], weeklyStructure: proposal.weeklyStructure,
     approval: { ...validPlan().approval, summary: proposal.summary, rationale: proposal.rationale, goalRationale: proposal.goalRationale, assumptions: proposal.assumptions, cautions: proposal.cautions },
   });
@@ -541,6 +543,7 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
 
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "Mobile confidence run" })).toBeVisible();
+  await page.locator(".road-session-details summary").click();
   await expect(page.getByText("Run easily for 40 minutes at conversational effort.")).toBeVisible();
 
   await page.goto("/dashboard/settings");

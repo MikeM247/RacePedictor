@@ -357,7 +357,7 @@ test("Home advances milestones and the check-in date at local midnight without w
   await page.clock.fastForward(60_000);
   await expect(page.locator(".road-stop--next .road-stop-title")).toHaveText("Tomorrow's race");
   await expect.poll(() => reads.some((url) => url.includes("from=2026-10-14"))).toBe(true);
-  await expect(page.locator(".home-toolbar")).toContainText("Wednesday, 14 October");
+  await expect(page.locator(".road-hero-header")).toContainText("Wednesday, 14 October");
   expect(writes).toEqual([]);
 });
 

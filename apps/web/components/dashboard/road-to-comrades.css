@@ -1,14 +1,16 @@
 /* The photo is decorative. All race and activity information remains live HTML. */
 .road-layout { --road-lime: #bbf359; --road-cyan: #28d8f5; background: #07121f; }
-.road-layout .dashboard-toolbar { display: flex; justify-content: space-between; width: min(1280px, 100%); padding: 28px 32px 0; align-items: center; gap: 16px; }
-.road-layout .dashboard-toolbar h1 { font-size: 25px; letter-spacing: -.035em; }
-.road-layout .dashboard-toolbar-title > p { margin-top: 3px; font-size: 13px; color: #aebfd0; }
-.road-layout .dashboard-content.home-content { width: min(1280px, 100%); padding: 20px 32px 40px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+.road-layout .dashboard-content.home-content { width: min(1280px, 100%); padding: 8px 32px 40px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
 .road-layout .home-goal-panel { padding: 0; overflow: hidden; border: 1px solid #294357; border-radius: 16px; background: #0b1b2a; }
-.road-hero { position: relative; isolation: isolate; min-height: 340px; display: flex; align-items: center; overflow: hidden; background: #0c2031; }
+.road-hero { position: relative; isolation: isolate; min-height: 340px; display: grid; align-content: center; gap: 16px; overflow: hidden; background: #0c2031; }
 .road-hero-image { object-fit: cover; object-position: center 60%; z-index: -3; }
-.road-hero-shade { position: absolute; inset: 0; z-index: -2; background: linear-gradient(90deg, rgba(4,15,27,.9) 0%, rgba(4,15,27,.62) 45%, rgba(4,15,27,.06) 100%), linear-gradient(0deg, #0b1b2a 0%, transparent 35%); }
-.road-hero-content { width: 100%; padding: 40px 36px 24px; }
+.road-hero-shade { position: absolute; inset: 0; z-index: -2; background: linear-gradient(180deg, rgba(4,15,27,.52) 0%, rgba(4,15,27,.12) 28%, transparent 48%), linear-gradient(90deg, rgba(4,15,27,.9) 0%, rgba(4,15,27,.62) 45%, rgba(4,15,27,.06) 100%), linear-gradient(0deg, #0b1b2a 0%, transparent 35%); }
+.road-hero-header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; width: 100%; padding: 16px 36px 0; }
+.road-hero-greeting { min-width: 0; }
+.road-hero-greeting h1 { margin: 0; color: #f6f9fc; font-size: 25px; letter-spacing: -.035em; line-height: 1.15; }
+.road-hero-greeting p { margin: 3px 0 0; color: #e1eaf2; font-size: 13px; }
+.road-hero-header > .daily-check-in-state { margin: 10px 8px 0 0; color: #e1eaf2; font-size: 12px; }
+.road-hero-content { width: 100%; padding: 16px 36px 24px; }
 .road-hero-content .eyebrow { margin: 0 0 12px; font-size: 11px; font-weight: 700; letter-spacing: .2em; color: #b8ecff; }
 .road-hero-content h2 { max-width: 76%; margin: 0; color: #fff; font-size: clamp(30px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -.045em; font-weight: 800; text-wrap: balance; }
 .road-hero-target { margin: 10px 0 0; color: #fff; font-size: clamp(23px, 2.8vw, 34px); font-weight: 750; text-transform: uppercase; letter-spacing: -.02em; }
@@ -73,9 +75,11 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 .road-layout .home-session-footer .text-link { font-size: 13px; }
 .road-layout .home-recorded-label { font-size: 12px; color: #c6f485; }
 .road-daily-check-in { display: grid; justify-items: end; gap: 4px; }
-.road-check-in-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 9px 14px; border: 1px solid #3f647b; border-radius: 30px; color: #d4f2ff; background: #122b3b; font: inherit; font-size: 12px; cursor: pointer; }
-.road-check-in-chip > span { color: #9ce6f5; font-size: 18px; }
-.road-check-in-chip--saved > span { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 13px; background: #b4ec6d; color: #14280a; }
+.road-check-in-chip { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 44px; min-height: 44px; padding: 0 11px; border: 0; border-radius: 30px; color: #eff7fc; background: transparent; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.road-check-in-chip::before { position: absolute; z-index: -1; inset: 6px 0; border: 1px solid #7892a17a; border-radius: inherit; background: #102536c9; content: ""; }
+.road-check-in-icon, .road-check-in-label { position: relative; }
+.road-check-in-icon { color: #b5eb82; font-size: 15px; line-height: 1; }
+.road-check-in-chip--saved .road-check-in-icon { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 11px; background: #b4ec6d; color: #14280a; }
 .road-dialog { width: min(540px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 1px solid #35546a; border-radius: 18px; background: #0d1f30; color: #f1f7fc; box-shadow: 0 24px 100px #0008; overflow: auto; }
 .road-dialog::backdrop { background: #030c17b8; backdrop-filter: blur(5px); }
 .road-dialog-content { padding: 28px; }
@@ -123,16 +127,17 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-timeline-group--ahead h4 { margin-bottom: 12px; }
 }
 @media (max-width: 767px) {
-  .road-layout .dashboard-toolbar { padding: 16px 16px 0; align-items: start; }
-  .road-layout .dashboard-toolbar h1 { font-size: 21px; }
-  .road-layout .dashboard-toolbar-title > p { font-size: 11px; }
-  .road-check-in-chip { padding: 8px 10px; font-size: 10px; gap: 5px; }
-  .road-layout .dashboard-content.home-content { padding: 16px 12px 24px; gap: 14px; }
+  .road-layout .dashboard-content.home-content { padding: 8px 12px 24px; gap: 14px; }
   .road-layout .home-goal-panel { border-radius: 13px; }
-  .road-hero { min-height: 240px; }
+  .road-hero { min-height: 240px; gap: 8px; }
   .road-hero-image { object-position: 68% center; }
-  .road-hero-shade { background: linear-gradient(90deg, #04101cdb, #04101c36), linear-gradient(0deg, #0b1b2a, transparent 50%); }
-  .road-hero-content { padding: 28px 20px 16px; }
+  .road-hero-shade { background: linear-gradient(180deg, #04101cd9 0%, #04101c55 35%, transparent 60%), linear-gradient(90deg, #04101cdb, #04101c36), linear-gradient(0deg, #0b1b2a, transparent 50%); }
+  .road-hero-header { align-items: center; gap: 4px 8px; padding: 8px 16px 0; }
+  .road-hero-greeting h1 { font-size: 21px; }
+  .road-hero-greeting p { font-size: 11px; }
+  .road-hero-header > .daily-check-in-state { margin: 0; font-size: 11px; }
+  .road-check-in-chip { font-size: 11px; gap: 5px; }
+  .road-hero-content { padding: 12px 20px 16px; }
   .road-hero-content .eyebrow { font-size: 9px; margin-bottom: 10px; }
   .road-hero-content h2 { max-width: 100%; font-size: clamp(28px, 8vw, 36px); }
   .road-hero-target { font-size: 24px; }

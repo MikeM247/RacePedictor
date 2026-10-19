@@ -52,7 +52,7 @@ test("live history and goal timeline render at desktop and narrow widths with no
   page.on("pageerror", (error) => errors.push(error.message));
   const shots = reviewDirectory;
   await mkdir(shots, { recursive: true });
-  for (const width of [1440, 1024, 390, 320]) {
+  for (const width of [1920, 1440, 1024, 390, 320]) {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "Comrades 2027 Down Run", exact: true })).toBeVisible();

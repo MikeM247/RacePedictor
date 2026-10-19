@@ -16,7 +16,7 @@ export async function assertHomeLayout(page: Page, info: TestInfo, label: string
     const viewportBottom = window.innerWidth < 768 ? nav.getBoundingClientRect().top : window.innerHeight;
     const goal = rect(".road-hero"), scene = rect(".road-home-scene"), title = rect(".road-hero-content h2"), photo = rect(".road-hero-image"), heroFooter = rect(".road-hero-footer"), milestone = rect(".road-journey"), today = rect(".home-workout-surface"), activity = rect(".home-activity .home-session-summary");
     const controls = [...document.querySelectorAll<HTMLElement>(".home-group a, .home-group button, .road-session-details summary")].filter((element) => element.getBoundingClientRect().height > 0).map((element) => element.getBoundingClientRect().height);
-    return { width: window.innerWidth, viewportBottom, goal, scene, title, photo, heroFooter, milestone, today, activity, groups, controls,
+    return { width: window.innerWidth, viewportRight: document.documentElement.clientWidth, viewportBottom, main: rect(".dashboard-main"), nav: rect(".dashboard-nav"), brand: rect(".dashboard-brand"), settings: rect(".dashboard-nav-secondary a"), greeting: rect(".road-hero-greeting"), goal, scene, title, photo, heroFooter, milestone, today, activity, groups, controls,
       goalAndTodayFit: today.bottom <= viewportBottom, allGroupsFit: Math.max(activity.bottom, today.bottom) <= viewportBottom, horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1 };
   });
   await fs.mkdir(e2eRoot, { recursive: true });
@@ -27,6 +27,14 @@ export async function assertHomeLayout(page: Page, info: TestInfo, label: string
   expect(layout.horizontalOverflow).toBe(false);
   expect(layout.title.right).toBeLessThanOrEqual((layout.scene.left + layout.scene.right) / 2 + 1);
   expect(layout.photo.bottom).toBeLessThanOrEqual(layout.goal.bottom + 1);
+  expect(Math.abs(layout.photo.left - layout.main.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(layout.photo.right - layout.viewportRight)).toBeLessThanOrEqual(1);
+  if (layout.width < 768) {
+    expect(layout.photo.top).toBe(0);
+    expect(layout.brand.top).toBeGreaterThanOrEqual(layout.photo.top);
+    expect(layout.settings.bottom).toBeLessThan(layout.greeting.top);
+    expect(layout.greeting.top - layout.nav.bottom).toBeGreaterThanOrEqual(8);
+  }
   // The journey overlaps the photo while leaving the hero's text and links clear.
   expect(layout.milestone.top).toBeLessThan(layout.goal.bottom);
   expect(layout.milestone.top - layout.heroFooter.bottom).toBeGreaterThanOrEqual(8);

@@ -110,6 +110,32 @@ test("achievement editor persists changes through the real local API and handles
   await expect(dialog.getByLabel("Achievement name")).toHaveValue("Changed elsewhere");
 });
 
+test("Settings Milestones opens directly and saved achievements reach Home", async ({ page }) => {
+  await mockHome(page); await seedHistory(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/dashboard/settings?section=milestones");
+  await expect(page.getByRole("heading", { name: "Milestones", exact: true })).toBeVisible();
+  await expect(page.getByText("SA Home Loans Oldies 10 km", { exact: true })).toBeVisible();
+  await expectAxeClean(page, "Settings Milestones");
+  await page.getByRole("button", { name: "Manage achievements" }).click();
+  const dialog = page.getByRole("dialog", { name: "Race achievements" });
+  await expectAxeClean(page, "Settings achievement editor");
+  await dialog.getByRole("button", { name: "Edit Comrades PB", exact: true }).click();
+  await dialog.getByLabel("Achievement name").fill("Settings milestone result");
+  await dialog.getByLabel("I confirm this race result or achievement.").check();
+  await dialog.getByRole("button", { name: "Save achievement", exact: true }).click();
+  await expect(dialog.getByText("Achievement saved.", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Manage achievements" })).toBeFocused();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Milestones", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Manage achievements" }).click();
+  await expect(dialog.getByRole("button", { name: "Edit Settings milestone result", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.goto("/dashboard");
+  await expect(page.locator(".road-stop--achieved", { hasText: "Settings milestone result" })).toBeVisible();
+});
+
 test("new plan and history reads update the timeline on focus without inventing completion", async ({ page }) => {
   await mockHome(page); await seedHistory(page); await page.goto("/dashboard");
   await expect(page.locator(".road-stop--achieved")).toHaveCount(3);

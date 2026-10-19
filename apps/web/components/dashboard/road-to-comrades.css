@@ -25,8 +25,8 @@
 .road-layout .road-hero-footer .text-link { color: #bcefff; font-size: 14px; white-space: nowrap; }
 .road-journey { position: relative; z-index: 1; margin: -24px 18px 0; padding: 17px 20px 18px; border: 1px solid #72889a; border-radius: 15px; background: #071725ed; box-shadow: 0 12px 26px #020a12a6; backdrop-filter: blur(7px); }
 .road-journey-header { margin: 0; }
-.road-layout .road-manage { min-height: 44px; padding: 4px 8px; border: 0; background: transparent; color: #a9d8e5; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.road-layout .road-manage:hover { color: #d2f8ff; }
+.road-layout .road-manage, .settings-panel--milestones .road-manage { min-height: 44px; padding: 4px 8px; border: 0; background: transparent; color: #a9d8e5; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.road-layout .road-manage:hover, .settings-panel--milestones .road-manage:hover { color: #d2f8ff; }
 .road-journey-actions { display: flex; justify-content: flex-end; margin: 2px 26px 0; }
 .road-timeline { display: grid; grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr); gap: 0; }
 .road-timeline-group { min-width: 0; }

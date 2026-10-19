@@ -51,10 +51,10 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 .road-status { color: #c1d0df; font-size: 11px; line-height: 1.45; margin-top: 3px; }
 .road-status--achieved { padding: 3px 9px; border-radius: 6px; background: #baf164; color: #15300c; font-size: 11px; font-weight: 700; }
 .road-status--next { padding: 3px 12px; border-radius: 7px; color: #03252d; background: var(--road-cyan); font-weight: 700; }
-.road-now { position: relative; display: flex; flex-direction: column; align-items: center; color: var(--road-cyan); }
-.road-now::before { content: ""; position: absolute; top: calc(var(--road-heading-height) + var(--road-heading-gap) + var(--road-node-size) / 2); right: 0; left: 0; height: 0; border-top: 2px dashed #28d8f5d9; transform: translateY(-50%); }
+.road-now { --road-progress-direction: 90deg; position: relative; display: flex; flex-direction: column; align-items: center; color: var(--road-lime); }
+.road-now::before { content: ""; position: absolute; top: calc(var(--road-heading-height) + var(--road-heading-gap) + var(--road-node-size) / 2); right: 0; left: 0; height: 2px; background: linear-gradient(var(--road-progress-direction), var(--road-lime), var(--road-cyan)); mask-image: repeating-linear-gradient(to right, #000 0 6px, transparent 6px 10px); transform: translateY(-50%); }
 .road-now strong { margin: 0 0 var(--road-heading-gap); font-size: 13px; font-weight: 700; letter-spacing: .14em; line-height: var(--road-heading-height); text-transform: uppercase; }
-.road-now > span { position: relative; z-index: 1; display: grid; place-items: center; width: var(--road-now-size); height: var(--road-now-size); margin-top: calc((var(--road-node-size) - var(--road-now-size)) / 2); border: 3px solid var(--road-cyan); border-radius: 50%; background: #072434; box-shadow: 0 0 13px #28d8f58c; }
+.road-now > span { position: relative; z-index: 1; display: grid; place-items: center; width: var(--road-now-size); height: var(--road-now-size); margin-top: calc((var(--road-node-size) - var(--road-now-size)) / 2); border: 3px solid transparent; border-radius: 50%; background: linear-gradient(#072434, #072434) padding-box, linear-gradient(var(--road-progress-direction), var(--road-lime), var(--road-cyan)) border-box; box-shadow: -4px 0 13px #bbf35950, 4px 0 13px #28d8f550; }
 .road-timeline-group--ahead { position: relative; }
 .road-timeline-group--ahead::after { position: absolute; top: calc(var(--road-heading-height) + var(--road-heading-gap) + var(--road-node-size) / 2); right: -2px; color: #d3e5f4; content: "→"; font-family: Arial, sans-serif; font-size: 19px; line-height: 1; transform: translateY(-50%); }
 .road-empty { margin: 0; min-height: 80px; padding: 8px 10px 0 0; color: #a9bdcd; font-size: 13px; line-height: 1.6; }
@@ -127,11 +127,15 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 .road-form-message { color: #d0e5f4; font-size: 14px; line-height: 1.6; }
 .road-dialog .daily-check-in-form h3 { margin: 0; font-size: 18px; }
 @media (min-width: 1100px) {
+  /* Keep the full photo width instead of enlarging it to the journey's height. */
+  .road-hero-image { height: auto !important; object-fit: contain; object-position: center top; }
+  .road-hero-content { padding-top: 64px; }
+  .road-hero-date { margin-top: 16px; }
   .road-timeline-group--ahead > h4 { text-align: right; }
   /* Join the neighboring marker centers to the dashed rail behind Now. */
   .road-timeline-group--achieved > .road-stops > .road-stop:last-child::after,
   .road-timeline-group--ahead > .road-stops > .road-stop:first-child::after { content: ""; position: absolute; top: calc(var(--road-node-size) / 2); height: 0; border-top: 2px dashed var(--road-cyan); transform: translateY(-50%); pointer-events: none; }
-  .road-timeline-group--achieved > .road-stops > .road-stop:last-child::after { left: 50%; right: 0; }
+  .road-timeline-group--achieved > .road-stops > .road-stop:last-child::after { left: 50%; right: 0; border-color: var(--road-lime); }
   .road-timeline-group--ahead > .road-stops > .road-stop:first-child::after { left: 0; right: 50%; }
   .road-timeline-group--ahead > .road-stops > .road-stop:last-child::before { right: 0; }
 }
@@ -145,8 +149,8 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-timeline { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .road-timeline-group { padding: 14px 15px 16px; border: 1px solid #668096; border-radius: 13px; background: #071725f2; box-shadow: 0 8px 22px #020a1280; }
   .road-timeline-group h4 { margin-bottom: 10px; }
-  .road-now { z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) var(--road-now-size) minmax(0, 1fr); min-height: 57px; align-items: center; gap: 9px; }
-  .road-now::before { top: 0; right: auto; bottom: 0; left: 50%; width: 0; height: auto; border-top: 0; border-left: 2px dashed #28d8f5d9; transform: translateX(-50%); }
+  .road-now { --road-progress-direction: 180deg; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) var(--road-now-size) minmax(0, 1fr); min-height: 57px; align-items: center; gap: 9px; }
+  .road-now::before { top: 0; right: auto; bottom: 0; left: 50%; width: 2px; height: auto; mask-image: repeating-linear-gradient(to bottom, #000 0 6px, transparent 6px 10px); transform: translateX(-50%); }
   .road-now strong { grid-column: 3; grid-row: 1; justify-self: start; margin: 0; padding: 2px 4px; background: #071725; }
   .road-now > span { grid-column: 2; grid-row: 1; margin-top: 0; }
   .road-timeline-group--ahead::after { display: none; }

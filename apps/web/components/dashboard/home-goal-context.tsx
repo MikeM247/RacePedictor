@@ -92,9 +92,9 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
 
   return <div className="home-goal-context road-goal-context">
     <section className="road-home-scene" aria-label="Your goal and running journey">
-      <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes="(max-width: 767px) 100vw, (max-width: 1400px) 85vw, 1200px" priority />
-      <div className="road-hero-shade" aria-hidden="true" />
       <div className="road-hero">
+        <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes="(max-width: 767px) 100vw, (max-width: 1400px) 85vw, 1200px" priority />
+        <div className="road-hero-shade" aria-hidden="true" />
         {heroHeader}
         <div className="road-hero-content">
           <p className="eyebrow">Your goal</p>

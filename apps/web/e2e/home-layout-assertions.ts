@@ -14,9 +14,9 @@ export async function assertHomeLayout(page: Page, info: TestInfo, label: string
     const groups = [...document.querySelectorAll<HTMLElement>(".home-group")].map((element) => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom }));
     const nav = document.querySelector<HTMLElement>(".dashboard-nav-primary")!;
     const viewportBottom = window.innerWidth < 768 ? nav.getBoundingClientRect().top : window.innerHeight;
-    const goal = rect(".road-hero"), scene = rect(".road-home-scene"), heroFooter = rect(".road-hero-footer"), milestone = rect(".road-journey"), today = rect(".home-workout-surface"), activity = rect(".home-activity .home-session-summary");
+    const goal = rect(".road-hero"), scene = rect(".road-home-scene"), title = rect(".road-hero-content h2"), photo = rect(".road-hero-image"), heroFooter = rect(".road-hero-footer"), milestone = rect(".road-journey"), today = rect(".home-workout-surface"), activity = rect(".home-activity .home-session-summary");
     const controls = [...document.querySelectorAll<HTMLElement>(".home-group a, .home-group button, .road-session-details summary")].filter((element) => element.getBoundingClientRect().height > 0).map((element) => element.getBoundingClientRect().height);
-    return { width: window.innerWidth, viewportBottom, goal, scene, heroFooter, milestone, today, activity, groups, controls,
+    return { width: window.innerWidth, viewportBottom, goal, scene, title, photo, heroFooter, milestone, today, activity, groups, controls,
       goalAndTodayFit: today.bottom <= viewportBottom, allGroupsFit: Math.max(activity.bottom, today.bottom) <= viewportBottom, horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1 };
   });
   await fs.mkdir(e2eRoot, { recursive: true });
@@ -25,6 +25,8 @@ export async function assertHomeLayout(page: Page, info: TestInfo, label: string
   await page.screenshot({ path: `${prefix}.png`, fullPage: true, style: "nextjs-portal { display: none; }" });
   await info.attach(`${label}-${layout.width}-fit`, { body: JSON.stringify(layout, null, 2), contentType: "application/json" });
   expect(layout.horizontalOverflow).toBe(false);
+  expect(layout.title.right).toBeLessThanOrEqual((layout.scene.left + layout.scene.right) / 2 + 1);
+  expect(layout.photo.bottom).toBeLessThanOrEqual(layout.goal.bottom + 1);
   // The journey overlaps the photo while leaving the hero's text and links clear.
   expect(layout.milestone.top).toBeLessThan(layout.goal.bottom);
   expect(layout.milestone.top - layout.heroFooter.bottom).toBeGreaterThanOrEqual(8);

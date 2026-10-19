@@ -1,6 +1,6 @@
 # Home prototype parity — implementation plan
 
-Date: 19 October 2026. Status: implemented with review fixes on `feat/home-prototype-parity`; awaiting owner visual acceptance. No deployment has occurred.
+Date: 19 October 2026. Status: implemented with review fixes on `feat/home-prototype-parity`; deployed to staging and awaiting owner visual acceptance.
 
 ## Outcome and design authority
 
@@ -190,7 +190,16 @@ Verification on 19 October 2026:
 - Road to Comrades browser suite: 5/5 passed, covering real local achievement persistence/conflicts, check-in interactions, plan/history refresh, private-background upload/restore, no page-load mutations, responsive geometry and accessibility scans. An initial attempt inherited cloud mode and stopped at sign-in; the explicit local fixture setting resolved it before the successful run.
 - Home/accessibility suite: 28 scenarios passed in the full run. Its remaining failure was another obsolete DOM-order expectation; that expectation was updated, and the affected scenario passed on a focused rerun, accounting for all 29 Home scenarios across the final runs.
 - Calendar companion: the focused Home summary scenario passed at its six configured viewport sizes using the updated shared layout assertions.
-- `git diff --check` passed. No production data or deployment was changed.
+- `git diff --check` passed. Local verification did not change production data or its deployment.
+
+### Staging deployment — 19 October 2026
+
+- Deployed source commit `0e8742ff675beda18e500239e9e8738935a714d8` to the existing Vercel `racepedictor` project, target `staging`. Deployment `dpl_9zAhYXda4qotnVhRttNQ4t8cU6ZM` reached `READY`; Next.js 16.3.0 build completed in 59 seconds.
+- Test URL: https://racepedictor-road-to-comrades.vercel.app/dashboard. The existing public staging `AUTH_URL` already uses this hostname.
+- Uploaded branch source directly with deployment-specific `npm run build`, retaining `apps/web` as the root. Build logs confirm Prisma client generation and compilation, with no database migration command. The branch has not been pushed, avoiding the Git integration's inherited migration-running build command.
+- The staging health endpoint returned HTTP 200, `status: ok`, owner authentication configured, and the expected source commit. The login page returned HTTP 200 with the owner GitHub sign-in control. Owner-authenticated Home acceptance remains for the user; local Home and journey coverage is recorded above.
+- The production hostname still resolves to its prior deployment `dpl_4k34eH1eA1Gx9WgfWAVJh8PcNZgW`.
+- Staging currently shares the production database through the existing preview environment settings. No migrations or test data writes were performed for this deployment; user changes saved while testing will affect that shared database.
 
 Review captures use synthetic test facts:
 

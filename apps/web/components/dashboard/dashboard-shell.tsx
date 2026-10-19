@@ -74,15 +74,15 @@ export function DashboardShell({ initialNow }: { initialNow: string }) {
           <h2 id="goal-and-milestone-heading" className="sr-only">Your goal</h2>
           <div className="home-goal-panel"><HomeGoalContext now={now} onTimezone={setPlanTimezone} refreshKey={refreshKey} heroHeader={<HomeHeroHeader timezone={timezone} now={now} date={date} planTimezone={planTimezone} refreshKey={refreshKey} />} /></div>
         </section>
+        <section className="content-group home-group home-activity" aria-labelledby="latest-activity-heading">
+          <h2 id="latest-activity-heading" className="sr-only">Latest activity</h2>
+          <HomeRecentTraining timezone={timezone} compact refreshKey={refreshKey} />
+        </section>
         <section className="content-group home-group home-today" aria-labelledby="today-focus-heading">
           <h2 id="today-focus-heading" className="sr-only">Today&apos;s focus</h2>
           <div className="home-workout-surface">
             <TodayCoachingCard compact headingLevel={2} homeAction currentDate={date} refreshKey={refreshKey} onTimezone={setCoachingTimezone} />
           </div>
-        </section>
-        <section className="content-group home-group home-activity" aria-labelledby="latest-activity-heading">
-          <h2 id="latest-activity-heading" className="sr-only">Latest activity</h2>
-          <HomeRecentTraining timezone={timezone} compact refreshKey={refreshKey} />
         </section>
       </section>
     </main>

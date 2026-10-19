@@ -26,6 +26,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
+      RACEPREDICTOR_CLOUD_MODE: "disabled",
       RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-home-local-${process.env.RACEPREDICTOR_E2E_RUN_ID}`,
       RACEPREDICTOR_ATHLETE_ID: "e2e_athlete",
       RACEPREDICTOR_DATABASE_PATH: e2eDatabasePath,

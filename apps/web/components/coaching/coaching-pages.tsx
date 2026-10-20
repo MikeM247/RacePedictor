@@ -65,6 +65,7 @@ import { importUploadResponseSchema, type ImportUploadResponse } from "../../../
 import { canStartImport, fileImportPresentation } from "../../lib/import-ui-state";
 import { readRecoveryContext, recoveryReturnHref, safeRecoveryPath } from "../../lib/recovery-context";
 import { DashboardAppearanceSettings } from "../dashboard/dashboard-appearance-settings";
+import { MilestoneSettings } from "../dashboard/milestone-settings";
 import { externalTaskReference, hasUnsavedReminderChanges, reminderStage, settingsReadError, shouldRecoverBeforeRetry, type ReminderDraft, type SettingsReadState } from "../../lib/settings-workflow-state";
 
 type Page = "plan" | "calendar" | "data-quality" | "settings";
@@ -1495,7 +1496,7 @@ export function SettingsPage() {
   const [automationState, setAutomationState] = useState<RequestState>("idle");
   const [automationMessage, setAutomationMessage] = useState<string>();
   const [needsAuthoritativeRecovery, setNeedsAuthoritativeRecovery] = useState(false);
-  const [settingsGroup, setSettingsGroup] = useState<"preferences" | "reminders" | "privacy">("preferences");
+  const [settingsGroup, setSettingsGroup] = useState<"preferences" | "reminders" | "privacy" | "milestones">("preferences");
   const [returnTo, setReturnTo] = useState("/dashboard/settings");
   const mutationRef = useRef(false);
   const preferencesGeneration = useRef(0);
@@ -1505,6 +1506,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     setReturnTo(safeRecoveryPath(new URLSearchParams(window.location.search).get("returnTo"), "/dashboard/settings"));
+    if (new URLSearchParams(window.location.search).get("section") === "milestones") setSettingsGroup("milestones");
     void loadPreferences();
     void loadContext();
   }, []);
@@ -1616,6 +1618,7 @@ export function SettingsPage() {
   return <CoachShell page="settings" title="Settings" subtitle="Local coaching preferences and Codex reminder handoff" meta={baseline ? `${baseline.localTime} · ${baseline.timezone}` : "Checking preferences"}>
     <TrainingTools />
     <h2 className="sr-only">Settings sections</h2>
+    <details className="settings-group" open={settingsGroup === "milestones"} onToggle={(event) => { if (event.currentTarget.open) setSettingsGroup("milestones"); }}><summary>Milestones</summary><MilestoneSettings /></details>
     <details className="settings-group"><summary>Appearance</summary><DashboardAppearanceSettings /></details>
     {returnTo !== "/dashboard/settings" ? <section className="coach-panel"><p>Return to the import recovery without changing a preference or connection.</p><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></section> : null}
     <details className="settings-group" open={settingsGroup === "preferences"} onToggle={(event) => { if (event.currentTarget.open) setSettingsGroup("preferences"); }}><summary>Preferences <span className="status-chip">{baseline ? (baseline.enabled ? "Enabled" : "Disabled") : "Unavailable"}</span></summary><section className="coach-panel settings-panel settings-panel--preference" aria-labelledby="reminder-settings-heading"><div className="coach-panel-heading"><div><p className="eyebrow">Reminder preference</p><h3 id="reminder-settings-heading">Daily coaching reminder</h3></div></div>{preferencesRead.status === "error" && !preferencesRead.data ? <><p className="quiet-copy">Preferences could not be loaded. No editable defaults are shown until the saved preference is read.</p><button className="button button-primary" type="button" onClick={() => void loadPreferences()}>Retry preferences</button><StatusLine state="error" message={preferencesRead.message} /></> : <form className="coach-form coach-form-grid" onSubmit={save}><label className="checkbox-field field-wide"><input disabled={saveState === "loading" || preferencesRead.status === "refreshing"} type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /><span>Enable the daily reminder preference</span></label><label><span>Local time</span><input disabled={saveState === "loading"} type="time" value={draft.localTime} onChange={(event) => setDraft({ ...draft, localTime: event.target.value })} /></label><label><span>IANA timezone</span><input disabled={saveState === "loading"} value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} /></label><button className="button button-primary field-wide" disabled={saveState === "loading" || !dirty || needsAuthoritativeRecovery} type="submit">{saveState === "loading" ? "Saving…" : "Save preferences"}</button></form>} {needsAuthoritativeRecovery ? <button className="button button-secondary" type="button" onClick={() => void loadPreferences()}>Reread saved preferences</button> : null}{preferencesRead.status === "error" && preferencesRead.data ? <><StatusLine state="error" message={`${preferencesRead.message} Showing the last confirmed settings.`} /><button className="button button-secondary" type="button" onClick={() => void loadPreferences()}>Retry preferences</button></> : null}<StatusLine state={saveState} message={saveMessage} /></section></details>

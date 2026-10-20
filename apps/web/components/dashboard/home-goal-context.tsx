@@ -91,35 +91,38 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
     : context?.state === "unavailable" ? "Your approved goal could not be verified." : "Set a race goal to start your next chapter.";
 
   return <div className="home-goal-context road-goal-context">
-    <div className="road-hero">
-      <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes="(max-width: 767px) 100vw, (max-width: 1400px) 85vw, 1200px" priority />
-      <div className="road-hero-shade" />
-      {heroHeader}
-      <div className="road-hero-content">
-        <p className="eyebrow">Your big goal</p>
-        <h2>{goal ? performance?.eventName || goal.title : "Your next finish line."}</h2>
-        {goal ? <>
-          <p className="road-hero-target">{performance ? raceTargetLabel(goal.title, performance.targetTimeSeconds) : goal.title}</p>
-          {performance ? <p className="road-hero-date"><time dateTime={performance.targetDate}>{formatCoachingDate(performance.targetDate, timezone)}</time><span>{(performance.distanceMeters / 1000).toLocaleString("en-ZA", { maximumFractionDigits: 1 })} km</span></p> : null}
-        </> : <p className="road-hero-state" role="status">{goalState === "loading" ? "Loading your goal…" : goalState === "error" ? "Your goal is temporarily unavailable." : stateMessage}</p>}
-        <div className="road-hero-footer"><p>Every run has a reason.</p><Link className="text-link" href="/dashboard/plan">View plan →</Link></div>
-      </div>
-    </div>
-    {goalState === "error" ? <p className="road-inline-state" role="status">{context ? "Showing the last loaded goal. Refresh unavailable." : "Your goal could not be loaded."} <button className="text-link" onClick={() => setGoalRetry((value) => value + 1)}>Retry goal</button></p> : null}
-    {context?.state === "goal_only" ? <p className="road-inline-state">Your approved plan is not available right now.</p> : null}
-    <section className="road-journey" aria-labelledby="road-journey-heading">
-      <header className="road-journey-header"><div><p className="eyebrow">Every finish. Every fresh start.</p><h3 id="road-journey-heading">Your running journey</h3></div><RaceAchievementManager history={history} targets={buildRaceJourney(context, [], today).ahead} timezone={timezone} onChange={() => setHistoryRetry((value) => value + 1)} /></header>
-      <div className="road-timeline">
-        <div className="road-timeline-group road-timeline-group--achieved"><h4>Achieved</h4>
-          {journey.achieved.length ? <ol className="road-stops">{journey.achieved.slice(-3).map((record) => <AchievementStop key={record.id} record={record} timezone={timezone} />)}</ol> : <p className="road-empty" role="status">{historyState === "loading" ? "Loading your achievements…" : historyState === "error" ? "Your achievements could not be loaded." : "Add your first confirmed achievement."}</p>}
-        </div>
-        <div className="road-now"><span aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 18 18 6M6 6h12v12" /></svg></span><strong>Now</strong></div>
-        <div className="road-timeline-group road-timeline-group--ahead"><h4>Ahead</h4>
-          {journey.ahead.length ? <ol className="road-stops">{journey.ahead.slice(0, 3).map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} today={today} timezone={timezone} />)}</ol> : <p className="road-empty">{goalState === "loading" ? "Loading your next goals…" : goalState === "error" || context?.state === "unavailable" || context?.state === "projection_pending" ? "Upcoming races are unavailable." : "Your next chapter is ready to plan."}</p>}
+    <section className="road-home-scene" aria-label="Your goal and running journey">
+      <div className="road-hero">
+        <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes="(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc(100vw - 180px)" priority />
+        <div className="road-hero-shade" aria-hidden="true" />
+        {heroHeader}
+        <div className="road-hero-content">
+          <p className="eyebrow">Your goal</p>
+          <h2>{goal ? performance?.eventName || goal.title : "Your next finish line."}</h2>
+          {goal ? <>
+            <p className="road-hero-target">{performance ? raceTargetLabel(goal.title, performance.targetTimeSeconds) : goal.title}</p>
+            {performance ? <p className="road-hero-date"><time dateTime={performance.targetDate}>{formatCoachingDate(performance.targetDate, timezone)}</time><span>{(performance.distanceMeters / 1000).toLocaleString("en-ZA", { maximumFractionDigits: 1 })} km</span></p> : null}
+          </> : <p className="road-hero-state" role="status">{goalState === "loading" ? "Loading your goal…" : goalState === "error" ? "Your goal is temporarily unavailable." : stateMessage}</p>}
+          <div className="road-hero-footer"><p>Every run has a reason.</p><Link className="text-link" href="/dashboard/plan">View plan →</Link></div>
         </div>
       </div>
-      {historyState === "error" ? <p className="road-inline-state" role="status">{history.length ? "Showing saved achievements; history could not be refreshed." : "Race history is temporarily unavailable."} <button className="text-link" onClick={() => setHistoryRetry((value) => value + 1)}>Retry history</button></p> : null}
-      {journey.achieved.length > 3 || journey.ahead.length > 3 ? <details className="road-all-milestones"><summary>All {journey.achieved.length + journey.ahead.length} milestones</summary><div className="road-all-groups"><section aria-label="All achieved milestones"><h4>Achieved</h4><ol className="road-stops">{journey.achieved.map((record) => <AchievementStop key={record.id} record={record} timezone={timezone} />)}</ol></section><section aria-label="All upcoming milestones"><h4>Ahead</h4><ol className="road-stops">{journey.ahead.map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} today={today} timezone={timezone} />)}</ol></section></div></details> : null}
+      <section className="road-journey" aria-labelledby="road-journey-heading">
+        <h3 id="road-journey-heading" className="sr-only">Your running journey</h3>
+        {goalState === "error" ? <p className="road-inline-state" role="status">{context ? "Showing the last loaded goal. Refresh unavailable." : "Your goal could not be loaded."} <button className="text-link" onClick={() => setGoalRetry((value) => value + 1)}>Retry goal</button></p> : null}
+        {context?.state === "goal_only" ? <p className="road-inline-state">Your approved plan is not available right now.</p> : null}
+        <div className="road-timeline">
+          <div className="road-timeline-group road-timeline-group--achieved"><h4>Achieved</h4>
+            {journey.achieved.length ? <ol className="road-stops">{journey.achieved.slice(-3).map((record) => <AchievementStop key={record.id} record={record} timezone={timezone} />)}</ol> : <p className="road-empty" role="status">{historyState === "loading" ? "Loading your achievements…" : historyState === "error" ? "Your achievements could not be loaded." : "Add your first confirmed achievement."}</p>}
+          </div>
+          <div className="road-now"><strong>Now</strong><span aria-hidden="true"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="16.7" cy="4.4" r="2" /><path d="m13.6 8.6 3.1 2.3 3.1.3M9.1 21l3.5-6.1-3.2-2.7 2.7-4.6c.4-.7 1.3-.9 2-.5l1.6 1.1M9.4 12.2l-3.1 4.5m7.7-1.8 3.8 1.5 1.8 4.1" /></svg></span></div>
+          <div className="road-timeline-group road-timeline-group--ahead"><h4>Ahead</h4>
+            {journey.ahead.length ? <ol className="road-stops">{journey.ahead.slice(0, 3).map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} today={today} timezone={timezone} />)}</ol> : <p className="road-empty">{goalState === "loading" ? "Loading your next goals…" : goalState === "error" || context?.state === "unavailable" || context?.state === "projection_pending" ? "Upcoming races are unavailable." : "Your next chapter is ready to plan."}</p>}
+          </div>
+        </div>
+        {historyState === "error" ? <p className="road-inline-state" role="status">{history.length ? "Showing saved achievements; history could not be refreshed." : "Race history is temporarily unavailable."} <button className="text-link" onClick={() => setHistoryRetry((value) => value + 1)}>Retry history</button></p> : null}
+        {journey.achieved.length > 3 || journey.ahead.length > 3 ? <details className="road-all-milestones"><summary>All {journey.achieved.length + journey.ahead.length} milestones</summary><div className="road-all-groups"><section aria-label="All achieved milestones"><h4>Achieved</h4><ol className="road-stops">{journey.achieved.map((record) => <AchievementStop key={record.id} record={record} timezone={timezone} />)}</ol></section><section aria-label="All upcoming milestones"><h4>Ahead</h4><ol className="road-stops">{journey.ahead.map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} today={today} timezone={timezone} />)}</ol></section></div></details> : null}
+      </section>
+      <div className="road-journey-actions"><RaceAchievementManager history={history} targets={buildRaceJourney(context, [], today).ahead} timezone={timezone} onChange={() => setHistoryRetry((value) => value + 1)} /></div>
     </section>
   </div>;
 }

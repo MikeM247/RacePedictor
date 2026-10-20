@@ -103,8 +103,8 @@ test("Home shows the approved goal, next workout, latest run and milestone witho
   const groups = page.locator(".home-group");
   await expect(groups).toHaveCount(3);
   await expect(groups.nth(0)).toHaveAttribute("aria-labelledby", "goal-and-milestone-heading");
-  await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "today-focus-heading");
-  await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "latest-activity-heading");
+  await expect(groups.nth(1)).toHaveAttribute("aria-labelledby", "latest-activity-heading");
+  await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "today-focus-heading");
   await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
   await expect(page.getByRole("link", { name: "JGS Oldies 10 km", exact: true })).toBeVisible();
   await expect(page.getByText("Next", { exact: true })).toBeVisible();

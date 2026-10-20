@@ -3,8 +3,9 @@ import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import { e2eRepositoryRoot } from "./fixture-paths.ts";
 import { expectAxeClean, recordApplicationWrites } from "./test-helpers.ts";
+import { assertHomeLayout, assertRoadTimelineLayout } from "./home-layout-assertions.ts";
 
-const reviewDirectory = path.join(e2eRepositoryRoot, "docs/plans/references/road-to-comrades");
+const reviewDirectory = path.join(e2eRepositoryRoot, "docs/plans/references/home-prototype-parity");
 
 const context = {
   state: "ready", plan: { id: "road-plan", version: 1, revision: 1, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
@@ -44,14 +45,14 @@ async function seedHistory(page: Page) {
   }
 }
 
-test("live history and goal timeline render at desktop and narrow widths with no page-load write", async ({ page }) => {
+test("live history and goal timeline render at desktop and narrow widths with no page-load write", async ({ page }, testInfo) => {
   await mockHome(page); await seedHistory(page);
   const writes = recordApplicationWrites(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const shots = reviewDirectory;
   await mkdir(shots, { recursive: true });
-  for (const width of [1440, 390, 320]) {
+  for (const width of [1920, 1440, 1024, 390, 320]) {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "Comrades 2027 Down Run", exact: true })).toBeVisible();
@@ -60,8 +61,10 @@ test("live history and goal timeline render at desktop and narrow widths with no
     await expect(page.getByRole("heading", { name: "Monthly MAF check", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Morning Run", exact: true })).toBeVisible();
     await expect(page.locator(".road-hero-image")).toHaveJSProperty("complete", true);
+    await assertHomeLayout(page, testInfo, "road-prototype-parity");
+    await assertRoadTimelineLayout(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
-    if (width !== 320) await page.screenshot({ path: path.join(shots, width === 1440 ? "desktop.png" : "mobile.png"), fullPage: true, style: "nextjs-portal { display: none; }" });
+    if (width === 1440 || width === 390) await page.screenshot({ path: path.join(shots, width === 1440 ? "desktop.png" : "mobile.png"), fullPage: true, style: "nextjs-portal { display: none; }" });
     await expectAxeClean(page, `Road to Comrades ${width}`);
   }
   expect(writes).toEqual([]); expect(errors).toEqual([]);
@@ -105,6 +108,32 @@ test("achievement editor persists changes through the real local API and handles
   await expect(dialog.getByRole("button", { name: "Save achievement", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "Reload saved achievement" }).click();
   await expect(dialog.getByLabel("Achievement name")).toHaveValue("Changed elsewhere");
+});
+
+test("Settings Milestones opens directly and saved achievements reach Home", async ({ page }) => {
+  await mockHome(page); await seedHistory(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/dashboard/settings?section=milestones");
+  await expect(page.getByRole("heading", { name: "Milestones", exact: true })).toBeVisible();
+  await expect(page.getByText("SA Home Loans Oldies 10 km", { exact: true })).toBeVisible();
+  await expectAxeClean(page, "Settings Milestones");
+  await page.getByRole("button", { name: "Manage achievements" }).click();
+  const dialog = page.getByRole("dialog", { name: "Race achievements" });
+  await expectAxeClean(page, "Settings achievement editor");
+  await dialog.getByRole("button", { name: "Edit Comrades PB", exact: true }).click();
+  await dialog.getByLabel("Achievement name").fill("Settings milestone result");
+  await dialog.getByLabel("I confirm this race result or achievement.").check();
+  await dialog.getByRole("button", { name: "Save achievement", exact: true }).click();
+  await expect(dialog.getByText("Achievement saved.", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Manage achievements" })).toBeFocused();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Milestones", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Manage achievements" }).click();
+  await expect(dialog.getByRole("button", { name: "Edit Settings milestone result", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.goto("/dashboard");
+  await expect(page.locator(".road-stop--achieved", { hasText: "Settings milestone result" })).toBeVisible();
 });
 
 test("new plan and history reads update the timeline on focus without inventing completion", async ({ page }) => {

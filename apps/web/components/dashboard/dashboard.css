@@ -939,7 +939,7 @@
 /* Daily briefing Home: one compact goal banner, then workout and history together. */
 .home-layout .dashboard-content.home-content {
   grid-template-columns: minmax(0, 1.55fr) minmax(280px, .95fr);
-  grid-template-areas: "goal goal" "today activity";
+  grid-template-areas: "goal goal" "activity today";
   gap: 20px;
   align-items: start;
 }
@@ -1043,7 +1043,7 @@
 
 @media (max-width: 1099px) and (min-width: 768px) {
   .dashboard-layout { grid-template-columns: 160px minmax(0, 1fr); }
-  .home-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "today" "activity"; }
+  .home-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "activity" "today"; }
   .home-layout .home-goal-content--ready { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "milestone" "action"; }
   .home-layout .home-milestone { padding-left: 0; border-left: 0; }
 }
@@ -1065,7 +1065,7 @@
   .home-layout .home-toolbar .dashboard-toolbar-title > p { display: block; }
   .home-layout .home-calendar-shortcut { display: none; }
   .home-layout .dashboard-content { padding: 12px 16px 24px; gap: 12px; }
-  .home-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "today" "activity"; gap: 12px; }
+  .home-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "activity" "today"; gap: 12px; }
   .home-layout .home-group { gap: 8px; }
   .home-layout .home-goal .group-heading, .home-layout .home-today .group-heading { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .home-layout .home-goal-target h3::before, .home-layout .today-coach-main h3::before { display: block; margin-bottom: 4px; color: var(--rp-text-muted); font-size: 14px; line-height: 1.5; font-weight: 600; }

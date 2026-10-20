@@ -47,11 +47,6 @@
 .road-stop-title { max-width: 100%; color: #f1f6fb; font-size: 14px; line-height: 1.28; font-weight: 700; overflow-wrap: anywhere; text-decoration: none; }
 a.road-stop-title { display: inline-flex; align-items: center; min-height: 44px; }
 a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
-.road-stop-detail { color: #cfdfed; font-size: 13px; line-height: 1.35; }
-.road-stop time { color: #c0cfde; font-size: 11px; line-height: 1.35; }
-.road-status { color: #c1d0df; font-size: 11px; line-height: 1.45; margin-top: 3px; }
-.road-status--achieved { padding: 3px 9px; border-radius: 6px; background: #baf164; color: #15300c; font-size: 11px; font-weight: 700; }
-.road-status--next { padding: 3px 12px; border-radius: 7px; color: #03252d; background: var(--road-cyan); font-weight: 700; }
 .road-now { --road-progress-direction: 90deg; position: relative; display: flex; flex-direction: column; align-items: center; color: var(--road-lime); }
 .road-now::before { content: ""; position: absolute; top: calc(var(--road-heading-height) + var(--road-heading-gap) + var(--road-node-size) / 2); right: 0; left: 0; height: 2px; background: linear-gradient(var(--road-progress-direction), var(--road-lime), var(--road-cyan)); mask-image: repeating-linear-gradient(to right, #000 0 6px, transparent 6px 10px); transform: translateY(-50%); }
 .road-now strong { margin: 0 0 var(--road-heading-gap); font-size: 13px; font-weight: 700; letter-spacing: .14em; line-height: var(--road-heading-height); text-transform: uppercase; }
@@ -187,10 +182,6 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-timeline-group { padding: 12px 11px 14px; }
   .road-stop { padding-inline: 3px; }
   .road-stop-title { font-size: 12px; }
-  .road-stop-detail { font-size: 11px; }
-  .road-stop time { font-size: 10px; }
-  .road-status { font-size: 10px; }
-  .road-status--achieved, .road-status--next { padding: 3px 7px; }
   .road-now { min-height: 54px; }
   .road-now strong { font-size: 11px; }
   .road-journey-actions { margin-inline: 8px; }
@@ -218,10 +209,7 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-stops, .road-timeline-group > .road-stops { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; grid-auto-columns: auto; gap: 9px; }
   .road-stop { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; justify-items: start; gap: 2px 9px; padding: 0; text-align: left; }
   .road-stop::before { display: none; }
-  .road-stop .road-node { grid-column: 1; grid-row: 1 / span 4; margin: 0; }
-  .road-stop-title, .road-stop-detail, .road-stop time, .road-status { grid-column: 2; }
-  .road-stop-title { justify-content: flex-start; min-height: 0; text-align: left; }
-  .road-stop-detail, .road-stop time { text-align: left; }
-  .road-status { justify-self: start; margin-top: 2px; }
+  .road-stop .road-node { grid-column: 1; grid-row: 1; margin: 0; }
+  .road-stop-title { grid-column: 2; justify-content: flex-start; text-align: left; }
 }
 @media (prefers-reduced-motion: reduce) { .road-layout *, .road-dialog * { scroll-behavior: auto; transition: none; } }

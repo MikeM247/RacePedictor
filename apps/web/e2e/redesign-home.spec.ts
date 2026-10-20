@@ -107,8 +107,7 @@ test("Home shows the approved goal, next workout, latest run and milestone witho
   await expect(groups.nth(2)).toHaveAttribute("aria-labelledby", "today-focus-heading");
   await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
   await expect(page.getByRole("link", { name: "JGS Oldies 10 km", exact: true })).toBeVisible();
-  await expect(page.getByText("Next", { exact: true })).toBeVisible();
-  await expect(page.getByText("sub-60", { exact: true })).toBeVisible();
+  await expect(page.locator(".road-timeline-group--ahead .road-stop")).toHaveText(["JGS Oldies 10 km", "City marathon"]);
   await expect(page.getByRole("heading", { name: "Intentional recovery day" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Latest pending run" })).toBeVisible();
   await expect(page.getByText("This one session does not establish a target-race change.")).toHaveCount(0);
@@ -137,6 +136,42 @@ test("Home shows the approved goal, next workout, latest run and milestone witho
   await expect(page).toHaveURL(/recovery=/);
   await expect(page.getByRole("link", { name: "Review run" })).toBeFocused();
   expect(writes).toEqual([]);
+});
+
+test("Home shows only milestone names in the timeline and expanded list", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-10-17T07:00:00Z") });
+  await mockHome(page, { milestones: [
+    { id: "past-race", title: "Past race target", eventName: "Past race", targetDate: "2026-10-16", distanceMeters: 5000, targetTimeSeconds: 1800 },
+    { id: "named-race", title: "Oldies 10 km sub-60", eventName: "JGS Oldies 10 km", targetDate: "2026-11-01", distanceMeters: 10000, targetTimeSeconds: 3600 },
+    { id: "fallback-race", title: "A long milestone name for the half marathon sub-120", targetDate: "2026-12-01", distanceMeters: 21097.5, targetTimeSeconds: 7200 },
+  ] });
+  const achievementNames = ["First finish", "Comrades PB", "10 km sub-60", "Half-marathon goal"];
+  await page.route("**/api/v1/coaching/race-history", route => route.fulfill({ json: { data: {
+    items: achievementNames.map((title, index) => ({
+      id: `name-only-${index}`, title, confirmedBy: "user", achievement: index === 1 ? "personal_best" : "goal_achieved",
+      raceDate: `2026-10-0${index + 1}`, distanceMeters: 10000, elapsedTimeSeconds: 3500,
+      ...(index === 2 ? { activityId: latest.id } : {}),
+    })), publishedAt: null,
+  } } }));
+  const upcomingNames = ["Past race", "JGS Oldies 10 km", "A long milestone name for the half marathon sub-120", "City marathon"];
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/dashboard");
+    await expect(page.locator(".road-timeline-group--achieved .road-stop")).toHaveText(achievementNames.slice(-3));
+    await expect(page.locator(".road-timeline-group--ahead .road-stop")).toHaveText(upcomingNames.slice(0, 3));
+    await page.locator(".road-all-milestones > summary").click();
+    const expanded = page.locator(".road-all-milestones");
+    await expect(expanded.locator(".road-stop")).toHaveText([...achievementNames, ...upcomingNames]);
+    await expect(page.locator(".road-journey time, .road-stop-detail, .road-status")).toHaveCount(0);
+    await expect(expanded.getByRole("link", { name: "10 km sub-60", exact: true })).toHaveAttribute("href", `/dashboard/activities?activityId=${latest.id}&returnTo=%2Fdashboard`);
+    await expect(expanded.getByRole("link", { name: "JGS Oldies 10 km", exact: true })).toHaveAttribute("href", "/dashboard/plan");
+    await expect(expanded.locator("span.road-stop-title", { hasText: "Comrades PB" })).toBeVisible();
+    for (const link of await page.locator(".road-journey a.road-stop-title").all()) {
+      expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await expectAxeClean(page, `Names-only milestones ${width}`);
+  }
 });
 
 test("F02 restores the Home session launcher after Calendar browser Back", async ({ page }) => {

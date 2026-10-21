@@ -14,6 +14,7 @@ Last updated: 2026-10-21
 | Architecture | Architect | Complete | [Boundaries, request model and staged planning flow](../plans/MILESTONE_MANAGEMENT.md) |
 | Implementation | Engineering | Complete | Canonical Settings manager, Home link, confirmed CRUD, race evidence and pinned planned-change handoff on `codex/milestone-management` |
 | Validation | QA | Passed | [122 core, 169 web, 18 browser tests; types/build](milestone-management-qa-20261021.md) |
+| Hosted preview | Vercel Git integration | Needs Review | Automatic preview for application commit `11cecb1` failed resource provisioning; no build logs were returned. See QA evidence. |
 | Review/release | Owner, DevOps | Pending | Review feature branch/PR; merge and production release are separate |
 
 ## 2026-10-07 Full-screen activity details and clearer split targets

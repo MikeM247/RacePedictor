@@ -2,7 +2,7 @@
 
 ## QA Result
 
-PASS for feature-branch review. Production deployment and live owner acceptance are separate.
+PASS for local feature validation and source review. Hosted preview/release: Needs Review because the automatic Vercel preview could not provision its resources. Production deployment and live owner acceptance are separate.
 
 ## Acceptance Criteria Check
 
@@ -26,7 +26,9 @@ PASS for feature-branch review. Production deployment and live owner acceptance 
 
 ## Issues Found
 
-None outstanding in the validated scope. During validation, row-action button backgrounds were corrected for contrast. Local list/detail activity reads were aligned with configured milestone-write athlete scope. Initial process-sandbox filesystem failures were resolved by rerunning isolated validation outside that sandbox; no application workaround was added for them.
+No outstanding application defects were found in the validated scope. The automatic Vercel preview for application commit `11cecb1` reported `BUILD_FAILED` / `Resource provisioning failed` (deployment `dpl_DdBXn7dZefSoXNbYDaQVV2MpcGKW`). The deployment-events API returned no build logs. This does not establish an application compilation failure; hosted preview validation remains unavailable until provisioning succeeds. The existing main deployment was still Ready when inspected. [Preview failure](https://vercel.com/mikes-projects-bc95b7f5/racepedictor/DdBXn7dZefSoXNbYDaQVV2MpcGKW).
+
+During local validation, row-action button backgrounds were corrected for contrast. Local list/detail activity reads were aligned with configured milestone-write athlete scope. Initial process-sandbox filesystem failures were resolved by rerunning isolated validation outside that sandbox; no application workaround was added for them.
 
 ## Validation Summary
 
@@ -47,7 +49,7 @@ Local evidence is under `.local/milestone-qa/` and `.local/e2e/`: run IDs `miles
 ## Regression / Risk Review
 
 - Checked: current main baseline `a8597e1`; main was fetched again before publishing and had not advanced. Existing Home, check-in and background behaviour passed; primary navigation and approval/persistence routes are retained.
-- Residual risk: a prepared change is stored in this tab only and can be lost on closing it. It is explicitly labelled and downloadable. Live authenticated production services were not mutated; online validation uses the existing fixture mode plus unchanged API authorization/persistence tests.
+- Residual risk: hosted preview provisioning failed as recorded above; live preview behaviour is not verified. A prepared change is stored in this tab only and can be lost on closing it. It is explicitly labelled and downloadable. Live authenticated production services were not mutated; online validation uses the existing fixture mode plus unchanged API authorization/persistence tests.
 - No DB migrations or environment additions. Local activity list/detail now honour the existing configured athlete, retaining `athlete_001` when unset.
 
 ## DevOps Summary
@@ -57,10 +59,10 @@ Local evidence is under `.local/milestone-qa/` and `.local/e2e/`: run IDs `miles
 - Repository: `codex/milestone-management`, based on `main` at `a8597e1`; no force push, merge or production promotion.
 - Environment / Secrets: existing settings only; no values printed or committed. `RACEPREDICTOR_ATHLETE_ID` is reused for consistent local activity scope.
 - Database: existing SQLite/PostgreSQL record formats; no schema migration or backfill.
-- Pipeline / CI-CD: no `.github/workflows` directory exists in this checkout. Existing Vercel Git integration may run its normal branch checks/previews; this change adds no pipeline or deployment configuration.
+- Pipeline / CI-CD: no `.github/workflows` directory exists in this checkout. Existing Vercel Git integration attempted the branch preview and failed resource provisioning; this change adds no pipeline or deployment configuration.
 - Deployment plan: normal branch review, then the repository's existing release process if the owner chooses. No deployment was invoked as part of implementation.
 - Rollback: revert the feature commit. Existing history remains compatible; discard/close affects only unapproved tab-local requests.
 
 ## Recommendation
 
-Proceed to branch/PR review. Merge and release remain separate from this completed implementation request.
+Proceed to source/UX review in draft PR #59. Resolve or successfully retry hosted-preview provisioning before treating hosted preview validation as passed. Merge and release remain separate from implementation.

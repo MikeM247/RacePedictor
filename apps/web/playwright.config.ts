@@ -14,7 +14,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  testIgnore: ["online-dashboard.spec.ts", "redesign-coverage.spec.ts", "owner-auth.spec.ts", "redesign-home.spec.ts", "redesign-readiness.spec.ts"],
+  testIgnore: ["online-dashboard.spec.ts", "redesign-coverage.spec.ts", "owner-auth.spec.ts", "redesign-home.spec.ts", "redesign-readiness.spec.ts", "milestone-management.spec.ts", "milestone-online-handoff.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

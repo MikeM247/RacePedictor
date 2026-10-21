@@ -1,5 +1,9 @@
 # CONTEXT
 
+## 21 October 2026 milestone-management scope
+
+The owner authorised the unified Settings milestone manager and contextual Home entry. Historical achievements reuse scoped, revision-checked history CRUD and explicit race confirmation. Planned target additions/edits/removals prepare an athlete-keyed tab-local request; they do not change the approved plan. Requests preserve and verify their approved base, then use the existing full proposal, review, approval and publication process in GOAL_UPDATE_PROCESS. See [the product/architecture handoff](plans/MILESTONE_MANAGEMENT.md).
+
 ## 7 October 2026 scope amendment: full-screen activity detail
 
 Calendar and Training recorded activities use the same full-viewport Activity detail dialog. Calendar date selection remains separate; recorded activity controls open the chosen activity directly, while Day details keeps its planned-session flow and activity summary launchers. Training preserves its list state underneath. Split comparison defaults to All splits and uses aligned, hollow, solid target outlines with a same-width band for ranges. Existing activity, reviewed-comparison, and plan data remain authoritative. This is a frontend-only change: it adds no API, database, authentication, or comparison-publication change. UX and chart details are in [the design contract](design/DESIGN_INTENT_CONTRACT.md#7-october-2026-activity-dialog-and-split-presentation-amendment) and [implementation handoff](plans/ACTIVITY_SPLIT_COMPARISON.md).

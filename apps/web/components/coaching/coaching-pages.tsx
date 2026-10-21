@@ -66,6 +66,7 @@ import { canStartImport, fileImportPresentation } from "../../lib/import-ui-stat
 import { readRecoveryContext, recoveryReturnHref, safeRecoveryPath } from "../../lib/recovery-context";
 import { DashboardAppearanceSettings } from "../dashboard/dashboard-appearance-settings";
 import { MilestoneSettings } from "../dashboard/milestone-settings";
+import { MilestonePlanHandoff } from "../dashboard/milestone-plan-update";
 import { externalTaskReference, hasUnsavedReminderChanges, reminderStage, settingsReadError, shouldRecoverBeforeRetry, type ReminderDraft, type SettingsReadState } from "../../lib/settings-workflow-state";
 
 type Page = "plan" | "calendar" | "data-quality" | "settings";
@@ -762,6 +763,7 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   const activeContentVersion = coachingContentVersion(activePlan);
   const activePlanToday = activePlan ? localDateInTimezone(String(activePlan.timezone ?? timezoneDefault)) : "";
   return <CoachShell page="plan" title="Plan" subtitle={onlineMode ? "Choose which explicitly approved structured plan is active" : "Set your goal and explicitly approve each plan version"} meta={planLoadState === "error" ? "Plan unavailable" : planLoadState === "loading" ? "Loading plan…" : activePlan ? `Active · ${activeContentVersion ?? `record ${String(activePlan.version ?? 1)}`}` : "No active plan"}>
+    <MilestonePlanHandoff onlineMode={onlineMode} onContinue={openPlanCreation} />
     <section className="coach-panel coach-panel--plan-focus" aria-labelledby="active-plan-heading">
       <div className="coach-panel-heading plan-focus-heading"><div><p className="eyebrow">Your training focus</p><h2 id="active-plan-heading" ref={activePlanHeadingRef} tabIndex={-1}>Active plan</h2></div>{onlineMode ? <span className="status-chip">Online plan control</span> : !creationOpen ? <button className="button button-primary" type="button" aria-controls="plan-creation-workflow" aria-expanded={creationOpen} onClick={openPlanCreation}>{creationActionLabel}</button> : <span className="status-chip">Workflow open</span>}</div>
       <nav className="local-plan-switch" aria-label="Plan views"><Link aria-current="page" href="/dashboard/plan">Overview</Link><Link href="/dashboard/calendar">Calendar</Link></nav>

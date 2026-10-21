@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## Milestone management (21 October 2026)
+
+Settings composes one MilestoneManager and native-dialog achievement/target editors around existing race-history CRUD, activity search and verified goal-context reads. Core owns validation/computation of `milestone-change-request.v1`. Requests are unapproved, athlete-keyed session-storage drafts pinned to plan ID/version/revision/approval hash, goal identity and base milestones. Plan revalidates the current base before handing the complete requested list to the existing planning workflow; it never directly mutates an approved plan. Online users can copy/download for the paired local workflow. No API or database migration is added. Local activity list/detail use the same configured athlete as milestone writes. See [the role handoff and architecture](plans/MILESTONE_MANAGEMENT.md).
+
 ## Shared full-screen activity detail (7 October 2026)
 
 Calendar and Training compose the same client-side `ActivityDetailDialog` around the existing `ActivityRecordContent`. Page owners retain activity selection, loading, retry, history and return-context behavior; Calendar requests only the chosen record. The dialog portals to the document body, locks scrolling, inerts background siblings, and uses the shared modal keyboard/focus hook. Calendar keeps Day details as the parent summary; Training leaves its list mounted beneath the dialog. This is a presentation and navigation change with no API, storage, or authority changes. Split target rendering remains in the shared chart component. See [the activity detail and chart contract](plans/ACTIVITY_SPLIT_COMPARISON.md).

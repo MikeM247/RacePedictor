@@ -192,4 +192,6 @@ Activities and Calendar use one shared feedback presentation with two titled sec
 
 ## Athlete reflection and daily check-in
 
+The Home Daily check-in button has no outer blue focus ring at desktop or mobile widths. Keyboard focus underlines its label within the existing pill; the 44px touch target and dialog focus restoration remain intact.
+
 Activity detail adds a separate **Your reflection** section with optional Training, Race, or Ignore classification. Ignore or no classification shows the combined shared, training, and race questions. The form supports partial saves and optional turning-point sections; it never marks a planned session complete or changes an approved plan. Home places a non-blocking **How are you feeling today?** recovery callout inside Today’s focus. It offers Check in or Skip today, persists one local-date record, and remains editable without adding a primary navigation destination. Saved journal entries are visibly athlete-authored and remain distinct from AI feedback.

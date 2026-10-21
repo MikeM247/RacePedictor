@@ -107,6 +107,8 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 .road-dialog .text-link { display: inline-flex; align-items: center; min-height: 44px; border: 0; background: none; padding: 4px 0; color: #8ee9f9; font: inherit; font-size: 13px; cursor: pointer; }
 .road-dialog :disabled { opacity: .55; cursor: default; }
 .road-dialog :focus-visible, .road-layout :focus-visible { outline: 2px solid #8ceaff; outline-offset: 4px; }
+.road-layout .road-check-in-chip:focus-visible { outline: none; }
+.road-check-in-chip:focus-visible .road-check-in-label { text-decoration: underline; text-underline-offset: 3px; }
 .road-history-list, .road-activity-picker ul { list-style: none; margin: 0 0 16px; padding: 0; }
 .road-history-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid #294357; font-size: 14px; }
 .road-activity-picker { margin-top: 16px; border-top: 1px solid #294357; }

@@ -2,6 +2,8 @@
 
 > **21 October 2026 management amendment:** Home's former Manage achievements dialog launcher is now Manage milestones, linking directly to Settings. The old achievement manager is replaced by MilestoneManager and MilestoneAchievementEditor, with a single native dialog and shared history APIs. Planned-target requests follow the approved-plan boundary. Use [the current milestone flow](MILESTONE_MANAGEMENT.md) for management instructions below.
 
+Home visual refinement, approved 21 October 2026: on desktop, render the default background at 90% of the Home scene width and keep the left mountain ridge anchored about 12px below the live greeting date. Move the milestone panel to the approved lower position using normal flow and flexible hero spacing; preserve the collapsed panel and Manage achievements above the fold at 1366×768 when content permits. Custom backgrounds and the stacked layout below 1100px keep their existing treatment. Details and reference geometry are in the approved Home sunrise design handoff.
+
 Owner direction, 17 October 2026: implement option one, second version, including achieved milestones. The photographic background is decorative; all text, milestones, statuses, controls and recorded facts are live HTML. This supersedes the slim banner and inline check-in presentation in the 13 October Home design amendment.
 
 ## Data and achievement rules

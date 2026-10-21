@@ -155,6 +155,8 @@ test("Settings uploads a private background, Home uses it after reload, and Rest
   await page.screenshot({ path: path.join(reviewDirectory, "settings-background.png"), fullPage: true, style: "nextjs-portal { display: none; }" });
   await page.goto("/dashboard");
   await expect(page.locator(".road-hero-image")).toHaveAttribute("src", /\/api\/v1\/dashboard\/appearance\/image\?v=/);
+  await expect(page.locator(".road-hero-image-frame")).toHaveAttribute("data-background-source", "custom");
+  expect(await page.locator(".road-hero-image-frame").evaluate(element => getComputedStyle(element).maskImage)).toBe("none");
   const src = await page.locator(".road-hero-image").getAttribute("src");
   const image = await page.request.get(src!); expect(image.ok()).toBeTruthy(); expect(image.headers()["content-type"]).toBe("image/webp");
   await page.goto("/dashboard/settings"); await page.locator("summary", { hasText: /^Appearance$/ }).click();

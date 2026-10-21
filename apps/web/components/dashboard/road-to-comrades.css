@@ -5,10 +5,12 @@
 .road-layout .dashboard-content.home-content { width: 100%; padding: 0 var(--road-content-gutter) 40px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
 .road-layout .home-goal { margin-inline: calc(-1 * var(--road-content-gutter)); }
 .road-layout .home-goal-panel { min-width: 0; padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; }
-.road-home-scene { position: relative; isolation: isolate; display: grid; min-width: 0; gap: 0; padding-bottom: 18px; background: #071725; }
-.road-hero-image { z-index: -2; object-fit: cover; object-position: center 31%; }
-.road-hero-shade { position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, #04101c42 0%, transparent 23%, #04101c16 46%, #061524ab 100%), linear-gradient(90deg, #04101cdb 0%, #04101c9e 39%, #04101c36 70%, #04101c08 100%); pointer-events: none; }
-.road-hero { position: relative; isolation: isolate; display: grid; align-content: start; min-height: 350px; gap: 0; }
+.road-home-scene { position: relative; isolation: isolate; display: grid; min-width: 0; gap: 0; padding-bottom: 18px; background: #071725; container-type: inline-size; }
+.road-hero-photo { position: absolute; z-index: -2; inset: 0; overflow: hidden; pointer-events: none; }
+.road-hero-image-frame { position: absolute; top: calc(var(--road-date-bottom, 76px) + 12px - 12.9187cqw); left: 5cqw; width: 90cqw; aspect-ratio: 1672 / 941; mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent); mask-size: 100% 100%; }
+.road-hero-image { object-fit: contain; object-position: center bottom; }
+.road-hero-shade { position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg, #04101c42 0%, transparent 23%, #04101c16 46%, #061524ab 100%), linear-gradient(90deg, #04101cdb 0%, #04101c9e 39%, #04101c36 70%, #04101c08 100%); pointer-events: none; }
+.road-hero { position: static; display: grid; align-content: start; min-height: 350px; gap: 0; }
 .road-hero-header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; width: 100%; padding: 24px 32px 0; }
 .road-hero-greeting { min-width: 0; }
 .road-hero-greeting h1 { margin: 0; color: #f6f9fc; font-size: clamp(28px, 2.5vw, 36px); font-weight: 700; letter-spacing: -.025em; line-height: 1.08; }
@@ -127,10 +129,13 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 @media (min-width: 1100px) {
   /* Keep the lower cards at their existing maximum width while the photo spans the page. */
   .road-layout { --road-content-gutter: max(32px, calc((100vw - 180px - 1280px) / 2 + 32px)); }
-  /* Preserve the whole photograph, including the foreground runner's legs, at full width. */
-  .road-hero { aspect-ratio: 1672 / 941; }
-  .road-hero-image { object-fit: contain; object-position: center bottom; }
-  .road-hero-content { padding-top: 64px; }
+  .road-home-scene { --road-hero-min-height: min(calc(115px + 29.8445cqw), calc(100svh - 260px)); }
+  .road-hero { min-height: max(350px, var(--road-hero-min-height)); }
+  .road-hero-header { padding-top: 16px; }
+  .road-hero-image-frame[data-background-source="custom"] { top: 0; left: 0; width: 100%; mask-image: none; }
+  .road-hero-content { padding: 64px 32px 20px; }
+  .road-hero-footer { margin-top: 24px; }
+  .road-journey { margin-top: 0; }
   .road-hero-date { margin-top: 16px; }
   .road-timeline-group--ahead > h4 { text-align: right; }
   /* Join the neighboring marker centers to the dashed rail behind Now. */
@@ -142,8 +147,10 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 }
 @media (max-width: 1099px) {
   .road-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "activity" "today"; }
-  .road-hero { min-height: 350px; }
-  .road-hero-image { object-position: 67% 31%; }
+  .road-hero { position: relative; min-height: 350px; }
+  .road-hero-photo { inset: 0; }
+  .road-hero-image-frame, .road-hero-image-frame[data-background-source="custom"] { inset: 0; top: 0; left: 0; width: 100%; height: 100%; aspect-ratio: auto; mask-image: none; }
+  .road-hero-image { object-fit: cover; object-position: 67% 31%; }
   .road-hero-content { padding-top: 36px; }
   .road-hero-content h2 { font-size: clamp(26px, 4vw, 44px); }
   .road-journey { margin: -22px 14px 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }

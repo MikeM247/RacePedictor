@@ -39,6 +39,7 @@ async function mockHome(page: Page, options: {
   reviewData?: ReturnType<typeof review> | null;
   reviewFailure?: boolean;
   goalState?: "ready" | "projection_pending" | "goal_only" | "no_active_plan" | "unavailable";
+  goalTitle?: string;
   checkIn?: { revision: number; status: "saved" | "skipped"; answers: Record<string, unknown> };
   milestones?: RaceMilestone[];
   today?: ReturnType<typeof coachingFixtures.today>;
@@ -74,7 +75,8 @@ async function mockHome(page: Page, options: {
   });
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { athleteId: "f02-athlete", date: "2026-09-15", timezone: "Africa/Johannesburg", state: "rest", status: "rest", message: "Intentional recovery day.", goal: null, plan: { id: "f02-plan", version: 3, startsOn: "2026-09-14", endsOn: "2027-04-18" }, session: { id: "f02-rest", kind: "rest", scheduledDate: "2026-09-15", effectiveDate: "2026-09-15", status: "upcoming", title: "Rest", purpose: "Recovery", prescription: "Rest or gentle mobility.", durationMinutes: 0, amendments: [] }, todayScheduleKind: "prescribed_rest", nextWorkout: null, localCue: "Protect recovery today.", links: { plan: "/dashboard/plan", calendar: "/dashboard/calendar", session: null } } }) }));
   await page.route("**/api/v1/coaching/goal-context/active", (route) => {
-    const goal = { id: "f02-goal", athleteId: "f02-athlete", revision: 2, title: "City marathon", why: "Complete the approved marathon target", target: { kind: "performance", distanceMeters: 42_195, targetDate: "2027-04-18", targetTimeSeconds: 14_400, eventName: "City marathon" } };
+    const goalTitle = options.goalTitle ?? "City marathon";
+    const goal = { id: "f02-goal", athleteId: "f02-athlete", revision: 2, title: goalTitle, why: "Complete the approved marathon target", target: { kind: "performance", distanceMeters: 42_195, targetDate: "2027-04-18", targetTimeSeconds: 14_400, eventName: goalTitle } };
     const plan = { id: "f02-plan", version: 3, revision: 2, startsOn: "2026-09-14", endsOn: "2027-04-18", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) };
     const context = options.goalState === "projection_pending" ? {
       state: "projection_pending", plan, goal: null, milestones: null, projection: null,
@@ -138,6 +140,90 @@ test("Home shows the approved goal, next workout, latest run and milestone witho
   expect(writes).toEqual([]);
 });
 
+test("Home keeps the full hero photo and brings milestones into view on desktop", async ({ page }, testInfo) => {
+  await mockHome(page);
+  for (const viewport of [
+    { width: 1366, height: 768 },
+    { width: 1920, height: 1080 },
+    { width: 1024, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: "City marathon" })).toBeVisible();
+    await expect(page.getByText("Every run has a reason.", { exact: true })).toBeVisible();
+    await expect(page.locator(".road-journey")).toBeVisible();
+
+    if (viewport.width === 1366) {
+      const footer = await page.locator(".road-hero-footer").boundingBox();
+      const journey = await page.locator(".road-journey").boundingBox();
+      const actions = await page.locator(".road-journey-actions").boundingBox();
+      const photo = await page.locator(".road-hero-photo").boundingBox();
+      expect(footer).not.toBeNull();
+      expect(journey).not.toBeNull();
+      expect(actions).not.toBeNull();
+      expect(photo).not.toBeNull();
+      expect(journey!.y - (footer!.y + footer!.height)).toBeGreaterThanOrEqual(16);
+      expect(journey!.y - (footer!.y + footer!.height)).toBeLessThanOrEqual(24);
+      expect(journey!.y + journey!.height).toBeLessThanOrEqual(viewport.height);
+      expect(actions!.y + actions!.height).toBeLessThanOrEqual(viewport.height);
+      expect(photo!.width / photo!.height).toBeCloseTo(1672 / 941, 2);
+      await expect(page.getByRole("link", { name: "JGS Oldies 10 km", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Manage achievements" })).toBeVisible();
+    }
+
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: testInfo.outputPath(`home-${viewport.width}x${viewport.height}.png`) });
+  }
+});
+
+test("Home lets long goal titles expand the hero before the milestone panel", async ({ page }) => {
+  const longTitle = "The Johannesburg City Marathon And Comrades Ultra Distance Challenge For 2027";
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await mockHome(page);
+  await page.goto("/dashboard");
+  const regularPanelTop = (await page.locator(".road-journey").boundingBox())!.y;
+
+  await mockHome(page, { goalTitle: longTitle });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: longTitle, exact: true })).toBeVisible();
+  const title = await page.locator(".road-hero-content h2").boundingBox();
+  const footer = await page.locator(".road-hero-footer").boundingBox();
+  const panel = await page.locator(".road-journey").boundingBox();
+  expect(title).not.toBeNull();
+  expect(footer).not.toBeNull();
+  expect(panel).not.toBeNull();
+  expect(title!.y + title!.height).toBeLessThan(footer!.y);
+  expect(panel!.y - (footer!.y + footer!.height)).toBeGreaterThanOrEqual(16);
+  expect(panel!.y).toBeGreaterThan(regularPanelTop);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1366);
+});
+
+test("Home keeps the hero and milestone panel clear while goal context loads and fails", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await mockHome(page);
+  await page.route("**/api/v1/coaching/goal-context/active", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Unavailable" } }) });
+  });
+  await page.goto("/dashboard");
+
+  const expectClearFlow = async () => {
+    const footer = await page.locator(".road-hero-footer").boundingBox();
+    const panel = await page.locator(".road-journey").boundingBox();
+    expect(footer).not.toBeNull();
+    expect(panel).not.toBeNull();
+    expect(panel!.y - (footer!.y + footer!.height)).toBeGreaterThanOrEqual(16);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1366);
+  };
+
+  await expect(page.locator(".road-hero-state")).toHaveText("Loading your goal…");
+  await expectClearFlow();
+  await expect(page.locator(".road-hero-state")).toHaveText("Your goal is temporarily unavailable.");
+  await expect(page.locator(".road-journey .road-inline-state")).toContainText("Your goal could not be loaded.");
+  await expectClearFlow();
+});
+
 test("Home shows only milestone names in the timeline and expanded list", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-10-17T07:00:00Z") });
   await mockHome(page, { milestones: [
@@ -159,9 +245,11 @@ test("Home shows only milestone names in the timeline and expanded list", async 
     await page.goto("/dashboard");
     await expect(page.locator(".road-timeline-group--achieved .road-stop")).toHaveText(achievementNames.slice(-3));
     await expect(page.locator(".road-timeline-group--ahead .road-stop")).toHaveText(upcomingNames.slice(0, 3));
+    const collapsedPageHeight = await page.evaluate(() => document.documentElement.scrollHeight);
     await page.locator(".road-all-milestones > summary").click();
     const expanded = page.locator(".road-all-milestones");
     await expect(expanded.locator(".road-stop")).toHaveText([...achievementNames, ...upcomingNames]);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThan(collapsedPageHeight);
     await expect(page.locator(".road-journey time, .road-stop-detail, .road-status")).toHaveCount(0);
     await expect(expanded.getByRole("link", { name: "10 km sub-60", exact: true })).toHaveAttribute("href", `/dashboard/activities?activityId=${latest.id}&returnTo=%2Fdashboard`);
     await expect(expanded.getByRole("link", { name: "JGS Oldies 10 km", exact: true })).toHaveAttribute("href", "/dashboard/plan");

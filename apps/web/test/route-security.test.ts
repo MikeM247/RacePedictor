@@ -23,6 +23,7 @@ import {
 import { config as proxyConfig, proxy } from "../proxy.ts";
 
 const environmentKeys = [
+  "AUTH_URL",
   "NODE_ENV",
   "RACEPREDICTOR_CLOUD_MODE",
   "RACEPREDICTOR_STRAVA_INGESTION_ENABLED",
@@ -196,7 +197,7 @@ test("request headers and environment declarations cannot synthesize a productio
 });
 
 test("health and session stay public while proxy covers sensitive APIs and dashboard pages", { concurrency: false }, async () => {
-  assert.deepEqual(proxyConfig.matcher, ["/dashboard/:path*", "/api/v1/:path*"]);
+  assert.deepEqual(proxyConfig.matcher, ["/login", "/dashboard/:path*", "/api/v1/:path*"]);
 
   await withEnvironment({ NODE_ENV: "production", RACEPREDICTOR_CLOUD_MODE: "enabled" }, async () => {
     const healthResponse = await health();
@@ -204,6 +205,10 @@ test("health and session stay public while proxy covers sensitive APIs and dashb
     assert.equal((await healthResponse.json()).data.status, "degraded");
     assert.equal((await session(new Request("http://localhost/api/v1/auth/session"))).status, 200);
 
+    const localLogin = await proxy(new NextRequest("http://localhost/login", {
+      headers: { host: "127.0.0.1", "x-forwarded-host": "127.0.0.1" },
+    }));
+    assert.equal(localLogin.headers.get("x-middleware-next"), "1", "without AUTH_URL, login stays on the requested host");
     const healthBoundary = await proxy(new NextRequest("http://localhost/api/v1/health"));
     const sessionBoundary = await proxy(new NextRequest("http://localhost/api/v1/auth/session"));
     const webhookBoundary = await proxy(new NextRequest("http://localhost/api/v1/providers/strava/webhook"));

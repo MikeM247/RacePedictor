@@ -1,5 +1,7 @@
 # Road to Comrades dashboard
 
+> **21 October 2026 management amendment:** Home's former Manage achievements dialog launcher is now Manage milestones, linking directly to Settings. The old achievement manager is replaced by MilestoneManager and MilestoneAchievementEditor, with a single native dialog and shared history APIs. Planned-target requests follow the approved-plan boundary. Use [the current milestone flow](MILESTONE_MANAGEMENT.md) for management instructions below.
+
 Owner direction, 17 October 2026: implement option one, second version, including achieved milestones. The photographic background is decorative; all text, milestones, statuses, controls and recorded facts are live HTML. This supersedes the slim banner and inline check-in presentation in the 13 October Home design amendment.
 
 ## Data and achievement rules

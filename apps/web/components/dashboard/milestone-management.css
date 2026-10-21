@@ -1,0 +1,49 @@
+.milestone-manager, .milestone-primary-goal, .milestone-plan-handoff { min-width: 0; }
+.milestone-manager-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-block: 16px; }
+.milestone-manager-toolbar p { margin: 0; color: var(--rp-text-muted); }
+.milestone-primary-goal { padding: 16px; margin-block: 16px; background: var(--rp-surface-raised); border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius-sm); }
+.milestone-primary-goal h3 { margin: 5px 0; overflow-wrap: anywhere; }
+.milestone-primary-goal p { margin: 6px 0; }
+.milestone-manager .text-link, .milestone-dialog .text-link, .milestone-plan-handoff .text-link { border: 0; background: transparent; color: var(--rp-cyan); font: inherit; min-height: 44px; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.milestone-tabs { display: flex; gap: 24px; flex-wrap: wrap; border-bottom: 1px solid var(--rp-border); margin-bottom: 16px; }
+.milestone-manager .milestone-tabs button { min-height: 48px; padding: 8px 0; text-decoration: none; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--rp-text-muted); font: inherit; }
+.milestone-tabs button[aria-pressed="true"] { border-bottom-color: var(--rp-cyan); color: var(--rp-text); }
+.milestone-records { list-style: none; padding: 0; margin: 0; }
+.milestone-records > li { display: grid; gap: 7px; padding: 20px 0 12px; border-bottom: 1px solid var(--rp-border); }
+.milestone-records p { margin: 0; overflow-wrap: anywhere; }
+.milestone-record-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 16px; flex-wrap: wrap; }
+.milestone-record-heading h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.milestone-state { color: var(--rp-text-muted); font-size: 12px; }
+.milestone-state--achieved { color: var(--rp-lime); }
+.milestone-actions { display: flex; align-items: center; gap: 8px 22px; flex-wrap: wrap; }
+.milestone-actions button, .milestone-actions a { display: inline-flex; align-items: center; min-height: 44px; }
+.milestone-remove { color: var(--rp-danger) !important; }
+.milestone-actions .milestone-remove { margin-left: auto; }
+.milestone-notice { padding: 12px 16px; margin-block: 16px; background: var(--rp-surface-raised); border-left: 3px solid var(--rp-violet); border-radius: 4px; overflow-wrap: anywhere; }
+.milestone-notice p { margin: 7px 0; }
+.milestone-error { color: var(--rp-danger); }
+.milestone-feedback { color: var(--rp-text); margin-top: 16px; }
+.milestone-type-choice { display: grid; gap: 8px; padding-top: 12px; }
+.milestone-type-choice p { margin: 4px 0 12px; }
+.milestone-dialog .road-dialog-heading { align-items: start; margin-bottom: 20px; }
+.milestone-dialog .road-dialog-heading h2 { overflow-wrap: anywhere; min-width: 0; }
+.milestone-dialog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 16px; }
+.milestone-dialog .road-achievement-form { min-width: 0; }
+.milestone-dialog .road-achievement-form label { min-width: 0; }
+.milestone-dialog .road-achievement-form input:not([type="checkbox"]), .milestone-dialog .road-achievement-form select { width: 100%; min-width: 0; min-height: 44px; }
+.milestone-dialog .road-activity-picker { margin: 0; }
+.milestone-dialog .road-activity-picker li button { width: 100%; min-height: 44px; white-space: normal; }
+.milestone-dialog .road-activity-picker strong, .milestone-dialog .road-activity-picker span { overflow-wrap: anywhere; }
+.milestone-linked p { margin: 0; }
+.milestone-instructions { display: grid; gap: 8px; margin-block: 16px; }
+.milestone-instructions textarea { width: 100%; min-width: 0; resize: vertical; color: var(--rp-text); background: var(--rp-surface-soft); border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius-sm); padding: 12px; font: inherit; }
+@media (max-width: 600px) {
+  .milestone-manager-toolbar > .button { width: 100%; }
+  .milestone-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .milestone-dialog .road-dialog-content { padding: 20px 16px; }
+  .milestone-dialog .road-form-row { grid-template-columns: minmax(0, 1fr); }
+  .milestone-dialog input, .milestone-dialog select { font-size: 16px; }
+  .milestone-dialog .road-form-actions { flex-wrap: wrap; }
+  .milestone-dialog .road-form-actions .button { flex: 1 1 120px; }
+  .milestone-instructions textarea { font-size: 16px; }
+}

@@ -1,5 +1,15 @@
 # ROADMAP
 
+## 21 October 2026: milestone management
+
+- [x] Exact UX/Product Owner → Architect flow and implementation architecture.
+- [x] Shared Settings manager with Home entry; historical creation, race assignment/change/unlink and named removal.
+- [x] Planned-target request preparation, pinned-base checks, tab-local retention and paired-device handoff through existing approval/publication.
+- [x] Focused regression coverage, 122 core and 169 web tests, 18 browser journeys, types and production build.
+- [ ] Owner branch/PR review and normal release.
+
+See [implementation handoff](plans/MILESTONE_MANAGEMENT.md), [UX contract](design/MILESTONE_MANAGEMENT_UX.md) and [QA evidence](progress/milestone-management-qa-20261021.md).
+
 ## 7 October 2026: full-screen activity detail
 
 - [x] Shared full-viewport Activity detail dialog for Calendar and Training, retaining contextual return, focus/scroll handling, and existing record content.

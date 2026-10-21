@@ -9,7 +9,6 @@ import { raceHistoryResponseSchema, type RaceHistoryRecord } from "../../../../p
 import { buildRaceJourney, type JourneyTarget } from "../../../../packages/core/src/services/race-journey.ts";
 import { formatCoachingDate, localDateInTimezone } from "../../lib/coaching-ui-state";
 import { formatDuration } from "../../lib/activity-formatters";
-import { RaceAchievementManager } from "./race-achievement-manager";
 
 export function raceTargetLabel(title: string, seconds?: number) {
   const explicit = /\b(sub[- ]?\s*\d{1,3}(?::\d{2}){0,2}|under\s+\d{1,3}\s*(?:hours?|hrs?|minutes?|mins?)?)\b/iu.exec(title)?.[0];
@@ -115,7 +114,7 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
         {historyState === "error" ? <p className="road-inline-state" role="status">{history.length ? "Showing saved achievements; history could not be refreshed." : "Race history is temporarily unavailable."} <button className="text-link" onClick={() => setHistoryRetry((value) => value + 1)}>Retry history</button></p> : null}
         {journey.achieved.length > 3 || journey.ahead.length > 3 ? <details className="road-all-milestones"><summary>All {journey.achieved.length + journey.ahead.length} milestones</summary><div className="road-all-groups"><section aria-label="All achieved milestones"><h4>Achieved</h4><ol className="road-stops">{journey.achieved.map((record) => <AchievementStop key={record.id} record={record} />)}</ol></section><section aria-label="All upcoming milestones"><h4>Ahead</h4><ol className="road-stops">{journey.ahead.map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} />)}</ol></section></div></details> : null}
       </section>
-      <div className="road-journey-actions"><RaceAchievementManager history={history} targets={buildRaceJourney(context, [], today).ahead} timezone={timezone} onChange={() => setHistoryRetry((value) => value + 1)} /></div>
+      <div className="road-journey-actions"><Link className="road-manage text-link" href="/dashboard/settings?section=milestones#milestones">Manage milestones</Link></div>
     </section>
   </div>;
 }

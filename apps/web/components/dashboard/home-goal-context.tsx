@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { goalContextApiResponseSchema, type GoalContextRouteData } from "../../../../packages/core/src/contracts/coaching.ts";
 import { raceHistoryResponseSchema, type RaceHistoryRecord } from "../../../../packages/core/src/contracts/race-history.ts";
 import { buildRaceJourney, type JourneyTarget } from "../../../../packages/core/src/services/race-journey.ts";
@@ -37,6 +37,7 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
   const [heroImage, setHeroImage] = useState("/road-to-comrades.webp");
   const [goalRetry, setGoalRetry] = useState(0);
   const [historyRetry, setHistoryRetry] = useState(0);
+  const sceneRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,6 +75,103 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
     return () => controller.abort();
   }, [refreshKey]);
 
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    let frame = 0;
+    let scenePageTop: number | null = null;
+    let collapsedPanelHeight = 0;
+    let lastHeroHeight = Number.NaN;
+    let disposed = false;
+
+    const measure = () => {
+      frame = 0;
+      if (disposed) return;
+      const hero = scene.querySelector<HTMLElement>(".road-hero");
+      const date = scene.querySelector<HTMLElement>(".road-hero-greeting p");
+      const imageFrame = scene.querySelector<HTMLElement>(".road-hero-image-frame");
+      const content = scene.querySelector<HTMLElement>(".road-hero-content");
+      const footer = scene.querySelector<HTMLElement>(".road-hero-footer");
+      const panel = scene.querySelector<HTMLElement>(".road-journey");
+      const details = panel?.querySelector<HTMLDetailsElement>(".road-all-milestones");
+      const actions = scene.querySelector<HTMLElement>(".road-journey-actions");
+      if (!hero || !date || !imageFrame || !content || !footer || !panel || !actions) return;
+
+      if (window.innerWidth < 1100) {
+        scene.style.removeProperty("--road-hero-min-height");
+        imageFrame.style.removeProperty("left");
+        imageFrame.style.removeProperty("width");
+        imageFrame.style.removeProperty("top");
+        return;
+      }
+
+      const sceneBox = scene.getBoundingClientRect();
+      const sceneWidth = scene.clientWidth;
+      if (!sceneWidth) return;
+      scenePageTop ??= sceneBox.top + window.scrollY;
+
+      if (heroImage === "/road-to-comrades.webp") {
+        const scale = 0.9 * sceneWidth / 1672;
+        const dateBottom = date.getBoundingClientRect().bottom - sceneBox.top;
+        imageFrame.style.left = String(sceneWidth * 0.05) + "px";
+        imageFrame.style.width = String(sceneWidth * 0.9) + "px";
+        imageFrame.style.top = String(dateBottom + 12 - 240 * scale) + "px";
+      } else {
+        imageFrame.style.removeProperty("left");
+        imageFrame.style.removeProperty("width");
+        imageFrame.style.removeProperty("top");
+      }
+
+      if (!details?.open) collapsedPanelHeight = panel.getBoundingClientRect().height;
+      if (details?.open && collapsedPanelHeight === 0) return;
+
+      const contentBottom = content.getBoundingClientRect().bottom - sceneBox.top;
+      const footerBottom = footer.getBoundingClientRect().bottom - sceneBox.top;
+      const naturalHeroHeight = Math.max(350, contentBottom, footerBottom + 20);
+      const idealPanelTop = 115 + 499 * sceneWidth / 1672;
+      const actionBox = actions.getBoundingClientRect();
+      const actionMargin = Number.parseFloat(getComputedStyle(actions).marginTop) || 0;
+      const availableHeight = Math.max(0, window.innerHeight - scenePageTop);
+      const maximumPanelTop = availableHeight - collapsedPanelHeight - actionBox.height - actionMargin - 16;
+      const targetHeroHeight = Math.max(naturalHeroHeight, Math.min(idealPanelTop, maximumPanelTop));
+
+      if (!Number.isFinite(lastHeroHeight) || Math.abs(targetHeroHeight - lastHeroHeight) >= 0.5) {
+        scene.style.setProperty("--road-hero-min-height", String(targetHeroHeight) + "px");
+        lastHeroHeight = targetHeroHeight;
+      }
+    };
+
+    const schedule = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+
+    const resizeObserver = new ResizeObserver(schedule);
+    for (const selector of [".road-home-scene", ".road-hero-greeting", ".road-hero-content", ".road-journey", ".road-journey-actions"]) {
+      const element = scene.querySelector<HTMLElement>(selector);
+      if (element) resizeObserver.observe(element);
+    }
+
+    const details = scene.querySelector(".road-all-milestones");
+    const disclosureObserver = new MutationObserver(schedule);
+    if (details) disclosureObserver.observe(details, { attributes: true, attributeFilter: ["open"] });
+
+    window.addEventListener("resize", schedule);
+    window.visualViewport?.addEventListener("resize", schedule);
+    schedule();
+    void document.fonts.ready.then(schedule);
+
+    return () => {
+      disposed = true;
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      disclosureObserver.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
+    };
+  }, [heroImage]);
+
   const timezone = context?.plan?.timezone ?? "Africa/Johannesburg";
   const today = localDateInTimezone(timezone, now);
   const journey = buildRaceJourney(context, history, today);
@@ -83,10 +181,14 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
     : context?.state === "unavailable" ? "Your approved goal could not be verified." : "Set a race goal to start your next chapter.";
 
   return <div className="home-goal-context road-goal-context">
-    <section className="road-home-scene" aria-label="Your goal and running journey">
+    <section ref={sceneRef} className="road-home-scene" aria-label="Your goal and running journey">
       <div className="road-hero">
-        <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes="(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc(100vw - 180px)" priority />
-        <div className="road-hero-shade" aria-hidden="true" />
+        <div className="road-hero-photo" aria-hidden="true">
+          <div className="road-hero-image-frame" data-background-source={heroImage === "/road-to-comrades.webp" ? "default" : "custom"}>
+            <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes={heroImage === "/road-to-comrades.webp" ? "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc((100vw - 180px) * 0.9)" : "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc(100vw - 180px)"} priority />
+          </div>
+          <div className="road-hero-shade" />
+        </div>
         {heroHeader}
         <div className="road-hero-content">
           <p className="eyebrow">Your goal</p>

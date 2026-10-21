@@ -197,3 +197,7 @@ Activities and Calendar use one shared feedback presentation with two titled sec
 The Home Daily check-in button has no outer blue focus ring at desktop or mobile widths. Keyboard focus underlines its label within the existing pill; the 44px touch target and dialog focus restoration remain intact.
 
 Activity detail adds a separate **Your reflection** section with optional Training, Race, or Ignore classification. Ignore or no classification shows the combined shared, training, and race questions. The form supports partial saves and optional turning-point sections; it never marks a planned session complete or changes an approved plan. Home places a non-blocking **How are you feeling today?** recovery callout inside Today’s focus. It offers Check in or Skip today, persists one local-date record, and remains editable without adding a primary navigation destination. Saved journal entries are visibly athlete-authored and remain distinct from AI feedback.
+
+## Owner sign-in origin (21 October 2026)
+
+If AUTH_URL configures a canonical OAuth origin, visiting Login from another deployment hostname redirects to that origin before rendering the sign-in form. Unauthenticated Dashboard entry follows the same rule. This keeps the verification cookie on the hostname receiving GitHub's callback. The sign-in controls and owner-only access rules remain as documented in the cloud operations runbook.

@@ -158,6 +158,12 @@ This checklist applies to the ADR 0006 follow-on delivery. It is additive to the
 
 The complete M8 production decision remains **Needs Review** until its separately required live automatic Strava webhook delivery, independent raw-object checksum read, and paired-device selected-context pull/publish evidence are recorded. This delivery must not mark those checks as complete.
 
+## Canonical OAuth origin (21 October 2026)
+
+When AUTH_URL is configured, owner login must start on that origin. Requests for /login on a deployment alias redirect before the form renders; unauthenticated dashboard requests also go directly to that canonical login. An off-origin login POST returns 303 to restart with a GET rather than replaying the server action. The OAuth callback and the browser's host-only PKCE verification cookie then share one origin. Keep PKCE and HttpOnly cookie protections enabled; do not widen cookies across vercel.app domains.
+
+Before assigning staging, verify both the staging alias and the AUTH_URL hostname resolve to the tested deployment. Run the owner-auth browser suite, which starts from an alternate hostname, intercepts GitHub authorization using dummy credentials, checks the callback origin, and proves the browser sends its PKCE cookie on the intercepted callback. A successful /login or /api/auth/providers response alone does not validate OAuth cookie transport. Correlate real callback failures with fresh logs; InvalidCheck / pkceCodeVerifier errors require investigation of cookie origin, expiry, and secret consistency. Never publish browser cookie values or secret-bearing traces.
+
 ## M8 Authentication and Provisioning Checklist
 
 This is deliberately deferred because it requires account authentication and user action.

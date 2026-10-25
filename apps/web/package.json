@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "prisma generate --schema ../../packages/db/prisma/schema.prisma && next build --webpack",
-    "vercel-build": "prisma generate --schema ../../packages/db/prisma/schema.prisma && prisma migrate deploy --schema ../../packages/db/prisma/schema.prisma && next build --webpack",
+    "vercel-build": "prisma generate --schema ../../packages/db/prisma/schema.prisma && if [ \"$VERCEL_ENV\" = \"production\" ]; then prisma migrate deploy --schema ../../packages/db/prisma/schema.prisma; fi && next build --webpack",
     "start": "next start",
     "lint": "tsc --project tsconfig.typecheck.json --noEmit",
     "typecheck": "tsc --project tsconfig.typecheck.json --noEmit",
@@ -14,6 +14,7 @@
     "test:e2e": "playwright test --config playwright.config.ts",
     "test:e2e:local": "node scripts/assert-e2e-port.mjs 3311 && playwright test --config playwright.config.ts && node scripts/assert-e2e-port.mjs 3314 && playwright test --config playwright.home.local.config.ts && node scripts/assert-e2e-port.mjs 3313 && playwright test --config playwright.readiness.local.config.ts",
     "test:e2e:online": "playwright test --config playwright.online.config.ts",
+    "test:e2e:coach:online": "playwright test --config playwright.coach.online.config.ts",
     "test:e2e:auth": "playwright test --config playwright.auth.config.ts",
     "test:e2e:milestones": "playwright test --config playwright.milestones.local.config.ts && playwright test --config playwright.milestones.online.config.ts",
     "coaching:propose-goal-structure": "node --experimental-strip-types scripts/propose-goal-structure.ts",

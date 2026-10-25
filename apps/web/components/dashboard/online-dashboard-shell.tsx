@@ -23,7 +23,7 @@ const unavailableDashboard = (message: string) => toDashboardViewModel({
   stale: { isStale: false, staleReason: null, staleAtIso: null },
 });
 
-export function OnlineDashboardShell() {
+export function OnlineDashboardShell({ homeLabel = "Home" }: { homeLabel?: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [statusState, setStatusState] = useState<StatusState>({ kind: "loading" });
 
@@ -61,6 +61,7 @@ export function OnlineDashboardShell() {
         onlineStatus={statusState.kind === "ready" ? statusState.status : null}
         onlineStatusLoading={statusState.kind === "loading"}
         onlineStatusError={statusState.kind === "error" ? statusState.message : null}
+        homeLabel={homeLabel}
         onAnalyticsRetry={() => window.location.reload()}
       />
     </div>

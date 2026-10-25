@@ -27,7 +27,7 @@ test("background preferences persist per athlete and reset without changing anot
     assert.match(appearanceImageUrl(readLocalAppearance(file, "a")), /appearance\/image\?v=v1/);
     saveLocalAppearance(file, "b", { ...image, version: "v2" });
     saveLocalAppearance(file, "a", null);
-    assert.equal(appearanceImageUrl(readLocalAppearance(file, "a")), "/road-to-comrades.webp");
+    assert.equal(appearanceImageUrl(readLocalAppearance(file, "a")), "/road-to-comrades-v2.webp");
     assert.equal(readLocalAppearance(file, "b")?.version, "v2");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

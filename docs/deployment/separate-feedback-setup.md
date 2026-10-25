@@ -81,9 +81,9 @@ production release gate is clear.
 
 The additive migration is
 `packages/db/prisma/migrations/20261001120000_separate_activity_feedback/migration.sql`.
-The root `vercel-build` script already runs `npm run db:migrate:deploy`
-before the application build. Confirm the Vercel build command uses that
-script, and confirm the target database before starting any deployment.
+Vercel Preview builds skip migrations; production builds apply pending
+migrations before compiling. Apply a Preview migration explicitly with
+`npm run db:migrate:deploy` after confirming the target database branch;
 Prisma uses `DATABASE_URL_UNPOOLED` for migrations, not `DIRECT_URL`.
 Do not paste SQL into production or run a reset command.
 

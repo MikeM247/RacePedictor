@@ -312,6 +312,23 @@ export class PrismaOperationalUsageRepository {
   readUsage(occurredAt?: Date): Promise<import("../../../core/src/services/operational-guardrails.ts").OperationalUsage>;
 }
 
+export class CoachChatConflictError extends Error {}
+export class CoachChatNotFoundError extends Error {}
+export class CoachChatRateLimitError extends Error { retryAfterSeconds: number; }
+export class PrismaCoachChatRepository {
+  constructor(input: { prisma: unknown; now?: () => Date; newLeaseToken?: () => string });
+  getConversation(scope: AthleteScope, input?: { beforeSequence?: number | null; limit?: number }): Promise<unknown>;
+  getConversationMarker(scope: AthleteScope): Promise<{ id: string | null; generation: number; sequence: number; lastReflectedActivityId: string | null; lastReflectedActivityAt: string | null }>;
+  getCompletedHistory(scope: AthleteScope, limit?: number): Promise<Array<{ role: string; text: string; topic: string | null }>>;
+  getTurn(scope: AthleteScope, turnId: string): Promise<any>;
+  getTurnReplay(scope: AthleteScope, input: { expectedGeneration: number; clientTurnId?: string; turnId?: string; retryId?: string }): Promise<any>;
+  beginTurn(scope: AthleteScope, input: any): Promise<any>;
+  retryTurn(scope: AthleteScope, input: any): Promise<any>;
+  completeTurn(scope: AthleteScope, input: any): Promise<any>;
+  failTurn(scope: AthleteScope, input: any): Promise<any>;
+  clearHistory(scope: AthleteScope, input: { expectedGeneration: number; expectedSequence: number }): Promise<{ generation: number; sequence: number }>;
+}
+
 export class PrismaReconciliationScopeRepository {
   constructor(input: { prisma: unknown });
   listConnectedAthleteIds(limit: number): Promise<readonly string[]>;

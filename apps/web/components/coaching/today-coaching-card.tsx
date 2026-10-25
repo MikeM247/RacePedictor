@@ -13,6 +13,7 @@ import {
 } from "../../lib/coaching-ui-state";
 import { todayCoachingStates, type TodayCoachingState } from "../../lib/today-coaching";
 import { createRecoveryContext, readRecoveryContext, recoveryReturnHref, restoreRecoveryFocus } from "../../lib/recovery-context";
+import { resolveCoachUpNext } from "../../../../packages/core/src/services/coach-up-next.ts";
 import "./coaching-ui.css";
 
 type JsonRecord = Record<string, unknown>;
@@ -68,11 +69,6 @@ async function loadCurrentWeek(date: string): Promise<CurrentWeekData> {
     activitiesReadStatus: data.activitiesReadStatus === "unavailable" || !Array.isArray(data.activities) ? "unavailable" : "available",
     timezone: typeof data.timezone === "string" ? data.timezone : "Africa/Johannesburg",
   };
-}
-
-function localClock(value: string, timezone: string) {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value));
-  return `${parts.find((part) => part.type === "hour")?.value ?? "00"}:${parts.find((part) => part.type === "minute")?.value ?? "00"}`;
 }
 
 function homeNextDate(date: string, timezone: string) {
@@ -289,31 +285,22 @@ export function TodayCoachingCard({ compact = false, headingLevel = 2, homeActio
     ? normalizeCalendarSessions({ sessions: [{ ...nextWorkout, scheduledDate: String(nextWorkout.scheduledDate), effectiveDate: String(nextWorkout.scheduledDate), prescribedDate: String(nextWorkout.scheduledDate), originalDate: String(nextWorkout.scheduledDate), status: "upcoming" }] })[0]
     : undefined;
   const today = date;
-  const todaySessions = (weekData?.sessions ?? []).filter((candidate) => candidate.effectiveDate === today && candidate.kind !== "rest" && candidate.status !== "skipped");
-  const todayCandidates = todaySessions.filter((candidate) => candidate.kind === "run");
+  const todaySessions = (weekData?.sessions ?? []).filter((candidate) => candidate.effectiveDate === today);
   const todayRuns = (weekData?.activities ?? []).filter((activity) => activity.localDate === today && ["run", "trail_run", "treadmill_run"].includes(activity.sport) && (!activity.occurredAt || Date.parse(activity.occurredAt) <= Date.now()));
-  const latestRunFinish = todayRuns.reduce<string | null>((latest, activity) => {
-    if (!activity.occurredAt) return latest;
-    const finish = new Date(new Date(activity.occurredAt).valueOf() + activity.elapsedTimeSeconds * 1000);
-    if (!Number.isFinite(finish.valueOf())) return latest;
-    const clock = localClock(finish.toISOString(), weekData?.timezone ?? timezone);
-    return latest === null || clock > latest ? clock : latest;
-  }, null);
-  const laterTodayCandidates = latestRunFinish
-    ? todaySessions.filter((candidate) => candidate.kind !== "run" || !candidate.startTime || candidate.startTime > latestRunFinish)
-    : [];
   const weekDataUsable = weekData !== null && weekData.activitiesReadStatus === "available" && (weekState === "success" || weekState === "loading");
-  const upNextAmbiguous = homeAction && weekDataUsable && (
-    todayRuns.length > 0 && (todayCandidates.length !== 1 || laterTodayCandidates.length > 1)
-    || todayRuns.length === 0 && todaySessions.length > 1
-  );
-  const recordedRunAdvancesToday = homeAction && weekDataUsable && todayRuns.length > 0 && todaySessions.length === 1 && todayCandidates.length === 1 && !(todayCandidates[0].startTime && latestRunFinish && todayCandidates[0].startTime > latestRunFinish);
-  const selectedNext = homeAction && weekDataUsable && !upNextAmbiguous
-    ? recordedRunAdvancesToday
-      ? weekData.sessions.find((candidate) => candidate.effectiveDate > today && candidate.kind !== "rest" && candidate.status !== "skipped") ?? apiNextSession
-      : todayRuns.length > 0
-        ? laterTodayCandidates[0] ?? (laterTodayCandidates.length === 0 ? weekData.sessions.find((candidate) => candidate.effectiveDate > today && candidate.kind !== "rest" && candidate.status !== "skipped") ?? apiNextSession : undefined)
-        : todaySessions[0] ?? weekData.sessions.find((candidate) => candidate.effectiveDate > today && candidate.kind !== "rest" && candidate.status !== "skipped") ?? apiNextSession
+  const upNext = homeAction && weekDataUsable ? resolveCoachUpNext({
+    today,
+    todaySessions,
+    sessions: weekData!.sessions,
+    activities: todayRuns,
+    timezone: weekData!.timezone,
+    activitiesAvailable: true,
+    apiNextSession,
+  }) : { kind: "none" as const };
+  const upNextAmbiguous = homeAction && upNext.kind === "ambiguous";
+  const recordedRunAdvancesToday = homeAction && upNext.kind === "selected" && upNext.advancedByRecordedRun;
+  const selectedNext = upNext.kind === "selected"
+    ? weekData?.sessions.find((candidate) => candidate.id === upNext.session.id) ?? (apiNextSession?.id === upNext.session.id ? apiNextSession : undefined)
     : undefined;
   const displayingNextWorkout = Boolean(homeAction && selectedNext && (selectedNext.effectiveDate > today || recordedRunAdvancesToday || (todayRuns.length > 0 && selectedNext.id !== session.id)));
   const displaySession = displayingNextWorkout ? selectedNext : session;

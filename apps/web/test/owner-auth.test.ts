@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServerAuth } from "../lib/server/auth.ts";
+import { getServerAuth } from "../lib/server/composition.ts";
 import { readCloudEnvironment } from "../lib/server/cloud-environment.ts";
 import { createOwnerActorResolver } from "../lib/server/github-owner-auth.ts";
 import {
@@ -87,6 +88,33 @@ test("wrong or unprovisioned sessions fail closed without revealing athlete exis
     readConfiguration: () => ({ authSubject: "github:59341274" }),
   });
   assert.equal(await missingAccessResolver(new Request("https://racepredictor.example/dashboard")), null);
+});
+
+test("online-fixture browser auth is explicit and cannot synthesize a production actor", async () => {
+  const names = ["NODE_ENV", "RACEPREDICTOR_CLOUD_MODE", "RACEPREDICTOR_DATA_SOURCE", "RACEPREDICTOR_E2E_OWNER_AUTH_ENABLED", "RACEPREDICTOR_OWNER_AUTH_CONFIGURED", "RACEPREDICTOR_OWNER_AUTH_SUBJECT"] as const;
+  const previous = new Map(names.map((name) => [name, process.env[name]]));
+  try {
+    Reflect.set(process.env, "NODE_ENV", "test");
+    delete process.env.RACEPREDICTOR_OWNER_AUTH_CONFIGURED;
+    delete process.env.RACEPREDICTOR_OWNER_AUTH_SUBJECT;
+    process.env.RACEPREDICTOR_CLOUD_MODE = "enabled";
+    process.env.RACEPREDICTOR_DATA_SOURCE = "online-fixture";
+    process.env.RACEPREDICTOR_E2E_OWNER_AUTH_ENABLED = "true";
+    const testSession = await getServerAuth().getSessionStatus(new Request("http://localhost/api/v1/auth/session"));
+    assert.equal(testSession.authenticated, true);
+    assert.equal(testSession.actor?.credentialKind, "session");
+    assert.equal(testSession.actor?.activeAthleteId, "racepredictor-e2e-athlete");
+
+    Reflect.set(process.env, "NODE_ENV", "production");
+    const productionSession = await getServerAuth().getSessionStatus(new Request("http://localhost/api/v1/auth/session"));
+    assert.deepEqual(productionSession, { authenticated: false, actor: null, reason: "authentication_not_configured" });
+  } finally {
+    for (const name of names) {
+      const value = previous.get(name);
+      if (value === undefined) delete process.env[name];
+      else Reflect.set(process.env, name, value);
+    }
+  }
 });
 
 test("production accepts only the real resolver while still rejecting a synthetic actor", async () => {

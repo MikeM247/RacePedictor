@@ -7,6 +7,10 @@ const nextConfig = {
   distDir: process.env.RACEPREDICTOR_NEXT_DIST_DIR || ".next",
   experimental: {
     externalDir: true,
+    // Keep production type checks on the in-process compiler API. The managed
+    // workspace suppresses stdout from detached child processes, which breaks
+    // Next's `tsc --showConfig` JSON handshake when the CLI path is enabled.
+    useTypeScriptCli: false,
   },
   typescript: {
     tsconfigPath:

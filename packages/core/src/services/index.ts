@@ -6,6 +6,7 @@ export * from "./plan-goal-context.ts";
 export * from "./plan-proposal-hash.ts";
 export * from "./cloud-dashboard.ts";
 export * from "./cloud-coaching.ts";
+export * from "./coach-up-next.ts";
 export * from "./second-brain-publisher.ts";
 export * from "./operational-guardrails.ts";
 export * from "./shadow-reconciliation.ts";

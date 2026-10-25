@@ -280,6 +280,60 @@ test("all migrations apply to PostgreSQL and enforce tenant-safe cloud persisten
         AND lower("column_name") IN ('accesstoken', 'refreshtoken', 'rawbody', 'payloadjson', 'vaultpath', 'markdown')
     `);
     assert.deepEqual(prohibitedColumns.rows, []);
+
+    await database.exec(`
+      INSERT INTO "coach_conversations" ("id", "athleteId", "updatedAt")
+      VALUES ('coach-conversation-1', 'athlete_legacy', CURRENT_TIMESTAMP);
+      INSERT INTO "coach_turns" (
+        "id", "athleteId", "conversationId", "generation", "clientTurnId", "requestHash",
+        "topic", "contextFingerprint", "contextSnapshot", "state", "attemptCount", "updatedAt"
+      ) VALUES (
+        'coach-turn-1', 'athlete_legacy', 'coach-conversation-1', 1, 'client-turn-1', '${"f".repeat(64)}',
+        'reflect', '${"e".repeat(64)}', '{"sources":{"activity":"available"}}'::jsonb, 'completed', 1, CURRENT_TIMESTAMP
+      );
+      INSERT INTO "coach_messages" (
+        "id", "athleteId", "conversationId", "turnId", "generation", "sequence", "role", "text", "topic"
+      ) VALUES
+        ('coach-user-1', 'athlete_legacy', 'coach-conversation-1', 'coach-turn-1', 1, 1, 'user', 'How did that feel?', 'reflect'),
+        ('coach-assistant-1', 'athlete_legacy', 'coach-conversation-1', 'coach-turn-1', 1, 2, 'assistant', 'Let us review the recorded effort.', 'reflect');
+      INSERT INTO "coach_usage_buckets" (
+        "id", "athleteId", "windowKind", "windowStart", "windowEnd", "attemptCount", "updatedAt"
+      ) VALUES
+        ('coach-usage-1', 'athlete_legacy', 'day', CURRENT_DATE, CURRENT_DATE + INTERVAL '1 day', 1, CURRENT_TIMESTAMP),
+        ('coach-usage-2', 'athlete_other', 'day', CURRENT_DATE, CURRENT_DATE + INTERVAL '1 day', 2, CURRENT_TIMESTAMP);
+    `);
+    const coachRows = await database.query(`
+      SELECT c."athleteId", c."generation", c."sequence", COUNT(m."id")::int AS "messageCount"
+      FROM "coach_conversations" c LEFT JOIN "coach_messages" m ON m."conversationId" = c."id"
+      WHERE c."id" = 'coach-conversation-1' GROUP BY c."athleteId", c."generation", c."sequence"
+    `);
+    assert.deepEqual(coachRows.rows, [{ athleteId: "athlete_legacy", generation: 1, sequence: 0, messageCount: 2 }]);
+    await assert.rejects(database.exec(`
+      INSERT INTO "coach_turns" (
+        "id", "athleteId", "conversationId", "generation", "clientTurnId", "requestHash",
+        "topic", "contextFingerprint", "contextSnapshot", "state", "attemptCount", "updatedAt"
+      ) VALUES (
+        'coach-turn-duplicate', 'athlete_legacy', 'coach-conversation-1', 1, 'client-turn-1', '${"1".repeat(64)}',
+        'reflect', '${"e".repeat(64)}', '{}'::jsonb, 'processing', 1, CURRENT_TIMESTAMP
+      )
+    `), /unique constraint/iu);
+    await assert.rejects(database.exec(`
+      INSERT INTO "coach_messages" (
+        "id", "athleteId", "conversationId", "turnId", "generation", "sequence", "role", "text", "topic"
+      ) VALUES ('coach-user-duplicate-sequence', 'athlete_legacy', 'coach-conversation-1', 'coach-turn-1', 1, 1, 'user', 'Duplicate', 'reflect')
+    `), /unique constraint/iu);
+    await assert.rejects(database.exec(`
+      INSERT INTO "coach_messages" (
+        "id", "athleteId", "conversationId", "turnId", "generation", "sequence", "role", "text", "topic"
+      ) VALUES ('coach-assistant-duplicate', 'athlete_legacy', 'coach-conversation-1', 'coach-turn-1', 1, 3, 'assistant', 'Duplicate reply', 'reflect')
+    `), /unique constraint/iu);
+    await assert.rejects(database.exec(`
+      INSERT INTO "coach_messages" (
+        "id", "athleteId", "conversationId", "turnId", "generation", "sequence", "role", "text", "topic"
+      ) VALUES ('coach-foreign-message', 'athlete_other', 'coach-conversation-1', 'coach-turn-1', 1, 3, 'user', 'Foreign', 'reflect')
+    `), /foreign key constraint/iu);
+    const usageIsolation = await database.query(`SELECT "athleteId", "attemptCount" FROM "coach_usage_buckets" ORDER BY "athleteId"`);
+    assert.deepEqual(usageIsolation.rows, [{ athleteId: "athlete_legacy", attemptCount: 1 }, { athleteId: "athlete_other", attemptCount: 2 }]);
   } finally {
     await database.close();
   }

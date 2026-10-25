@@ -105,14 +105,26 @@ export async function handleCoachConversation(security: SensitiveRouteContext, r
   return success(coachConversationStateSchema.parse(conversation));
 }
 
-export async function handleCoachNewTurn(security: SensitiveRouteContext, request: Request) {
+export async function handleCoachNewTurn(security: SensitiveRouteContext, request: Request, compositionOverride?: ChatComposition) {
   const scope = requireOwnerScope(security);
   assertSameOrigin(request);
   const parsed = coachTurnRequestSchema.safeParse(await readBoundedJson(request));
   if (!parsed.success) throw validationError(parsed.error);
   const environment = readCloudEnvironment();
   if (!environment.features.coachChat) throw new ApiHttpError(503, "UNAVAILABLE", "Coach replies are paused; your coaching history remains available");
-  const composition = getChatComposition();
+  const composition = compositionOverride ?? getChatComposition();
+  try {
+    const replay = await composition.coachChat.getTurnReplay(scope, parsed.data);
+    if (replay) {
+      const savedRecord = replay.userMessage?.selectedRecordType && replay.userMessage?.selectedRecordId
+        ? { type: replay.userMessage.selectedRecordType, id: replay.userMessage.selectedRecordId } : null;
+      const requestHash = hashJson({ text: parsed.data.text, topic: parsed.data.topic,
+        selectedRecord: parsed.data.selectedRecord ?? savedRecord,
+        contextFingerprint: parsed.data.contextFingerprint });
+      if (replay.turn.requestHash !== requestHash) throw new CoachChatConflictError("This turn identity was already used with different content.");
+      return existingTurnResponse(replay, "duplicate");
+    }
+  } catch (error) { throw mapChatError(error); }
   const selectedRecord = parsed.data.selectedRecord;
   let context: CoachContext;
   try {
@@ -153,14 +165,22 @@ export async function handleCoachNewTurn(security: SensitiveRouteContext, reques
   });
 }
 
-export async function handleCoachRetry(security: SensitiveRouteContext, request: Request, turnId: string) {
+export async function handleCoachRetry(security: SensitiveRouteContext, request: Request, turnId: string, compositionOverride?: ChatComposition) {
   const scope = requireOwnerScope(security);
   assertSameOrigin(request);
   const parsed = coachRetryRequestSchema.safeParse(await readBoundedJson(request));
   if (!parsed.success) throw validationError(parsed.error);
   const environment = readCloudEnvironment();
   if (!environment.features.coachChat) throw new ApiHttpError(503, "UNAVAILABLE", "Coach replies are paused; your coaching history remains available");
-  const composition = getChatComposition();
+  const composition = compositionOverride ?? getChatComposition();
+  try {
+    const replay = await composition.coachChat.getTurnReplay(scope, { ...parsed.data, turnId });
+    if (replay) {
+      const requestHash = hashJson({ expectedAttempt: parsed.data.expectedAttempt, contextFingerprint: parsed.data.contextFingerprint });
+      if (replay.turn.retryRequestHash !== requestHash) throw new CoachChatConflictError("This retry identity was already used with different context.");
+      return existingTurnResponse(replay, "retry-replay");
+    }
+  } catch (error) { throw mapChatError(error); }
   const savedTurn = await composition.coachChat.getTurn(scope, turnId);
   if (!savedTurn?.userMessage) throw new ApiHttpError(404, "NOT_FOUND", "The coaching turn was not found");
   if (savedTurn.generation !== parsed.data.expectedGeneration) throw new ApiHttpError(409, "CONFLICT", "The conversation has changed; reload it before retrying.");

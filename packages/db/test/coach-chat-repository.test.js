@@ -232,3 +232,13 @@ test("minute quota reservation is rolled back when a provider attempt exceeds th
   await assert.rejects(repository.beginTurn(scope, { ...turnInput(sequence, "client_over_limit"), expectedSequence: sequence }), CoachChatRateLimitError);
   assert.equal(prisma.store.usage.find((bucket) => bucket.windowKind === "minute").attemptCount, savedAttempts, "the rejected transaction must roll back its over-limit reservation");
 });
+
+test("replay lookup stays athlete and generation scoped and disappears after clear", async () => {
+  const { repository } = setup();
+  const started = await repository.beginTurn(scope, turnInput(0, "replay_lookup"));
+  assert.equal((await repository.getTurnReplay(scope, { expectedGeneration: 1, clientTurnId: "replay_lookup" })).userMessage.id, started.userMessage.id);
+  const other = athleteScopeFor(buildActorContext({ userId: "other_owner", permittedAthleteIds: ["other_athlete"], activeAthleteId: "other_athlete", requestId: "other_request", credentialKind: "session" }));
+  assert.equal(await repository.getTurnReplay(other, { expectedGeneration: 1, clientTurnId: "replay_lookup" }), null);
+  await repository.clearHistory(scope, { expectedGeneration: 1, expectedSequence: 1 });
+  assert.equal(await repository.getTurnReplay(scope, { expectedGeneration: 1, clientTurnId: "replay_lookup" }), null);
+});

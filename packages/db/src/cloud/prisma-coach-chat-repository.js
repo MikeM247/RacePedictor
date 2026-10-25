@@ -134,12 +134,28 @@ export class PrismaCoachChatRepository {
     };
   }
 
+  async getTurnReplay(scope, input) {
+    const athleteId = assertAthleteScope(scope);
+    return this.#prisma.$transaction(async (tx) => {
+      const conversation = await lockConversation(tx, athleteId);
+      if (!conversation || conversation.generation !== input.expectedGeneration) return null;
+      const turn = await tx.coachTurn.findFirst({ where: {
+        athleteId, conversationId: conversation.id, generation: input.expectedGeneration,
+        ...(input.clientTurnId ? { clientTurnId: input.clientTurnId } : { id: input.turnId, lastRetryId: input.retryId }),
+      } });
+      if (!turn) return null;
+      const userMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: turn.id, role: "user" } });
+      const assistantMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: turn.id, role: "assistant" } });
+      return { kind: "replay", turn, userMessage, assistantMessage };
+    });
+  }
+
   async beginTurn(scope, input) {
     const athleteId = assertAthleteScope(scope);
     const now = input.now ?? this.#now();
     const leaseToken = this.#newLeaseToken();
     return this.#prisma.$transaction(async (tx) => {
-      await tx.coachConversation.upsert({ where: { athleteId }, update: {}, create: { athleteId } });
+      await tx.coachConversation.upsert({ where: { athleteId }, update: { athleteId }, create: { athleteId } });
       const conversation = await lockConversation(tx, athleteId);
       const existing = await tx.coachTurn.findUnique({
         where: { conversationId_generation_clientTurnId: {

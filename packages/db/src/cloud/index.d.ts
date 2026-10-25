@@ -321,6 +321,7 @@ export class PrismaCoachChatRepository {
   getConversationMarker(scope: AthleteScope): Promise<{ id: string | null; generation: number; sequence: number; lastReflectedActivityId: string | null; lastReflectedActivityAt: string | null }>;
   getCompletedHistory(scope: AthleteScope, limit?: number): Promise<Array<{ role: string; text: string; topic: string | null }>>;
   getTurn(scope: AthleteScope, turnId: string): Promise<any>;
+  getTurnReplay(scope: AthleteScope, input: { expectedGeneration: number; clientTurnId?: string; turnId?: string; retryId?: string }): Promise<any>;
   beginTurn(scope: AthleteScope, input: any): Promise<any>;
   retryTurn(scope: AthleteScope, input: any): Promise<any>;
   completeTurn(scope: AthleteScope, input: any): Promise<any>;

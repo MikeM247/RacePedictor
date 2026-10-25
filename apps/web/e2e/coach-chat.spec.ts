@@ -1,4 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { chromium, expect, test, type Page } from "@playwright/test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import type { CoachConversationMessage, CoachConversationState, CoachRecordReference, CoachTopic } from "../../../packages/core/src/contracts/coach-chat.ts";
 
@@ -105,4 +108,66 @@ test("failed reply can be retried without duplicating its saved athlete message"
   await page.getByRole("button", { name: "Retry reply" }).click();
   await expect(page.getByText(/The current prescription is 40 minutes/u)).toBeVisible();
   await expect(page.getByText("Can I shorten tomorrow's run?")).toHaveCount(1);
+});
+
+test("long history preserves reading position, supports image fallback and a keyboard-sized mobile viewport", async ({ page }) => {
+  await mockSession(page);
+  await page.route("**/*orbit*", (route) => route.abort());
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  const messages = Array.from({ length: 40 }, (_, i) => message(`long_${i}`, i + 1, i % 2 ? "assistant" : "user", `Synthetic transcript message ${i + 1}. ${"A detailed training observation. ".repeat(16)}`, "completed", null, "general"));
+  let polls = 0;
+  await page.route("**/api/v1/coaching/chat/conversation**", (route) => {
+    polls += 1;
+    const processing = polls === 1;
+    return route.fulfill({ json: { data: { ...conversation(messages, { id: "long_turn", state: processing ? "processing" : "completed", attempt: 1, safeErrorCode: null, messageSaved: true, retryable: false }), hasOlder: true } } });
+  });
+  await page.goto("/dashboard");
+  const transcript = page.getByRole("list", { name: "Conversation messages" });
+  await expect(transcript.locator(".coach-message")).toHaveCount(40);
+  await transcript.evaluate((node) => { node.scrollTop = 120; });
+  await expect.poll(() => polls).toBeGreaterThan(1);
+  expect(await transcript.evaluate((node) => node.scrollTop)).toBeCloseTo(120, 0);
+  await expect(page.locator(".coach-message-avatar").first()).toHaveText("O");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Synthetic mobile draft");
+  await composer.focus();
+  // A reduced layout viewport exercises keyboard occlusion/reflow, not a native OS keyboard.
+  await page.setViewportSize({ width: 390, height: 420 });
+  await page.getByRole("button", { name: "Send message" }).scrollIntoViewIfNeeded();
+  await expect(composer).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(composer).toHaveValue("Synthetic mobile draft");
+});
+
+test("Coach reflows at actual Chromium 200 percent browser zoom", async ({ baseURL }) => {
+  const profile = mkdtempSync(path.join(tmpdir(), "coach-zoom-profile-"));
+  const browser = await chromium.launchPersistentContext(profile, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, headless: true, viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await browser.newPage();
+    await mockSession(page);
+    await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+    await page.route("**/api/v1/coaching/chat/conversation**", (route) => route.fulfill({ json: { data: conversation() } }));
+    await page.goto(`${baseURL}/dashboard`);
+    await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
+    const settings = await browser.newPage();
+    await settings.goto("chrome://settings/appearance");
+    await settings.evaluate(() => new Promise<void>((resolve) => {
+      (globalThis as any).chrome.settingsPrivate.setDefaultZoom(2, resolve);
+    }));
+    await settings.close();
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(2);
+    const dimensions = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+    expect(dimensions.viewport).toBe(640);
+    expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
+    const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+    await composer.fill("Synthetic zoom draft");
+    await page.getByRole("button", { name: "Send message" }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
+    await page.screenshot({ path: path.join(test.info().outputDir, "coach-real-200-percent-zoom.png"), fullPage: true });
+  } finally {
+    await browser.close();
+    rmSync(profile, { recursive: true, force: true });
+  }
 });

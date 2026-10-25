@@ -15,7 +15,7 @@ let phase = "environment";
   const appRequire = createRequire(path.join(root, "apps/web/package.json"));
   const cli = appRequire.resolve("prisma/build/index.js");
   const env = { ...process.env, DATABASE_URL: preview.url, DATABASE_URL_UNPOOLED: preview.directUrl };
-  const run = (command) => execFileSync(process.execPath, [cli, "migrate", command, "--schema", path.join(root, "packages/db/prisma/schema.prisma")], { env, encoding: "utf8", stdio: "pipe", timeout: 120_000 });
+  const run = (command) => execFileSync(process.execPath, [cli, ...(command === "generate" ? ["generate"] : ["migrate", command]), "--schema", path.join(root, "packages/db/prisma/schema.prisma")], { env, encoding: "utf8", stdio: "pipe", timeout: 120_000 });
   const baselineOnly = new Set(["20261018120000_milestone_lifecycle", "20261019130000_milestone_reconciliation_jobs"]);
   phase = "status";
   try { run("status"); } catch (error) {

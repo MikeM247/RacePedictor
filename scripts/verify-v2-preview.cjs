@@ -4,6 +4,7 @@
 // Never print credentials, provider response bodies, or owner identifiers.
 const { createRequire } = require("node:module");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 function fail(code) {
   const error = new Error(code);
@@ -15,14 +16,15 @@ async function main() {
   if (process.env.VERCEL_ENV !== "preview" || process.env.VERCEL_GIT_COMMIT_REF !== "work") {
     fail("REQUIRES_WORK_PREVIEW");
   }
-  const directHost = "ep-tiny-band-b1j73wgx.c-5.eu-central-1.aws.neon.tech";
-  const pooledHost = "ep-tiny-band-b1j73wgx-pooler.c-5.eu-central-1.aws.neon.tech";
-  if (new URL(process.env.DATABASE_URL).hostname !== pooledHost) fail("WRONG_POOLED_ENDPOINT");
-  if (new URL(process.env.DATABASE_URL_UNPOOLED).hostname !== directHost) fail("WRONG_DIRECT_ENDPOINT");
+  const moduleUrl = (file) => pathToFileURL(path.resolve(__dirname, file)).href;
+  const { readPreviewDatabaseOverride } = await import(moduleUrl("../packages/db/src/cloud/preview-database-configuration.js"));
+  const preview = readPreviewDatabaseOverride();
+  if (!process.env.RACEPREDICTOR_OWNER_ATHLETE_ID || !process.env.RACEPREDICTOR_OWNER_AUTH_SUBJECT) fail("OWNER_CONFIGURATION_MISSING");
 
   const appRequire = createRequire(path.resolve(__dirname, "../apps/web/package.json"));
   const { PrismaClient } = appRequire("@prisma/client");
-  const prisma = new PrismaClient();
+  const { getCloudPrismaClient } = await import(moduleUrl("../packages/db/src/cloud/prisma-client.js"));
+  const prisma = getCloudPrismaClient();
   try {
     await prisma.$queryRawUnsafe("SELECT 1");
     const ownerGrants = await prisma.athleteAccess.count({
@@ -33,10 +35,17 @@ async function main() {
       },
     });
     if (ownerGrants !== 1) fail("OWNER_GRANT_MISSING");
-    console.log("[preview-smoke] Isolated pooled database and owner grant passed; direct endpoint verified.");
+    if (await prisma.activity.count() !== 0) fail("PREVIEW_HAS_UNEXPECTED_ACTIVITY_DATA");
+    console.log("[preview-smoke] Application client reached the isolated pooled database: one owner grant, zero activities.");
   } finally {
     await prisma.$disconnect();
   }
+
+  const direct = new PrismaClient({ datasources: { db: { url: preview.directUrl } } });
+  try {
+    await direct.$queryRawUnsafe("SELECT 1");
+    console.log("[preview-smoke] Isolated direct database connection passed.");
+  } finally { await direct.$disconnect(); }
 
   if (!process.env.OPENAI_API_KEY?.trim()) fail("OPENAI_KEY_MISSING");
   const response = await fetch("https://api.openai.com/v1/responses", {

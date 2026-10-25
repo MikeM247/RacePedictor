@@ -354,6 +354,7 @@ model Athlete {
   weeklyFeatures          WeeklyFeature[]
   routeSignatures         RouteSignature[]
   providerConnections     ProviderConnection[]
+  coachAiConfiguration   CoachAiConfiguration?
   providerOAuthAttempts   ProviderOAuthAttempt[]
   webhookEvents           ProviderWebhookEvent[]
   ingestionJobs           IngestionJob[]

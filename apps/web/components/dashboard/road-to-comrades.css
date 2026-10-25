@@ -21,9 +21,9 @@
 .road-hero-target { margin: 8px 0 0; color: #fff; font-size: clamp(25px, 3vw, 37px); font-weight: 700; line-height: 1.04; text-transform: uppercase; letter-spacing: -.01em; }
 .road-hero-date { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0 0; color: #f0f5fa; font-size: 13px; font-weight: 700; letter-spacing: .23em; line-height: 1.5; text-transform: uppercase; }
 .road-hero-date span { border-left: 2px solid var(--road-lime); padding-left: 16px; }
-.road-orbit-launch { position: absolute; z-index: 2; top: 78px; right: clamp(18px, 3vw, 54px); display: grid; justify-items: center; gap: 4px; width: 138px; color: #f3fbff; text-decoration: none; text-align: center; }
-.road-orbit-image { display: block; width: auto; height: 186px; object-fit: contain; }
-.road-orbit-fallback { display: grid; place-items: center; width: 124px; height: 186px; border: 1px solid #45dff4; border-radius: 50% 50% 12px 12px; background: radial-gradient(ellipse at center, #174058 0%, #071725 75%); color: #dffbff; font-size: 40px; font-weight: 700; }
+.road-orbit-launch { position: absolute; z-index: 2; bottom: 24px; right: clamp(18px, 3vw, 54px); display: grid; justify-items: center; gap: 4px; width: 166px; color: #f3fbff; text-decoration: none; text-align: center; }
+.road-orbit-image { display: block; width: auto; height: 248px; object-fit: contain; }
+.road-orbit-fallback { display: grid; place-items: center; width: 165px; height: 248px; border: 1px solid #45dff4; border-radius: 50% 50% 12px 12px; background: radial-gradient(ellipse at center, #174058 0%, #071725 75%); color: #dffbff; font-size: 40px; font-weight: 700; }
 .road-orbit-launch-label { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 6px; padding: 4px 12px; border: 1px solid #57d9f2; border-radius: 999px; background: #061725ed; color: #e4faff; font-size: 13px; font-weight: 700; white-space: nowrap; }
 .road-orbit-launch:hover .road-orbit-launch-label { background: #102b3d; color: #fff; }
 .road-orbit-launch:focus-visible { border-radius: 8px; outline: 3px solid #bbf359; outline-offset: 4px; }
@@ -170,9 +170,9 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-now strong { grid-column: 3; grid-row: 1; justify-self: start; margin: 0; padding: 2px 4px; background: #071725; }
   .road-now > span { grid-column: 2; grid-row: 1; margin-top: 0; }
   .road-timeline-group--ahead::after { display: none; }
-  .road-orbit-launch { top: 70px; right: 18px; width: 110px; }
-  .road-orbit-image { height: 123px; }
-  .road-orbit-fallback { width: 82px; height: 123px; font-size: 30px; }
+  .road-orbit-launch { bottom: 48px; right: 18px; width: 110px; }
+  .road-orbit-image { height: 164px; }
+  .road-orbit-fallback { width: 110px; height: 164px; font-size: 30px; }
   .road-orbit-launch-label { min-height: 44px; padding-inline: 8px; font-size: 11px; }
 }
 @media (max-width: 767px) {
@@ -182,6 +182,7 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-layout .dashboard-nav-secondary a { color: #f4f7fa; }
   .road-home-scene { padding-bottom: 12px; }
   .road-hero { min-height: 330px; }
+  .road-hero.road-hero--with-orbit { min-height: 370px; }
   .road-hero-image { object-position: 67% 30%; }
   .road-hero-shade { background: linear-gradient(180deg, #04101c34 0%, transparent 30%, #04101c24 65%, #061524b8 100%), linear-gradient(90deg, #04101cbf 0%, #04101c75 48%, #04101c18 100%); }
   .road-hero-header { align-items: center; gap: 4px 8px; padding: calc(78px + env(safe-area-inset-top)) 16px 0; }
@@ -189,7 +190,7 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-hero-greeting p { font-size: 12px; }
   .road-hero-content { padding: 30px 17px 36px; }
   .road-hero--with-orbit .road-hero-content { padding-right: 122px; }
-  .road-orbit-launch { top: calc(72px + env(safe-area-inset-top)); right: 8px; width: 105px; }
+  .road-orbit-launch { right: 8px; width: 110px; }
   .road-orbit-launch-label { min-height: 44px; padding-inline: 6px; font-size: 10px; }
   .road-hero-content .eyebrow { font-size: 10px; margin-bottom: 8px; }
   .road-hero-content h2 { font-size: clamp(20px, 6vw, 27px); }
@@ -222,7 +223,7 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-hero { min-height: 315px; }
   .road-hero-header { align-items: flex-start; }
   .road-hero-content { padding-inline: 14px; }
-  .road-hero--with-orbit .road-hero-content { padding-right: 116px; }
+  .road-hero--with-orbit .road-hero-content { padding-right: 122px; }
   .road-stops, .road-timeline-group > .road-stops { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; grid-auto-columns: auto; gap: 9px; }
   .road-stop { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; justify-items: start; gap: 2px 9px; padding: 0; text-align: left; }
   .road-stop::before { display: none; }

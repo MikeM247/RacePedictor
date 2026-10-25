@@ -37,7 +37,7 @@ function OrbitLaunch({ coachAvailable, imageAvailable, onImageError }: { coachAv
   if (!coachAvailable) return null;
   return <Link className="road-orbit-launch" href="/dashboard/coach" aria-label="Talk to Orbit">
     {imageAvailable
-      ? <Image className="road-orbit-image" src="/images/orbit-coach-full.webp" alt="" width={124} height={186} sizes="(max-width: 767px) 82px, 124px" priority onError={onImageError} />
+      ? <Image className="road-orbit-image" src="/images/orbit-coach-full.webp" alt="" width={165} height={248} sizes="(max-width: 1099px) 110px, 166px" priority onError={onImageError} />
       : <span className="road-orbit-fallback" aria-hidden="true">O</span>}
     <span className="road-orbit-launch-label">Talk to Orbit <span aria-hidden="true">→</span></span>
   </Link>;
@@ -138,8 +138,9 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
       }
 
       const contentBottom = content.getBoundingClientRect().bottom - sceneBox.top;
-      const orbitBottom = orbitLaunch ? orbitLaunch.getBoundingClientRect().bottom - sceneBox.top : 0;
-      const naturalHeroHeight = Math.max(350, contentBottom + 20, orbitBottom + 12);
+      const orbitHeight = orbitLaunch?.getBoundingClientRect().height ?? 0;
+      const headerBottom = date.getBoundingClientRect().bottom - sceneBox.top;
+      const naturalHeroHeight = Math.max(350, contentBottom + 20, orbitHeight + headerBottom + 40);
       const idealPanelTop = 115 + 499 * sceneWidth / 1672;
       collapsedPanelHeight = panel.getBoundingClientRect().height;
       const availableHeight = Math.max(0, window.innerHeight - scenePageTop);

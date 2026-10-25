@@ -157,7 +157,12 @@ test("Home reflows without clipping at required viewport widths", async ({ page 
       const orbitImage = page.locator(".road-orbit-image");
       await expect(orbitImage).toBeVisible();
       const box = await orbitImage.boundingBox();
-      expect(box?.height).toBe(viewport.width < 768 ? 123 : 186);
+      expect(box?.height).toBe(viewport.width < 1100 ? 164 : 248);
+      const launcher = await page.getByRole("link", { name: "Talk to Orbit" }).boundingBox();
+      const journey = await page.locator(".road-journey").boundingBox();
+      expect(launcher!.y + launcher!.height).toBeLessThanOrEqual(journey!.y);
+      const label = await page.locator(".road-orbit-launch-label").boundingBox();
+      expect(label?.height).toBe(44);
     }
   }
   await page.setViewportSize({ width: 390, height: 844 });

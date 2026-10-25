@@ -37,6 +37,10 @@ test("cloud persistence models are present and athlete scoped", () => {
     "SyncChange",
     "PairedDevice",
     "SecondBrainSnapshot",
+    "CoachConversation",
+    "CoachTurn",
+    "CoachMessage",
+    "CoachUsageBucket",
   ];
 
   for (const model of requiredModels) modelBlock(model);
@@ -187,4 +191,19 @@ test("future session amendments use tenant-scoped append-only projections", asyn
   assert.match(migration, /jsonb_array_elements/u, "existing approved plan workouts must be backfilled");
   assert.match(migration, /ON CONFLICT \("athleteId", "planId", "sessionId"\) DO NOTHING/u);
   assert.doesNotMatch(migration, /\bDROP\s+(TABLE|COLUMN)\b/iu);
+});
+
+test("coach conversations are athlete scoped and exclude provider credentials and sync publication", () => {
+  for (const model of ["CoachConversation", "CoachTurn", "CoachMessage", "CoachUsageBucket"]) {
+    assert.match(modelBlock(model), /\bathleteId\s+String\b/u, `${model} must be athlete scoped`);
+    assert.doesNotMatch(modelBlock(model), /^\s*(accessToken|refreshToken|rawBody|vaultPath|markdown)\s+/imu);
+  }
+  assert.match(modelBlock("CoachConversation"), /@relation\(fields: \[athleteId\], references: \[id\]/u);
+  assert.match(modelBlock("CoachConversation"), /\bathleteId\s+String\s+@unique/u);
+  assert.match(modelBlock("CoachTurn"), /@@unique\(\[conversationId, generation, clientTurnId\]\)/u);
+  assert.match(modelBlock("CoachMessage"), /@@unique\(\[conversationId, generation, sequence\]\)/u);
+  assert.match(modelBlock("CoachMessage"), /@relation\(fields: \[turnId, athleteId, conversationId, generation\]/u);
+  assert.match(modelBlock("CoachUsageBucket"), /@@unique\(\[athleteId, windowKind, windowStart\]\)/u);
+  assert.doesNotMatch(modelBlock("CoachConversation"), /SyncChange|SecondBrainSnapshot/u);
+  assert.doesNotMatch(modelBlock("CoachMessage"), /SyncChange|SecondBrainSnapshot/u);
 });

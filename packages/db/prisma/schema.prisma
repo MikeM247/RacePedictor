@@ -372,6 +372,10 @@ model Athlete {
   athleteFeedback         ActivityAthleteFeedback[]
   activityReflections     ActivityReflection[]
   wellbeingCheckIns       DailyWellbeingCheckIn[]
+  coachConversations      CoachConversation[]
+  coachMessages           CoachMessage[]
+  coachTurns              CoachTurn[]
+  coachUsageBuckets       CoachUsageBucket[]
   @@map("athletes")
 }
 
@@ -933,4 +937,96 @@ model OperationalUsageBucket {
   @@unique([metric, windowStart])
   @@index([metric, windowEnd])
   @@map("operational_usage_buckets")
+}
+
+model CoachConversation {
+  id                      String         @id @default(cuid())
+  athleteId               String         @unique
+  generation              Int            @default(1)
+  sequence                Int            @default(0)
+  lastReflectedActivityId String?
+  lastReflectedActivityAt DateTime?      @db.Timestamptz(3)
+  createdAt               DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime       @updatedAt @db.Timestamptz(3)
+  athlete                 Athlete        @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  messages                CoachMessage[]
+  turns                   CoachTurn[]
+
+  @@unique([id, athleteId])
+  @@map("coach_conversations")
+}
+
+model CoachTurn {
+  id                    String            @id @default(cuid())
+  athleteId             String
+  conversationId        String
+  generation            Int
+  clientTurnId          String
+  requestHash           String
+  topic                 String
+  contextFingerprint    String
+  contextSnapshot       Json
+  state                 String            @default("processing")
+  attemptCount          Int               @default(1)
+  leaseToken            String?
+  leaseExpiresAt        DateTime?         @db.Timestamptz(3)
+  lastRetryId           String?
+  retryRequestHash      String?
+  safeErrorCode         String?
+  model                 String?
+  providerRequestId     String?
+  providerInputTokens   Int?
+  providerOutputTokens  Int?
+  providerLatencyMs     Int?
+  createdAt             DateTime          @default(now()) @db.Timestamptz(3)
+  completedAt           DateTime?         @db.Timestamptz(3)
+  updatedAt             DateTime          @updatedAt @db.Timestamptz(3)
+  athlete               Athlete           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  conversation          CoachConversation @relation(fields: [conversationId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  messages              CoachMessage[]
+
+  @@unique([conversationId, generation, clientTurnId])
+  @@unique([id, athleteId, conversationId, generation])
+  @@index([athleteId, conversationId, generation, state, createdAt(sort: Desc)])
+  @@map("coach_turns")
+}
+
+model CoachMessage {
+  id                 String            @id @default(cuid())
+  athleteId          String
+  conversationId     String
+  turnId             String
+  generation         Int
+  sequence           Int
+  role               String
+  text               String
+  topic              String?
+  selectedRecordType String?
+  selectedRecordId   String?
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  athlete            Athlete           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  conversation       CoachConversation @relation(fields: [conversationId, athleteId], references: [id, athleteId], onDelete: Cascade)
+  turn               CoachTurn         @relation(fields: [turnId, athleteId, conversationId, generation], references: [id, athleteId, conversationId, generation], onDelete: Cascade)
+
+  @@unique([conversationId, generation, sequence])
+  @@index([athleteId, conversationId, generation, sequence(sort: Desc)])
+  @@map("coach_messages")
+}
+
+model CoachUsageBucket {
+  id           String   @id @default(cuid())
+  athleteId    String
+  windowKind   String
+  windowStart  DateTime @db.Timestamptz(3)
+  windowEnd    DateTime @db.Timestamptz(3)
+  attemptCount Int      @default(0)
+  inputTokens  BigInt   @default(0)
+  outputTokens BigInt   @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  athlete      Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, windowKind, windowStart])
+  @@index([athleteId, windowKind, windowEnd])
+  @@map("coach_usage_buckets")
 }

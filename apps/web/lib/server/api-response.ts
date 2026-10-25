@@ -10,6 +10,7 @@ export type ApiErrorCode =
   | "CONFLICT"
   | "NOT_FOUND"
   | "UNAVAILABLE"
+  | "RATE_LIMITED"
   | "OAUTH_STATE_INVALID"
   | "OAUTH_STATE_EXPIRED"
   | "OAUTH_STATE_REPLAYED"
@@ -24,13 +25,15 @@ export class ApiHttpError extends Error {
   readonly status: number;
   readonly code: ApiErrorCode;
   readonly details: unknown[];
+  readonly headers: HeadersInit;
 
-  constructor(status: number, code: ApiErrorCode, message: string, details: unknown[] = []) {
+  constructor(status: number, code: ApiErrorCode, message: string, details: unknown[] = [], headers: HeadersInit = {}) {
     super(message);
     this.name = "ApiHttpError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.headers = headers;
   }
 }
 
@@ -42,7 +45,7 @@ export function failure(error: unknown) {
   if (error instanceof ApiHttpError) {
     return Response.json({
       error: { code: error.code, message: error.message, details: error.details },
-    }, { status: error.status });
+    }, { status: error.status, headers: error.headers });
   }
 
   if (error instanceof Error && (error as { code?: unknown }).code === "CONFIGURATION_ERROR") {

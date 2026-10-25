@@ -70,8 +70,10 @@ test("creation requires confirmation, keeps unknown facts absent, persists acros
   const saved = (await (await page.request.get("/api/v1/coaching/race-history")).json()).data.items[0];
   expect(saved.raceDate).toBeUndefined(); expect(saved.elapsedTimeSeconds).toBeUndefined();
   await page.goto("/dashboard"); await expect(page.locator(".road-stop--achieved", { hasText: "My confirmed milestone" })).toBeVisible();
-  await page.getByRole("link", { name: "Manage milestones", exact: true }).click();
-  await expect(page).toHaveURL(/settings\?section=milestones#milestones/);
+  await page.getByRole("navigation", { name: "Secondary navigation" }).getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/settings/u);
+  await page.locator("summary", { hasText: /^Milestones$/ }).click();
+  await expect(page.getByRole("heading", { name: "Milestones", exact: true })).toBeVisible();
 });
 test("assign change unlink and named removal retain official facts and the original recorded activities", async ({ page }) => {
   await setup(page); await page.goto("/dashboard/settings?section=milestones");

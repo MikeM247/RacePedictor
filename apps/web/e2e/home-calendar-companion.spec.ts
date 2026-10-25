@@ -46,7 +46,7 @@ async function mockCompanion(page: Page, options: { planned?: Array<Omit<typeof 
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Fixture freshness unavailable" } }) }));
   await page.route("**/api/v1/wellbeing-check-ins?**", (route) => route.fulfill(reply({ items: [{ id: "companion-checkin", timezone: "Africa/Johannesburg", status: "saved", answers: { overallFeeling: "good" }, revision: 1 }] })));
   await page.route("**/api/v1/coaching/race-history", route => route.fulfill(reply({ items: [], publishedAt: null })));
-  await page.route("**/api/v1/dashboard/appearance", route => route.fulfill(reply({ heroImageUrl: "/road-to-comrades.webp" })));
+  await page.route("**/api/v1/dashboard/appearance", route => route.fulfill(reply({ heroImageUrl: "/road-to-comrades-v2.webp" })));
 }
 
 test("mixed multiple records open independently with original/history and feedback intact", async ({ page }) => {
@@ -455,21 +455,25 @@ test("logo-only nav and mobile month reflow at required widths and 200 percent",
   }
 });
 
-test("Home keeps approved goal, schedule and recent-run summaries concise", async ({ page }) => {
+test("Home keeps only the approved goal, complete milestone journey and Coach entry", async ({ page }) => {
   const writes = recordApplicationWrites(page);
+  const requests: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/api/v1/")) requests.push(new URL(request.url()).pathname); });
   await mockCompanion(page, { planned: [sessions[0]] });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/dashboard");
-  await expect(page.locator(".home-group")).toHaveCount(3);
+  await expect(page.locator(".home-group")).toHaveCount(1);
   await expect(page.getByRole("heading", { name: "Approved autumn goal" })).toBeVisible();
   await expect(page.locator(".road-hero-date")).toContainText("21,1 km");
   await expect(page.locator(".road-timeline-group--ahead")).toContainText("Target 55:00");
-  await page.locator(".road-session-details summary").click();
-  await expect(page.getByText("Run easily for 45 minutes.")).toBeVisible();
-  await expect(page.locator(".home-activity")).toContainText("Recorded run 2");
-  await expect(page.locator(".home-activity")).not.toContainText(/Plan version|Processing|Checking review|Heart-rate data was unavailable/);
-  await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(3);
+  await expect(page.locator(".road-timeline-group--ahead .road-stop-title")).toHaveCount(2);
+  await expect(page.locator(".home-workout-surface, .home-activity, .today-coach-main, .road-daily-check-in, .coach-composer")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "View plan" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Manage milestones" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Coach", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Talk to Orbit" })).toHaveAttribute("href", "/dashboard/coach");
   await expect(page.getByRole("link", { name: "Race Predictor Home", exact: true })).toHaveText("");
+  expect(requests.some((url) => /chat|wellbeing-check-ins|coaching\/today|activities/u.test(url))).toBe(false);
   await page.screenshot({ path: path.join(e2eRoot, "companion-home-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expectAxeClean(page, "mobile companion Home");
@@ -479,6 +483,5 @@ test("Home keeps approved goal, schedule and recent-run summaries concise", asyn
     const layout = await assertHomeLayout(page, test.info(), "companion-home");
     expect(layout.horizontalOverflow, "The photographic journey must reflow without horizontal scrolling").toBe(false);
   }
-  await expect(page.getByRole("link", { name: "Review run →" })).toBeVisible();
   expectNoApplicationWrites(writes);
 });

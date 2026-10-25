@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## V2 conversation-led Coach (22 October 2026)
+
+The approved AI Companion direction and mature humanoid male ORBIT likeness now guide the online-first V2 Coach implementation. The [design handoff](plans/V2_AI_COMPANION_DESIGN_HANDOFF.md) pins source artwork and layout; [the first-iteration architecture](plans/V2_FIRST_ITERATION_ARCHITECTURE_IMPLEMENTATION_PLAN.md) describes the conversation service, persistence, APIs, release controls and verification. Shared next-session resolution remains in core and is reused by the Today and Coach views. One authenticated athlete conversation uses a bounded, refreshed training context and server-side OpenAI complete replies. Chat history is retained until explicitly cleared and cannot mutate plans, sessions, completion, goals or wellbeing. The additive persistence remains outside device sync and Second Brain. Local Home/tools remain intact; online UI and generation are independently gated off by default. See [ADR 0010](adr/0010-v2-conversation-led-coach.md).
+
 ## Milestone management (21 October 2026)
 
 Settings composes one MilestoneManager and native-dialog achievement/target editors around existing race-history CRUD, activity search and verified goal-context reads. Core owns validation/computation of `milestone-change-request.v1`. Requests are unapproved, athlete-keyed session-storage drafts pinned to plan ID/version/revision/approval hash, goal identity and base milestones. Plan revalidates the current base before handing the complete requested list to the existing planning workflow; it never directly mutates an approved plan. Online users can copy/download for the paired local workflow. No API or database migration is added. Local activity list/detail use the same configured athlete as milestone writes. See [the role handoff and architecture](plans/MILESTONE_MANAGEMENT.md).

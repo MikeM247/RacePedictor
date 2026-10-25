@@ -3,21 +3,34 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { e2eRoot } from "./fixture-paths.ts";
 
-/** The owner-approved photographic journey scrolls vertically on phones. */
+/** Check the minimal Home surface and capture its responsive geometry. */
 export async function assertHomeLayout(page: Page, info: TestInfo, label: string) {
   await page.evaluate(async () => { await document.fonts.ready; window.scrollTo({ top: 0, behavior: "instant" }); });
   const layout = await page.evaluate(() => {
     const rect = (selector: string) => {
-      const box = document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
       return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, width: box.width, height: box.height };
     };
-    const groups = [...document.querySelectorAll<HTMLElement>(".home-group")].map((element) => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom }));
-    const nav = document.querySelector<HTMLElement>(".dashboard-nav-primary")!;
-    const viewportBottom = window.innerWidth < 768 ? nav.getBoundingClientRect().top : window.innerHeight;
-    const goal = rect(".road-hero"), scene = rect(".road-home-scene"), title = rect(".road-hero-content h2"), photo = rect(".road-hero-image"), photoFrame = rect(".road-hero-image-frame"), photoContainer = rect(".road-hero-photo"), heroFooter = rect(".road-hero-footer"), milestone = rect(".road-journey"), actions = rect(".road-journey-actions"), date = rect(".road-hero-greeting p"), today = rect(".home-workout-surface"), activity = rect(".home-activity .home-session-summary");
-    const controls = [...document.querySelectorAll<HTMLElement>(".home-group a, .home-group button, .road-session-details summary")].filter((element) => element.getBoundingClientRect().height > 0).map((element) => element.getBoundingClientRect().height);
-    return { width: window.innerWidth, viewportRight: document.documentElement.clientWidth, viewportBottom, main: rect(".dashboard-main"), nav: rect(".dashboard-nav"), brand: rect(".dashboard-brand"), settings: rect(".dashboard-nav-secondary a"), greeting: rect(".road-hero-greeting"), date, goal, scene, title, photo, photoFrame, photoContainer, heroFooter, milestone, actions, today, activity, groups, controls,
-      goalAndTodayFit: today.bottom <= viewportBottom, allGroupsFit: Math.max(activity.bottom, today.bottom) <= viewportBottom, horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1 };
+    const nav = rect(".dashboard-nav");
+    return {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      viewportRight: document.documentElement.clientWidth,
+      main: rect(".dashboard-main"),
+      nav,
+      greeting: rect(".road-hero-greeting"),
+      goal: rect(".road-hero-content"),
+      scene: rect(".road-home-scene"),
+      photo: rect(".road-hero-image-frame"),
+      orbit: rect(".road-orbit-launch"),
+      journey: rect(".road-journey"),
+      groups: document.querySelectorAll(".home-group").length,
+      milestones: document.querySelectorAll(".road-stop").length,
+      horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      journeyInView: (() => { const element = document.querySelector<HTMLElement>(".road-journey"); return element ? element.getBoundingClientRect().bottom <= window.innerHeight : false; })(),
+    };
   });
   await fs.mkdir(e2eRoot, { recursive: true });
   const prefix = path.join(e2eRoot, `${label}-${layout.width}`);
@@ -25,45 +38,11 @@ export async function assertHomeLayout(page: Page, info: TestInfo, label: string
   await page.screenshot({ path: `${prefix}.png`, fullPage: true, style: "nextjs-portal { display: none; }" });
   await info.attach(`${label}-${layout.width}-fit`, { body: JSON.stringify(layout, null, 2), contentType: "application/json" });
   expect(layout.horizontalOverflow).toBe(false);
-  expect(layout.title.right).toBeLessThanOrEqual((layout.scene.left + layout.scene.right) / 2 + 1);
-  if (layout.width >= 1100) {
-    expect(layout.photoFrame.width / (layout.scene.right - layout.scene.left)).toBeCloseTo(0.9, 2);
-    expect(Math.abs((layout.photoFrame.left + layout.photoFrame.right) / 2 - (layout.scene.left + layout.scene.right) / 2)).toBeLessThanOrEqual(1);
-    expect((layout.photoFrame.right - layout.photoFrame.left) / (layout.photoFrame.bottom - layout.photoFrame.top)).toBeCloseTo(1672 / 941, 2);
-    const ridgeY = layout.photoFrame.top + 240 * layout.photoFrame.width / 1672;
-    expect(Math.abs(ridgeY - layout.scene.top - (layout.date.bottom - layout.scene.top + 12))).toBeLessThanOrEqual(1);
-  } else expect(layout.photo.bottom).toBeLessThanOrEqual(layout.goal.bottom + 1);
-  expect(Math.abs(layout.photoContainer.left - layout.scene.left)).toBeLessThanOrEqual(1);
-  expect(Math.abs(layout.photoContainer.right - layout.scene.right)).toBeLessThanOrEqual(1);
-  if (layout.width < 768) {
-    expect(layout.photo.top).toBe(0);
-    expect(layout.brand.top).toBeGreaterThanOrEqual(layout.photo.top);
-    expect(layout.settings.bottom).toBeLessThan(layout.greeting.top);
-    expect(layout.greeting.top - layout.nav.bottom).toBeGreaterThanOrEqual(8);
-  }
-  // Keep the milestone panel after the goal copy while the photograph remains decorative behind it.
-  expect(layout.milestone.top).toBeGreaterThanOrEqual(layout.heroFooter.bottom + 16);
-  if (layout.width >= 1100) {
-    expect(layout.milestone.bottom).toBeLessThanOrEqual(layout.viewportBottom);
-    expect(layout.actions.bottom).toBeLessThanOrEqual(layout.viewportBottom - 15);
-  }
-  expect(layout.milestone.left - layout.scene.left).toBeGreaterThanOrEqual(8);
-  expect(layout.scene.right - layout.milestone.right).toBeGreaterThanOrEqual(8);
-  expect(layout.groups).toHaveLength(3);
-  expect(layout.groups[1].top - layout.groups[0].bottom).toBeGreaterThanOrEqual(12);
-  if (layout.width >= 1100) {
-    expect(layout.today.left - layout.activity.right).toBeGreaterThanOrEqual(12);
-    expect(Math.abs(layout.activity.top - layout.today.top)).toBeLessThanOrEqual(1);
-  } else expect(layout.groups[2].top - layout.groups[1].bottom).toBeGreaterThanOrEqual(12);
-  for (const height of layout.controls) expect(height).toBeGreaterThanOrEqual(44);
-  await page.locator(".home-activity a").last().evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));
-  const link = await page.locator(".home-activity a").last().boundingBox();
-  expect(link!.y).toBeGreaterThanOrEqual(layout.width < 768 ? 64 : 0);
-  expect(link!.y + link!.height).toBeLessThanOrEqual(layout.viewportBottom + 1);
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  expect(layout.groups).toBe(1);
+  expect(layout.journey).not.toBeNull();
+  if (layout.width >= 1100 && layout.height >= 768) expect(layout.journeyInView).toBe(true);
   return layout;
 }
-
 /** Check visible connections rather than only counting the milestone markers. */
 export async function assertRoadTimelineLayout(page: Page) {
   await page.evaluate(async () => { await document.fonts.ready; });

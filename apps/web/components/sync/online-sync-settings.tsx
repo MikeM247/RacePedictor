@@ -3,6 +3,7 @@
 import { DashboardAppearanceSettings } from "../dashboard/dashboard-appearance-settings";
 import { MilestoneSettings } from "../dashboard/milestone-settings";
 import { CoachAiSettings } from "./coach-ai-settings";
+import { CoachHistorySettings } from "../coaching/coach-history-settings";
 
 import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -45,7 +46,7 @@ type StravaConnection = {
   updatedAt: string;
 };
 
-type SettingsGroupName = "connections" | "devices" | "privacy" | "operations" | "appearance" | "milestones" | "coach";
+type SettingsGroupName = "coach" | "connections" | "devices" | "privacy" | "operations" | "appearance" | "milestones";
 
 function SettingsGroup({
   name,
@@ -317,7 +318,10 @@ export function OnlineSyncSettings() {
         {returnTo !== "/dashboard/settings" ? <div className="coach-actions"><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></div> : null}
         <section className="coaching-content coaching-content--settings">
           <TrainingTools />
-          <SettingsGroup name="coach" title="AI coach" open={settingsGroup === "coach"} onToggle={setSettingsGroup}><CoachAiSettings /></SettingsGroup>
+          <SettingsGroup name="coach" title="AI coach" open={settingsGroup === "coach"} onToggle={setSettingsGroup}>
+            <CoachAiSettings />
+            <CoachHistorySettings />
+          </SettingsGroup>
           <SettingsGroup name="milestones" title="Milestones" open={settingsGroup === "milestones"} onToggle={setSettingsGroup}><MilestoneSettings /></SettingsGroup>
           <SettingsGroup name="appearance" title="Appearance" open={settingsGroup === "appearance"} onToggle={setSettingsGroup}><DashboardAppearanceSettings /></SettingsGroup>
           <SettingsGroup name="connections" title="Connections" open={settingsGroup === "connections"} onToggle={setSettingsGroup}>

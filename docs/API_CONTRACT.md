@@ -14,6 +14,7 @@ The owner-scoped `GET /api/v1/activities/:activityId/pace-comparison` returns re
   - `packages/core/src/contracts/weekly.ts`
   - `packages/core/src/contracts/imports.ts`
   - `packages/core/src/contracts/coaching.ts`
+  - `packages/core/src/contracts/coach-chat.ts`
 
 ## Versioning & Compatibility Policy (v1)
 - Additive-only for existing endpoints and fields.
@@ -249,9 +250,22 @@ The paired-device `GET /api/v1/sync/device/wellbeing-check-ins` endpoint supplie
 
 Online upload clients should use `POST /api/v1/imports/upload/initiate` to obtain a short-lived athlete-scoped R2 PUT URL and required headers, then `POST /api/v1/imports/upload/complete` with the checksum and immutable import identity. The legacy multipart endpoint remains available for smaller uploads and uses the same cloud normalizer. Uploads are limited to 15 MiB, and CSV normalization is bounded to 100 rows per batch.
 
-
 ### Online AI coach settings
 - `GET /api/v1/coaching/ai-settings`: authenticated owner and active athlete; returns effective provider/model, revision, and booleans for server credential presence.
 - `PUT /api/v1/coaching/ai-settings`: accepts `{provider, modelId, expectedRevision}`; saves atomically after live compatible-model validation and returns 409 on a revision conflict. Credentials and arbitrary URLs are never accepted.
 - `GET /api/v1/coaching/ai-models?provider=openai|openrouter`: returns selectable compatible models plus `stale`; OpenRouter catalog results are cached for 15 minutes. A stale catalog is display-only and cannot validate a changed selection.
 - Existing `POST /api/v1/activities/:activityId/coach-review` remains bodyless-compatible. Regeneration accepts `{regenerate:true, expectedReviewRevision}`; a stale review revision returns 409.
+
+## Conversation-led Coach (V2 first iteration)
+
+The online owner-session Coach API uses strict Zod contracts in `packages/core/src/contracts/coach-chat.ts`. All responses set `Cache-Control: private, no-store`. Message text is never placed in action URLs.
+
+| Method and route | Contract and behavior |
+| --- | --- |
+| `GET /api/v1/coaching/chat/context?topic=&recordType=&recordId=` | Returns current source states, effective context, deterministic opening, semantic fingerprint and application-built actions. Read-only; no provider call. |
+| `GET /api/v1/coaching/chat/conversation?before={sequence}` | Returns generation/sequence, latest forty messages, current turn state and older-page availability. Read-only. |
+| `POST /api/v1/coaching/chat/turns` | Strict body: `clientTurnId`, expected generation/sequence, bounded text, topic, nullable selected record and context fingerprint. Persists one user message before provider generation. |
+| `POST /api/v1/coaching/chat/turns/{turnId}/retry` | Strict body: expected generation/attempt, new retry UUID and refreshed context fingerprint. Retries the latest failed or expired turn without duplicating the user message. |
+| `DELETE /api/v1/coaching/chat/conversation` | Strict body: expected generation/sequence. Transactionally clears content and advances generation; retains content-free usage counters. |
+
+Mutations require same-origin requests and a signed-in owner session; device/internal credentials are rejected. Actor scope is derived by the server. Requests over 32 KiB, unknown fields, athlete messages over 4,000 characters, and replies over 8,000 characters are rejected. Provider attempts are separately limited to six/minute and sixty/UTC day per athlete; 429 responses include `Retry-After`. The full lifecycle and DTO shapes are in the [architecture implementation plan](plans/V2_FIRST_ITERATION_ARCHITECTURE_IMPLEMENTATION_PLAN.md).

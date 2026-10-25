@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { getCloudPrismaClient } from "../../../../packages/db/src/cloud/prisma-client.js";
 import { ApiHttpError } from "./api-response.ts";
 
-export const DEFAULT_HERO_IMAGE = "/road-to-comrades.webp";
+export const DEFAULT_HERO_IMAGE = "/road-to-comrades-v2.webp";
 const MAX_UPLOAD = 4 * 1024 * 1024;
 type Appearance = { heroImage: Uint8Array; version: string };
 

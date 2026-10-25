@@ -140,10 +140,21 @@ function CoachShell({ page, title, subtitle, meta, children }: {
           <div><p className="eyebrow">Training workspace</p><h1 id={titleId}>{title}</h1><p>{subtitle}</p></div>
           {meta ? <span className="toolbar-context">{meta}</span> : null}
         </header>
+        <CoachReturnBanner />
         <section className={`coaching-content coaching-content--${page}`}>{children}</section>
       </main>
     </div>
   );
+}
+
+function CoachReturnBanner() {
+  const [recovery, setRecovery] = useState<ReturnType<typeof readRecoveryContext>>(null);
+  useEffect(() => {
+    const context = readRecoveryContext(new URLSearchParams(window.location.search).get("recovery"));
+    if (context?.kind === "coach") setRecovery(context);
+  }, []);
+  if (!recovery) return null;
+  return <div className="coach-return-banner"><span>You opened this from your Coach conversation.</span><Link className="button button-secondary" href={recoveryReturnHref(recovery, "/dashboard/coach")}>Return to Coach</Link></div>;
 }
 
 async function planApiRequest<T extends JsonRecord>(url: string, schema: { safeParse(value: unknown): { success: true; data: { data: T } } | { success: false } }, init?: RequestInit): Promise<T> {

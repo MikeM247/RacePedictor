@@ -39,7 +39,7 @@ function CheckInForm({ draft, status, canSave, message, update, save, close, emb
   </div>;
 }
 
-export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date = localDate(timezone), compact = false, dailyModal = false, refreshKey = 0 }: { timezone?: string; date?: string; compact?: boolean; dailyModal?: boolean; refreshKey?: number }) {
+export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date = localDate(timezone), compact = false, dailyModal = false, refreshKey = 0, onSaved }: { timezone?: string; date?: string; compact?: boolean; dailyModal?: boolean; refreshKey?: number; onSaved?: () => void }) {
   const [entry, setEntry] = useState<CheckIn | null>(null);
   const [draft, setDraft] = useState<SaveDailyWellbeingRequest>({ ...empty, timezone });
   const [open, setOpen] = useState(false);
@@ -127,6 +127,7 @@ export function DailyWellbeingCheckIn({ timezone = "Africa/Johannesburg", date =
       setModalOpen(false);
       setStatus("ready");
       setMessage(statusValue === "skipped" ? "Skipped for today." : "Check-in saved.");
+      onSaved?.();
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Daily check-in could not be saved.");

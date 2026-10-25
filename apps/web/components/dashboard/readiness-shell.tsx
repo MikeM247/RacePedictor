@@ -20,6 +20,7 @@ type ReadinessShellProps = DashboardViewModel & {
   onlineStatusLoading?: boolean;
   onlineStatusError?: string | null;
   onAnalyticsRetry?: () => void;
+  homeLabel?: string;
 };
 
 const formatDate = (iso: string, timezone: string, includeTime = false) => new Intl.DateTimeFormat("en-ZA", {
@@ -45,6 +46,7 @@ export function ReadinessShell({
   onlineStatusLoading = false,
   onlineStatusError = null,
   onAnalyticsRetry,
+  homeLabel = "Home",
 }: ReadinessShellProps) {
   const [timezone, setTimezone] = useState("Africa/Johannesburg");
   const [selectedDistanceM, setSelectedDistanceM] = useState(predictionSummary.targetDistanceM ?? predictionOptions[0]?.targetDistanceM ?? 21_097.5);
@@ -83,9 +85,9 @@ export function ReadinessShell({
   }, [predictionOptions, analyticsLoading]);
 
   return <div className="dashboard-layout home-layout readiness-layout">
-    <DashboardNavigation activePage="readiness" />
+      <DashboardNavigation activePage="readiness" homeLabel={homeLabel} />
     <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="dashboard-page-title">
-      <header className="dashboard-toolbar"><div className="dashboard-toolbar-title"><h1 id="dashboard-page-title">Readiness</h1><p>Current fitness and the evidence behind it</p></div><Link className="text-link" href="/dashboard">Back to Home</Link></header>
+      <header className="dashboard-toolbar"><div className="dashboard-toolbar-title"><h1 id="dashboard-page-title">Readiness</h1><p>Current fitness and the evidence behind it</p></div><Link className="text-link" href="/dashboard">Back to {homeLabel}</Link></header>
       <section className="dashboard-content readiness-content" aria-label="Readiness details">
         <section className="home-evidence" aria-labelledby="readiness-heading">
           <div className="home-evidence-heading"><div><p className="eyebrow">Training evidence</p><h2 id="readiness-heading">Current-fitness estimate</h2></div></div>

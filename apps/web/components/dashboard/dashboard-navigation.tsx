@@ -7,12 +7,13 @@ import { isDashboardPageCurrent, type DashboardPage } from "./dashboard-navigati
 
 type DashboardNavigationProps = {
   activePage: DashboardPage;
+  homeLabel?: string;
 };
 
-export function DashboardNavigation({ activePage }: DashboardNavigationProps) {
+export function DashboardNavigation({ activePage, homeLabel = "Home" }: DashboardNavigationProps) {
   const pathname = usePathname();
   const primaryLinks: Array<{ page: DashboardPage; href: string; label: string }> = [
-    { page: "home", href: "/dashboard", label: "Home" },
+    { page: "home", href: "/dashboard", label: homeLabel },
     { page: "calendar", href: "/dashboard/calendar", label: "Calendar" },
     { page: "readiness", href: "/dashboard/readiness", label: "Readiness" },
   ];

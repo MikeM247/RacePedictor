@@ -1,4 +1,10 @@
-export type RecoveryKind = "home" | "training" | "import";
+export type RecoveryKind = "home" | "coach" | "training" | "import";
+export type CoachRecoveryState = {
+  topic: "reflect" | "prepare" | "general";
+  selectedRecord?: { type: "activity" | "session"; id: string };
+  transcriptAnchorSequence?: number;
+  transcriptScrollTop?: number;
+};
 
 export type RecoveryContext = {
   version: 1;
@@ -24,11 +30,13 @@ export type RecoveryContext = {
   detailScrollY?: number;
   optionalDisclosures?: { telemetry?: boolean; splits?: boolean; route?: boolean };
   issue?: string;
+  /** Bounded Coach presentation state; message text stays in tab-local draft storage. */
+  coach?: CoachRecoveryState;
 };
 
 const storagePrefix = "racepredictor.recovery.v1.";
 const maxAgeMs = 2 * 60 * 60 * 1000;
-const allowedPaths = new Set(["/dashboard", "/dashboard/readiness", "/dashboard/activities", "/dashboard/calendar", "/dashboard/data-quality", "/dashboard/settings"]);
+const allowedPaths = new Set(["/dashboard", "/dashboard/readiness", "/dashboard/activities", "/dashboard/calendar", "/dashboard/plan", "/dashboard/data-quality", "/dashboard/settings"]);
 const ids = /^[A-Za-z0-9_-]{8,96}$/u;
 
 export function safeRecoveryPath(value: string | null | undefined, fallback = "/dashboard/activities") {
@@ -37,10 +45,12 @@ export function safeRecoveryPath(value: string | null | undefined, fallback = "/
     const url = new URL(value, "https://racepredictor.invalid");
     if (url.origin !== "https://racepredictor.invalid" || !allowedPaths.has(url.pathname)) return fallback;
     const result = new URLSearchParams();
-    for (const key of ["activityId", "recovery"] as const) {
+    for (const key of ["activityId", "recovery", "session"] as const) {
       const candidate = url.searchParams.get(key);
-      if (candidate && candidate.length <= 96 && !/[\r\n]/u.test(candidate)) result.set(key, candidate);
+      if (candidate && candidate.length <= 128 && /^[A-Za-z0-9:_-]+$/u.test(candidate)) result.set(key, candidate);
     }
+    const date = url.searchParams.get("date");
+    if (date && /^\d{4}-\d{2}-\d{2}$/u.test(date)) result.set("date", date);
     const source = url.searchParams.get("source");
     if (url.pathname === "/dashboard/data-quality" && (source === "file" || source === "strava")) result.set("source", source);
     return `${url.pathname}${result.size ? `?${result}` : ""}${url.hash === "#readiness" ? url.hash : ""}`;
@@ -55,7 +65,7 @@ export function createRecoveryContext(input: Omit<RecoveryContext, "version" | "
     id: newRecoveryId(),
     createdAt: now,
     expiresAt: now + maxAgeMs,
-    path: safeRecoveryPath(input.path ?? currentPath(), input.kind === "home" ? "/dashboard" : "/dashboard/activities"),
+    path: safeRecoveryPath(input.path ?? currentPath(), input.kind === "home" || input.kind === "coach" ? "/dashboard" : "/dashboard/activities"),
     loadedCursors: safeCursors(input.loadedCursors),
   };
   saveRecoveryContext(context);
@@ -82,6 +92,7 @@ export function readRecoveryContext(id: string | null | undefined): RecoveryCont
       ...parsed,
       path,
       loadedCursors: safeCursors(parsed.loadedCursors),
+      coach: safeCoachRecovery(parsed.coach),
       predictionDistanceM: typeof parsed.predictionDistanceM === "number"
         && Number.isFinite(parsed.predictionDistanceM)
         && parsed.predictionDistanceM >= 1_000
@@ -90,6 +101,30 @@ export function readRecoveryContext(id: string | null | undefined): RecoveryCont
         : undefined,
     } as RecoveryContext;
   } catch { return null; }
+}
+
+function safeCoachRecovery(value: unknown): CoachRecoveryState | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.topic !== "reflect" && candidate.topic !== "prepare" && candidate.topic !== "general") return undefined;
+  const record = candidate.selectedRecord && typeof candidate.selectedRecord === "object" && !Array.isArray(candidate.selectedRecord)
+    ? candidate.selectedRecord as Record<string, unknown>
+    : null;
+  const selectedRecord = record && (record.type === "activity" || record.type === "session")
+    && typeof record.id === "string" && /^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/u.test(record.id)
+    ? { type: record.type, id: record.id } as CoachRecoveryState["selectedRecord"]
+    : undefined;
+  const transcriptAnchorSequence = Number.isSafeInteger(candidate.transcriptAnchorSequence)
+    && Number(candidate.transcriptAnchorSequence) >= 0
+    ? Number(candidate.transcriptAnchorSequence)
+    : undefined;
+  const transcriptScrollTop = typeof candidate.transcriptScrollTop === "number"
+    && Number.isFinite(candidate.transcriptScrollTop)
+    && candidate.transcriptScrollTop >= 0
+    && candidate.transcriptScrollTop <= 10_000_000
+    ? candidate.transcriptScrollTop
+    : undefined;
+  return { topic: candidate.topic, selectedRecord, transcriptAnchorSequence, transcriptScrollTop };
 }
 
 export function dataQualityHref(context: RecoveryContext, source: "file" | "strava" = "file") {

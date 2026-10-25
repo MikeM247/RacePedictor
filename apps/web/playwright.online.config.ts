@@ -32,6 +32,12 @@ export default defineConfig({
       NEXT_TELEMETRY_DISABLED: "1",
       RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-online-${process.env.RACEPREDICTOR_E2E_RUN_ID}`,
       RACEPREDICTOR_DATA_SOURCE: "online-fixture",
+      // Keep browser fixtures from inheriting a developer's or deployment's
+      // database URL; individual journeys mock their HTTP data sources.
+      DATABASE_URL: "postgresql://e2e:e2e@127.0.0.1:1/e2e?connect_timeout=1",
+      // Protected online fixture pages use the fixed synthetic test actor;
+      // production accepts only the configured GitHub owner session.
+      RACEPREDICTOR_E2E_OWNER_AUTH_ENABLED: "true",
     },
   },
 });

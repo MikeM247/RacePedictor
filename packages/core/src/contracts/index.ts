@@ -5,6 +5,7 @@ export * from "./weekly";
 export * from "./imports";
 export * from "./runtime-validators";
 export * from "./coaching";
+export * from "./coach-chat.ts";
 export * from "./auth";
 export * from "./providers";
 export * from "./second-brain-context";

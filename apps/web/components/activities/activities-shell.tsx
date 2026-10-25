@@ -142,7 +142,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
     const fallback = safeRecoveryPath(params.get("returnTo"), "/dashboard/activities");
     return context ? recoveryReturnHref(context, fallback) : fallback;
   }
-  function parentLabel() { const target = explicitParent(); const pathname = target.split("?", 1)[0]; return pathname === "/dashboard/calendar" ? "Back to Calendar" : pathname === "/dashboard" ? "Back to Home" : "Back to Training"; }
+  function parentLabel() { const target = explicitParent(); const pathname = target.split("?", 1)[0]; return recovery?.kind === "coach" ? "Back to Coach" : pathname === "/dashboard/calendar" ? "Back to Calendar" : pathname === "/dashboard" ? "Back to Home" : "Back to Training"; }
   function closeDetail(updateHistory = true) {
     const params = new URLSearchParams(window.location.search);
     if (updateHistory && params.has("activityId")) {

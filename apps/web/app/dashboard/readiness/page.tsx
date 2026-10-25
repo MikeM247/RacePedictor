@@ -10,7 +10,8 @@ import { ReadinessShell } from "../../../components/dashboard/readiness-shell.ts
 export const dynamic = "force-dynamic";
 
 export default async function ReadinessPage() {
-  if (shouldRenderOnlineUi(readCloudEnvironment())) return <OnlineDashboardShell />;
+  const environment = readCloudEnvironment();
+  if (shouldRenderOnlineUi(environment)) return <OnlineDashboardShell homeLabel={environment.features.coachUi ? "Coach" : "Home"} />;
   const dataSource: DashboardDataSource = process.env.RACEPREDICTOR_DATA_SOURCE === "mock"
     ? new MockDashboardDataSource()
     : new LocalDashboardDataSource();

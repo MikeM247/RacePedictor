@@ -153,7 +153,7 @@ npm run build
 git diff --check
 ```
 
-Use the repository's existing isolated test configuration and runtime prerequisites; do not point fixture seeding at a real athlete database. The normal build command differs from the migration-running `vercel-build` command; review the build scripts again at implementation time.
+Use the repository's existing isolated test configuration and runtime prerequisites; do not point fixture seeding at a real athlete database. Vercel Preview builds skip migrations; run Preview migrations explicitly only after verifying an isolated target database.
 
 Review at 320, 390, 768, 1024 and 1440 CSS pixels, plus 200% browser zoom:
 
@@ -167,7 +167,7 @@ Review at 320, 390, 768, 1024 and 1440 CSS pixels, plus 200% browser zoom:
 
 Capture desktop/mobile Home and one open mobile dialog in the new evidence directory. Keep synthetic comparison captures distinct from any screenshots containing real athlete facts. Record commands, results, viewport sizes, selected font names/weights and remaining visual differences in the handoff.
 
-Commit the checkpoints on `feat/home-prototype-parity`, push that branch, and open a PR into `main` with comparison images. Test locally and, where configured, in a branch preview using an isolated test data source; review preview deployment scripts because this repository's `vercel-build` runs database migrations. Keep production credentials out of fixture runs.
+Commit the checkpoints on `feat/home-prototype-parity`, push that branch, and open a PR into `main` with comparison images. Test locally and, where configured, in a branch preview using an isolated test data source. Keep production credentials out of fixture runs and apply migrations explicitly to the verified preview target.
 
 The owner tests and accepts the branch/preview before merge. After acceptance, merge into `main` through the normal release workflow, then smoke-test the deployed Home. Keep the preceding release commit available for rollback. Creating the branch or a preview does not itself authorize a production release.
 

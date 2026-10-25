@@ -1457,7 +1457,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       const summary = activities.find(activity => activity.id === selectedCalendarActivity);
       const status = record?.status === "error" ? "error" : record?.status === "success" && record.activity ? "ready" : "loading";
       return <ActivityDetailDialog presentation="inline" open title={record?.activity?.title || summary?.title || "Activity details"} parentLabel="Back to Calendar" onClose={() => { setSelectedCalendarActivity(null); requestAnimationFrame(() => requestAnimationFrame(() => detailLauncherRef.current?.focus({ preventScroll: true }))); }} returnFocusRef={detailLauncherRef} fallbackFocus={() => document.getElementById(`calendar-day-${selectedDate}`)} status={status} error={record?.error} onRetry={status === "error" ? () => { setActivityDetails(current => { const next = { ...current }; delete next[selectedCalendarActivity]; return next; }); setActivityDetailRetry(value => value + 1); } : undefined}>
-        {record?.activity ? <ActivityRecordContent activity={record.activity} headingId="calendar-activity-dialog-heading" headingLevel={1} showTitle={false} /> : null}
+        {record?.activity ? <ActivityRecordContent activity={record.activity} onlineMode={onlineMode} headingId="calendar-activity-dialog-heading" headingLevel={1} showTitle={false} /> : null}
       </ActivityDetailDialog>;
     })() : null}
     {pending ? <div className="coach-dialog-backdrop"><form ref={pendingModal.dialogRef} onKeyDown={pendingModal.onKeyDown} onSubmit={(event) => { event.preventDefault(); void confirmEdit(); }} className="coach-dialog" role="alertdialog" aria-modal="true" aria-labelledby="calendar-edit-title">

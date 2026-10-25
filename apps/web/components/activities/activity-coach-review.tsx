@@ -11,7 +11,7 @@ import { ActivityAthleteFeedback } from "./activity-athlete-feedback";
 
 type ReviewData = ActivityCoachReviewResponse["data"];
 
-export function ActivityCoachReview({ activityId, headingLevel = 3, recordHeadingId }: { activityId: string; headingLevel?: 3 | 4; recordHeadingId?: string }) {
+export function ActivityCoachReview({ activityId, onlineMode = false, headingLevel = 3, recordHeadingId }: { activityId: string; onlineMode?: boolean; headingLevel?: 3 | 4; recordHeadingId?: string }) {
   const reviewRead = useActivityCoachReview(activityId);
   const [requestMessage, setRequestMessage] = useState<string>();
   const [requesting, setRequesting] = useState(false);
@@ -20,13 +20,13 @@ export function ActivityCoachReview({ activityId, headingLevel = 3, recordHeadin
   const ReviewHeading = headingLevel === 3 ? "h3" : "h4";
   const ReviewTitle = headingLevel === 3 ? "h4" : "h5";
 
-  async function requestReview() {
+  async function requestReview(regenerate = false) {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setRequesting(true);
     setRequestMessage(undefined);
     try {
-      const response = await fetch(`/api/v1/activities/${encodeURIComponent(activityId)}/coach-review`, { method: "POST" });
+      const response = await fetch(`/api/v1/activities/${encodeURIComponent(activityId)}/coach-review`, { method: "POST", ...(regenerate && data?.review ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ regenerate: true, expectedReviewRevision: data.review.revision }) } : {}) });
       const result = await readActivityReviewRequestResponse(response);
       reviewRead.applyRequestResult(result);
     } catch (error) {
@@ -48,14 +48,14 @@ export function ActivityCoachReview({ activityId, headingLevel = 3, recordHeadin
         {data?.review ? <span className="activity-review-badge">AI-generated</span> : null}
       </div>
 
-      {reviewRead.phase === "loading" && !data?.review ? <p className="activity-review-state" role="status">Checking for feedback…</p> : null}
+      {reviewRead.phase === "loading" && !data?.review ? <p className="activity-review-state" role="status">Checking for feedbackâ€¦</p> : null}
       {reviewRead.refreshing ? <p className="activity-review-state" role="status">Checking for updated feedback. The saved review remains visible.</p> : null}
       {reviewRead.phase === "error" ? <div className="activity-review-state activity-review-state--error" role="alert"><p>{reviewRead.message}</p><button className="button button-secondary" type="button" onClick={() => void reviewRead.load()}>Try again</button></div> : null}
       {reviewRead.phase !== "loading" && !data?.review ? (
         <div className="activity-review-state">
           <p>{reviewStatusMessage(data?.status)}</p>
           <button className="button button-secondary" type="button" disabled={requesting || data?.status === "processing" || data?.status === "queued"} onClick={() => void requestReview()}>
-            {requesting ? "Requesting…" : data?.status === "queued" ? "Review queued" : data?.status === "processing" ? "Review in progress" : "Request coach feedback"}
+            {requesting ? "Requestingâ€¦" : data?.status === "queued" ? "Review queued" : data?.status === "processing" ? "Review in progress" : "Request coach feedback"}
           </button>
           {data?.status === "queued" || data?.status === "processing" || data?.status === "retry_wait" || data?.status === "attention" || data?.status === "ready"
             ? <button className="button button-secondary" type="button" onClick={() => void reviewRead.load()}>Check for updated feedback</button>
@@ -63,17 +63,21 @@ export function ActivityCoachReview({ activityId, headingLevel = 3, recordHeadin
           {requestMessage ? <p className="activity-review-error" role="alert">{requestMessage}</p> : null}
         </div>
       ) : null}
-      {data?.review ? <ReviewContent review={data.review} status={data.status} onRefresh={() => void reviewRead.load()} titleElement={ReviewTitle} /> : null}
+      {data?.review ? <>
+        {data.status === "queued" || data.status === "processing" || data.status === "retry_wait" ? <p className="activity-review-state" role="status">{data.status === "retry_wait" ? "The new review could not be generated yet. Your published feedback remains visible; retry when ready." : "Generating updated feedback. Your published review remains visible until the new review is ready."}</p> : null}
+        <ReviewContent review={data.review} status={data.status} onRefresh={() => void reviewRead.load()} onRegenerate={() => void requestReview(true)} requesting={requesting} onlineMode={onlineMode} titleElement={ReviewTitle} />
+        {requestMessage ? <p className="activity-review-error" role="alert">{requestMessage}</p> : null}
+      </> : null}
     </section>
     <ActivityAthleteFeedback activityId={activityId} headingLevel={headingLevel} recordHeadingId={recordHeadingId} />
     </>
   );
 }
 
-function ReviewContent({ review, status, onRefresh, titleElement: ReviewTitle }: { review: NonNullable<ReviewData["review"]>; status: ReviewData["status"]; onRefresh: () => void; titleElement: "h4" | "h5" }) {
+function ReviewContent({ review, status, onRefresh, onRegenerate, requesting, onlineMode, titleElement: ReviewTitle }: { review: NonNullable<ReviewData["review"]>; status: ReviewData["status"] ; onRefresh: () => void; onRegenerate: () => void; requesting: boolean; onlineMode: boolean; titleElement: "h4" | "h5" }) {
   return (
     <div className="activity-review-content">
-      <p className="activity-review-meta">Reviewed {new Date(review.publishedAt).toLocaleString()} · {review.model}</p>
+      <p className="activity-review-meta">Reviewed {new Date(review.publishedAt).toLocaleString()} Â· {review.model}</p>
       <p className="activity-review-context" role="status"><strong>{reviewStatusLabel(status)}:</strong> {reviewStatusMessage(status, true)}</p>
       <ReviewTitle>{review.headline}</ReviewTitle>
       <p className="activity-review-assessment">{review.assessment}</p>
@@ -85,13 +89,13 @@ function ReviewContent({ review, status, onRefresh, titleElement: ReviewTitle }:
         <summary>Compare with the plan</summary>
         <dl>
           <div><dt>Planned session</dt><dd>{review.comparison.sessionTitle ?? "No planned session linked"}</dd></div>
-          <div><dt>Duration</dt><dd>{formatMinutes(review.comparison.plannedDurationMinutes)} planned · {formatMinutes(review.comparison.actualDurationMinutes)} recorded</dd></div>
-          <div><dt>Distance</dt><dd>{formatDistance(review.comparison.plannedDistanceMeters)} planned · {formatDistance(review.comparison.actualDistanceMeters)} recorded</dd></div>
+          <div><dt>Duration</dt><dd>{formatMinutes(review.comparison.plannedDurationMinutes)} planned Â· {formatMinutes(review.comparison.actualDurationMinutes)} recorded</dd></div>
+          <div><dt>Distance</dt><dd>{formatDistance(review.comparison.plannedDistanceMeters)} planned Â· {formatDistance(review.comparison.actualDistanceMeters)} recorded</dd></div>
           <div><dt>Interpretation</dt><dd>{review.comparison.interpretation}</dd></div>
         </dl>
       </details>
-      <details className="activity-review-details"><summary>Review evidence</summary><ul>{review.evidence.map((item, index) => <li key={index}>{item.label} ({item.source.replaceAll("_", " ")}){item.reference ? ` · Reference: ${item.reference}` : ""}</li>)}</ul><p>Review revision {review.revision}. {review.comparison.planId ? `Plan reference: ${review.comparison.planId}.` : "No plan reference supplied."}</p></details>
-      <button className="button button-secondary activity-review-refresh" type="button" onClick={onRefresh}>Check for updated feedback</button>
+      <details className="activity-review-details"><summary>Review evidence</summary><ul>{review.evidence.map((item, index) => <li key={index}>{item.label} ({item.source.replaceAll("_", " ")}){item.reference ? ` Â· Reference: ${item.reference}` : ""}</li>)}</ul><p>Review revision {review.revision}. {review.comparison.planId ? `Plan reference: ${review.comparison.planId}.` : "No plan reference supplied."}</p></details>
+      <div className="coach-actions"><button className="button button-secondary activity-review-refresh" type="button" onClick={onRefresh}>Check for updated feedback</button>{onlineMode ? <button className="button button-secondary" type="button" disabled={requesting || status === "queued" || status === "processing"} onClick={onRegenerate}>{requesting ? "Requesting…" : "Regenerate feedback"}</button> : null}</div>{onlineMode ? <p className="field-help">Regeneration uses the saved coach settings and may incur API usage.</p> : null}
     </div>
   );
 }

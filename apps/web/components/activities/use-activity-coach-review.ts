@@ -68,7 +68,7 @@ export function useActivityCoachReview(activityId: string | null) {
 
   useEffect(() => {
     const status = storedState.data?.status;
-    if (!activityId || storedState.phase === "error" || storedState.data?.review || !["queued", "processing", "retry_wait"].includes(status ?? "")) return;
+    if (!activityId || storedState.phase === "error" || !["queued", "processing", "retry_wait"].includes(status ?? "")) return;
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
       if (Date.now() - startedAt >= 5 * 60 * 1000) {
@@ -78,7 +78,7 @@ export function useActivityCoachReview(activityId: string | null) {
       void load();
     }, 10_000);
     return () => window.clearInterval(timer);
-  }, [activityId, load, storedState.data?.review, storedState.data?.status, storedState.phase]);
+  }, [activityId, load, storedState.data?.status, storedState.phase]);
 
   const applyRequestResult = useCallback((result: ActivityReviewRequestResponse["data"]) => {
     if (!activityId) return;

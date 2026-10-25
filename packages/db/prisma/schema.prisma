@@ -94,6 +94,11 @@ enum StagingRowStatus {
   error
 }
 
+enum CoachAiProvider {
+  openai
+  openrouter
+}
+
 enum ActivityReviewRequestStatus {
   queued
   processing
@@ -151,6 +156,7 @@ model Activity {
   weeklyFeaturesAsLongest WeeklyFeature[]           @relation("WeeklyFeatureLongestRun")
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
+  coachAiConfiguration    CoachAiConfiguration?
   athleteFeedback         ActivityAthleteFeedback[]
   activityReflections     ActivityReflection[]
   paceComparisons         ActivityPaceComparison[]
@@ -659,6 +665,19 @@ model SecondBrainSnapshot {
   @@map("second_brain_snapshots")
 }
 
+model CoachAiConfiguration {
+  id        String          @id @default(cuid())
+  athleteId String          @unique
+  provider  CoachAiProvider
+  modelId   String
+  revision  Int             @default(1)
+  createdAt DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime        @updatedAt @db.Timestamptz(3)
+  athlete   Athlete         @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@map("coach_ai_configurations")
+}
+
 model ActivityReviewRequest {
   id              String                     @id @default(cuid())
   athleteId       String
@@ -673,10 +692,17 @@ model ActivityReviewRequest {
   lockedBy        String?
   leaseToken      String?
   lastErrorCode   String?
+  executionTarget String                     @default("cloud")
+  provider        CoachAiProvider?
+  requestedModel  String?
+  configurationRevision Int?
+  forceRegenerate Boolean                    @default(false)
+  expectedReviewRevision Int?
   providerRequestId String?
   providerInputTokens Int?
   providerOutputTokens Int?
   providerLatencyMs Int?
+  providerReturnedModel String? @db.VarChar(120)
   requestedAt     DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime                   @updatedAt @db.Timestamptz(3)
   athlete         Athlete                    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
@@ -705,6 +731,9 @@ model ActivityCoachReview {
   generatedAt        DateTime              @db.Timestamptz(3)
   publishedAt        DateTime              @db.Timestamptz(3)
   model              String
+  provider           CoachAiProvider?
+  requestedModel     String?
+  configurationRevision Int?
   promptVersion      String
   provenance          String                @default("legacy_combined")
   createdAt          DateTime              @default(now()) @db.Timestamptz(3)

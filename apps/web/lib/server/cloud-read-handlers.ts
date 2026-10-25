@@ -22,7 +22,7 @@ import {
   TrainingPlanActivationError,
   TrainingPlanGoalContextUnavailableError,
 } from "../../../../packages/db/src/cloud/index.js";
-import { activityFeedbackResponseDataSchema } from "../../../../packages/core/src/contracts/activity-review.ts";
+import { activityFeedbackResponseDataSchema, activityReviewRequestIntentSchema } from "../../../../packages/core/src/contracts/activity-review.ts";
 import {
   activityReflectionResponseSchema,
   saveActivityReflectionRequestSchema,
@@ -145,13 +145,27 @@ export async function handleCloudLegacyActivityReviews(
 export async function handleCloudActivityReviewRequest(
   security: SensitiveRouteContext,
   activityId: string,
+  request?: Request,
   getComposition: GetCloudReadComposition = getCloudReadComposition,
 ) {
   const scope = requireOwnerScope(security);
   const decodedActivityId = decodeId(activityId);
-  const result = await getComposition().activityReviews.queue(scope, decodedActivityId);
+  let intent = {};
+  if (request) {
+    const raw = await request.text();
+    if (raw.trim()) {
+      let body: unknown;
+      try { body = JSON.parse(raw); } catch { throw new ApiHttpError(400, "VALIDATION_ERROR", "Request body must be valid JSON"); }
+      const parsed = activityReviewRequestIntentSchema.safeParse(body);
+      if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Feedback request is invalid", parsed.error.issues);
+      intent = parsed.data;
+    }
+  }
+  let result;
+  try { result = await (getComposition().activityReviews.queue as any)(scope, decodedActivityId, intent); }
+  catch (error) { if (error instanceof Error && (error as any).code === "CONFLICT") throw new ApiHttpError(409, "CONFLICT", error.message); throw error; }
   if (!result) throw new ApiHttpError(404, "NOT_FOUND", "Activity was not found");
-  after(async () => {
+  if (!(result.reused && result.status === "processing")) after(async () => {
     try {
       await runCloudCoachFeedbackBatch({ athleteId: scope.athleteId, activityId: decodedActivityId, limit: 1 });
     } catch (error) {

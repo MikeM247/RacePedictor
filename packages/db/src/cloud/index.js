@@ -33,6 +33,7 @@ export { PrismaTrainingPlanProjectionActivator, TrainingPlanActivationError } fr
 export { PrismaCalendarSessionAmendmentRepository, CalendarSessionAmendmentError } from "./prisma-calendar-session-amendment-repository.js";
 export { PrismaOperationalUsageRepository } from "./prisma-operational-usage-repository.js";
 export { PrismaActivityReviewRepository } from "./prisma-activity-review-repository.js";
+export { CoachAiConfigurationConflictError, PrismaCoachAiConfigurationRepository, OPENAI_COACH_MODELS } from "./prisma-coach-ai-configuration-repository.js";
 export { AthleteFeedbackConflictError, PrismaAthleteFeedbackRepository } from "./prisma-athlete-feedback-repository.js";
 export { AthleteJournalConflictError, AthleteJournalDateError, PrismaAthleteJournalRepository } from "./prisma-athlete-journal-repository.js";
 export { PrismaReconciliationScopeRepository } from "./prisma-reconciliation-scope-repository.js";

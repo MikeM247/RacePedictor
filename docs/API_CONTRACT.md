@@ -248,3 +248,10 @@ Scheduled reconciliation is bounded to 25 connected athletes and 25 claimed jobs
 The paired-device `GET /api/v1/sync/device/wellbeing-check-ins` endpoint supplies the same bounded date-range records. The activity feedback context includes the activity reflection and the activity date plus following-day check-ins as athlete-authored context.
 
 Online upload clients should use `POST /api/v1/imports/upload/initiate` to obtain a short-lived athlete-scoped R2 PUT URL and required headers, then `POST /api/v1/imports/upload/complete` with the checksum and immutable import identity. The legacy multipart endpoint remains available for smaller uploads and uses the same cloud normalizer. Uploads are limited to 15 MiB, and CSV normalization is bounded to 100 rows per batch.
+
+
+### Online AI coach settings
+- `GET /api/v1/coaching/ai-settings`: authenticated owner and active athlete; returns effective provider/model, revision, and booleans for server credential presence.
+- `PUT /api/v1/coaching/ai-settings`: accepts `{provider, modelId, expectedRevision}`; saves atomically after live compatible-model validation and returns 409 on a revision conflict. Credentials and arbitrary URLs are never accepted.
+- `GET /api/v1/coaching/ai-models?provider=openai|openrouter`: returns selectable compatible models plus `stale`; OpenRouter catalog results are cached for 15 minutes. A stale catalog is display-only and cannot validate a changed selection.
+- Existing `POST /api/v1/activities/:activityId/coach-review` remains bodyless-compatible. Regeneration accepts `{regenerate:true, expectedReviewRevision}`; a stale review revision returns 409.

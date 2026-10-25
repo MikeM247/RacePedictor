@@ -1,5 +1,29 @@
 import { z } from "zod";
 
+export const coachAiProviderSchema = z.enum(["openai", "openrouter"]);
+export const coachAiSettingsSchema = z.object({
+  provider: coachAiProviderSchema,
+  modelId: z.string().trim().min(1).max(120),
+  revision: z.number().int().nonnegative(),
+  credentials: z.object({ openai: z.boolean(), openrouter: z.boolean() }).strict(),
+}).strict();
+export const coachAiSettingsUpdateSchema = z.object({
+  provider: coachAiProviderSchema,
+  modelId: z.string().trim().min(1).max(120),
+  expectedRevision: z.number().int().nonnegative(),
+}).strict();
+export const coachAiModelSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  contextLength: z.number().int().positive().optional(),
+}).strict();
+export const coachAiModelsResponseSchema = z.object({
+  provider: coachAiProviderSchema,
+  models: z.array(coachAiModelSchema).max(5000),
+  stale: z.boolean(),
+}).strict();
+
 const idSchema = z.string().trim().min(1).max(128);
 const revisionSchema = z.number().int().positive();
 const isoDateTimeSchema = z.string().datetime({ offset: true });
@@ -57,6 +81,9 @@ export const activityCoachReviewSchema = z.object({
   generatedAt: isoDateTimeSchema,
   publishedAt: isoDateTimeSchema,
   model: z.string().trim().min(1).max(120),
+  provider: coachAiProviderSchema.optional(),
+  requestedModel: z.string().trim().min(1).max(120).optional(),
+  configurationRevision: z.number().int().nonnegative().optional(),
   promptVersion: z.string().trim().min(1).max(40),
   provenance: z.enum(["cloud_metrics_plan", "legacy_combined"]).optional(),
 }).strict();
@@ -94,6 +121,11 @@ export const activityCoachReviewSummaryListResponseDataSchema = z.object({
 export const activityCoachReviewSummaryListResponseSchema = z.object({
   data: activityCoachReviewSummaryListResponseDataSchema,
 }).strict();
+
+export const activityReviewRequestIntentSchema = z.object({
+  regenerate: z.boolean().optional(),
+  expectedReviewRevision: z.number().int().positive().optional(),
+}).strict().refine((value) => value.regenerate === true ? value.expectedReviewRevision !== undefined : value.expectedReviewRevision === undefined, { message: "Regeneration requires the current published review revision" });
 
 export const activityReviewRequestResponseDataSchema = z.object({
     activityId: idSchema,

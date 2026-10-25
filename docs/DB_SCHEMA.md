@@ -283,3 +283,8 @@ Operational buckets are unique by `(metric, windowStart)` and indexed by `(metri
 ## Athlete journal persistence
 
 `ActivityReflection` stores one editable, athlete-scoped structured reflection per activity, including nullable training/race classification, answers, turning-point sections, questionnaire version, activity revision, and an application revision. `DailyWellbeingCheckIn` stores one athlete-scoped record per local date, including timezone, optional answers, saved/skipped state, timestamps, questionnaire version, and revision. Both have athlete-scoped uniqueness and indexes. Revisions are checked on writes; stale updates return a conflict. Journal content is separate from immutable AI feedback and is not included in prediction inputs.
+
+
+## Configurable online coach provider (25 October 2026)
+
+Migration `20261025110000_coach_ai_settings` adds athlete-unique `CoachAiConfiguration` with provider, model ID, revision and timestamps. Before a row exists, effective settings resolve to `RACEPREDICTOR_ACTIVITY_REVIEW_MODEL` or `gpt-5-mini` on OpenAI. Review requests persist cloud execution ownership, provider/model/configuration revision, regeneration intent and the expected published-review revision. Provider request ID, returned model, token counts and latency are optional so historical records remain valid. Cloud worker ownership is enforced at claim and publish.

@@ -12,8 +12,8 @@ export const GET = withSensitiveRoute(async (security, _request: Request, contex
   return Response.json(getLocalActivityReview(decodeURIComponent(activityId)));
 }, { cloudHandling: "actor-scoped" });
 
-export const POST = withSensitiveRoute(async (security, _request: Request, context: Context) => {
+export const POST = withSensitiveRoute(async (security, request: Request, context: Context) => {
   const { activityId } = await context.params;
-  if (security.mode === "authenticated") return handleCloudActivityReviewRequest(security, activityId);
+  if (security.mode === "authenticated") return handleCloudActivityReviewRequest(security, activityId, request);
   return Response.json(queueLocalActivityReview(decodeURIComponent(activityId)), { status: 202 });
 }, { cloudHandling: "actor-scoped" });

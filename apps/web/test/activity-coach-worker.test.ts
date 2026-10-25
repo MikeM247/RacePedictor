@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { activityCoachReviewArtifactSchema, type ActivityCoachReviewArtifact } from "../../../packages/core/src/contracts/activity-review.ts";
-import { PrismaActivityReviewRepository, PrismaCloudActivityRepository, PrismaCloudCoachingRepository, PrismaCalendarSessionAmendmentRepository } from "../../../packages/db/src/cloud/index.js";
+import { PrismaActivityReviewRepository } from "../../../packages/db/src/cloud/prisma-activity-review-repository.js";
+import { PrismaCloudActivityRepository } from "../../../packages/db/src/cloud/prisma-cloud-activity-repository.js";
+import { PrismaCloudCoachingRepository } from "../../../packages/db/src/cloud/prisma-cloud-coaching-repository.js";
+import { PrismaCalendarSessionAmendmentRepository } from "../../../packages/db/src/cloud/prisma-calendar-session-amendment-repository.js";
 import { runCloudCoachFeedbackBatch } from "../lib/server/activity-coach-worker.ts";
 
-for (const configuration of [{ model: "test-model", reasoningEffort: "" }, { model: "gpt-6-luna", reasoningEffort: "high" }]) {
+for (const configuration of [{ provider: "openai" as const, model: "test-model", reasoningEffort: "" }, { provider: "openai" as const, model: "gpt-6-luna", reasoningEffort: "high" }, { provider: "openrouter" as const, model: "openai/gpt-4o-mini", reasoningEffort: "" }]) {
 test(`cloud coach worker publishes generated feedback with ${configuration.model}${configuration.reasoningEffort ? ` ${configuration.reasoningEffort}` : " and default reasoning"}`, async (context) => {
   const clientKey = "__racePredictorCloudPrismaClient";
   const globals = globalThis as typeof globalThis & Record<string, unknown>;
@@ -23,7 +26,7 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
   const scoped = (scope: { athleteId: string }) => assert.equal(scope.athleteId, athleteId);
   context.mock.method(PrismaActivityReviewRepository.prototype, "claim", async (scope: { athleteId: string }) => {
     scoped(scope);
-    return { items: [{ requestId: "request-worker-test", activityId, leaseToken: "lease-worker-test", status: "processing" }] };
+    return { items: [{ requestId: "request-worker-test", activityId, leaseToken: "lease-worker-test", status: "processing", provider: configuration.provider, requestedModel: configuration.model, configurationRevision: 3, forceRegenerate: true }] };
   });
   context.mock.method(PrismaActivityReviewRepository.prototype, "get", async () => ({ review: null }));
   context.mock.method(PrismaActivityReviewRepository.prototype, "recordInputSnapshot", async () => {});
@@ -47,12 +50,18 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
     durationMinutes: 30, distanceMeters: 5000, purpose: "Easy aerobic work", prescription: "Run comfortably.",
   }]);
   let providerCalls = 0;
-  const fetchImpl: typeof fetch = async (_url, init) => {
+  const fetchImpl: typeof fetch = async (url, init) => {
     providerCalls += 1;
     assert.equal(init?.method, "POST");
     const request = JSON.parse(String(init?.body));
-    assert.equal(request.store, false);
     assert.equal(request.model, configuration.model);
+    if (configuration.provider === "openrouter") {
+      assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
+      assert.deepEqual(request.provider, { require_parameters: true });
+      assert.equal(request.response_format.json_schema.strict, true);
+      return Response.json({ id: "or-request", model: configuration.model, choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ headline: "An easy recorded run", assessment: "The recorded distance matches the suggested session.", nextStep: "Review the next planned session.", evidence: [{ source: "activity", label: "Recorded 5 km" }, { source: "plan", label: "Suggested 5 km" }], limitations: [] }) } }], usage: { prompt_tokens: 22, completion_tokens: 18 } }, { headers: { "x-request-id": "or-request" } });
+    }
+    assert.equal(request.store, false);
     assert.deepEqual(request.reasoning, configuration.reasoningEffort ? { effort: configuration.reasoningEffort } : undefined);
     return Response.json({ output_text: JSON.stringify({ headline: "An easy recorded run", assessment: "The recorded distance matches the suggested session.",
       nextStep: "Review the next planned session.", evidence: [{ source: "activity", label: "Recorded 5 km" }, { source: "plan", label: "Suggested 5 km" }], limitations: [] }) });
@@ -66,6 +75,9 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
     assert.equal(published[0].promptVersion, "activity-coach-review.cloud-metrics.v1");
     assert.equal(published[0].provenance, "cloud_metrics_plan");
     assert.equal(published[0].model, configuration.model);
+    assert.equal(published[0].provider, configuration.provider);
+    assert.equal(published[0].requestedModel, configuration.model);
+    assert.equal(published[0].configurationRevision, 3);
     assert.equal(published[0].expectedActivityRevision, 1);
     assert.equal(published[0].comparison.sessionId, "session-worker-test");
     assert.equal(published[0].requestId, "request-worker-test");

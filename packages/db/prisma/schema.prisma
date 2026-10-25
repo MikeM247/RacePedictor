@@ -156,7 +156,6 @@ model Activity {
   weeklyFeaturesAsLongest WeeklyFeature[]           @relation("WeeklyFeatureLongestRun")
   activityReviewRequests  ActivityReviewRequest[]
   activityReviews         ActivityCoachReview[]
-  coachAiConfiguration    CoachAiConfiguration?
   athleteFeedback         ActivityAthleteFeedback[]
   activityReflections     ActivityReflection[]
   paceComparisons         ActivityPaceComparison[]

@@ -40,6 +40,178 @@ async function mockSession(page: Page) {
   await page.route("**/api/v1/auth/session", (route) => route.fulfill({ json: { data: { authenticated: true, actor: { userId: "owner_test", activeAthleteId: "athlete_test", credentialKind: "session" }, reason: null } } }));
 }
 
+test("complete Coach panel fits desktop viewports and bounds long drafts", async ({ page }) => {
+  await mockSession(page);
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("reflect") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation(Array.from({ length: 40 }, (_, index) => message(`fit_${index}`, index + 1, index % 2 ? "assistant" : "user", "A long observation. ".repeat(30), "completed"))) } }));
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 1896, height: 910 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/dashboard/coach");
+    await expect(page.getByText("Ready", { exact: true })).toBeVisible();
+    await page.getByRole("textbox", { name: "Message ORBIT" }).fill("Draft line\n".repeat(150));
+    await expect.poll(() => page.locator(".coach-chat-panel").evaluate((node) => node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(viewport.height);
+    for (const selector of [".coach-composer textarea", ".coach-send-button", ".coach-action-row", ".coach-chat-boundary"]) {
+      const rect = await page.locator(selector).boundingBox();
+      expect(rect!.y).toBeGreaterThanOrEqual(0);
+      expect(rect!.y + rect!.height).toBeLessThanOrEqual(viewport.height);
+    }
+    expect(await page.locator(".coach-transcript").evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  }
+});
+
+test("Clear chat archives a pending discussion, keeps the draft and opens read-only history", async ({ page }) => {
+  await mockSession(page);
+  const original = message("saved_question", 1, "user", "How should I approach next week?", "processing");
+  let state = conversation([original], { id: "turn_pending", state: "processing", attempt: 1, safeErrorCode: null, messageSaved: true, retryable: false });
+  let archived = false;
+  const summary = { id: "archive_saved", generation: 1, title: original.text, startedAt: now, archivedAt: now, finalSequence: 1 };
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context(new URL(route.request().url()).searchParams.get("topic") === "general" ? "general" : "reflect") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/archive", async (route) => {
+    expect(route.request().postDataJSON().expectedSequence).toBe(1);
+    archived = true; state = { ...conversation(), generation: 2 };
+    await route.fulfill({ json: { data: { archive: summary, conversation: state } } });
+  });
+  await page.route("**/api/v1/coaching/chat/history", (route) => route.fulfill({ json: { data: { items: archived ? [summary] : [], nextBefore: null } } }));
+  await page.route("**/api/v1/coaching/chat/history/archive_saved", (route) => route.fulfill({ json: { data: { archive: summary, messages: [{ ...original, turnState: "abandoned" }], hasOlder: false, oldestSequence: 1 } } }));
+  await page.goto("/dashboard/coach");
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Keep this unsent question.");
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
+  await expect(composer).toHaveValue("Keep this unsent question.");
+  await expect(composer).toBeFocused();
+  await expect(page.getByRole("button", { name: "Ask ORBIT", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("ORBIT is thinking…")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Conversation messages" }).getByText(original.text)).toHaveCount(0);
+  await page.getByRole("button", { name: "Previous chats", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Previous chats" });
+  await dialog.getByRole("button", { name: new RegExp(original.text.replace("?", "\\?")) }).click();
+  await expect(dialog.getByRole("list", { name: "Saved conversation messages" }).getByText(original.text)).toBeVisible();
+  await expect(dialog.getByText(/Read only/)).toBeVisible();
+  await expect(dialog.getByRole("textbox")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Close previous chats" }).click();
+  await expect(page.getByRole("button", { name: "Previous chats", exact: true })).toBeFocused();
+  await expect(composer).toHaveValue("Keep this unsent question.");
+  await page.reload();
+  await expect(composer).toHaveValue("Keep this unsent question.");
+});
+
+test("failed archive retains transcript and draft and retries the same request identity", async ({ page }) => {
+  await mockSession(page);
+  let attempts = 0;
+  let requestId = "";
+  const state = conversation([message("save_failure", 1, "user", "A discussion to retain", "completed")]);
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/archive", async (route) => {
+    const input = route.request().postDataJSON();
+    if (!requestId) requestId = input.requestId;
+    expect(input.requestId).toBe(requestId); attempts++;
+    await route.fulfill({ status: 503, json: { error: { message: "Synthetic database outage" } } });
+  });
+  await page.goto("/dashboard/coach");
+  await page.getByRole("textbox", { name: "Message ORBIT" }).fill("Do not lose this draft");
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await expect(page.getByRole("main", { name: "Coach" }).getByRole("alert")).toContainText("Your messages and draft are kept here");
+  await expect(page.getByText("A discussion to retain", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Do not lose this draft");
+  await page.getByRole("button", { name: "Retry saving" }).click();
+  await expect.poll(() => attempts).toBe(2);
+});
+
+test("archiving synchronizes tabs without discarding either draft", async ({ page, context: browserContext }) => {
+  let state = conversation([message("shared_message", 1, "user", "A shared discussion", "completed")]);
+  await browserContext.route("**/api/v1/auth/session", (route) => route.fulfill({ json: { data: { authenticated: true, actor: { activeAthleteId: "athlete_test", credentialKind: "session" } } } }));
+  await browserContext.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await browserContext.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await browserContext.route("**/api/v1/coaching/chat/conversation/archive", (route) => {
+    state = { ...conversation(), generation: 2 };
+    return route.fulfill({ json: { data: { archive: { id: "shared_archive", generation: 1, title: "A shared discussion", startedAt: now, archivedAt: now, finalSequence: 1 }, conversation: state } } });
+  });
+  await page.goto("/dashboard/coach");
+  const second = await browserContext.newPage();
+  await second.goto("/dashboard/coach");
+  await page.getByRole("textbox", { name: "Message ORBIT" }).fill("First tab draft");
+  await second.getByRole("textbox", { name: "Message ORBIT" }).fill("Second tab draft");
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
+  await expect(second.getByRole("list", { name: "Conversation messages" }).getByText("A shared discussion", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("First tab draft");
+  await expect(second.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Second tab draft");
+  await second.close();
+});
+
+test("a late retry response cannot replace the new discussion or its draft", async ({ page }) => {
+  await mockSession(page);
+  let state = conversation([message("late_question", 1, "user", "A saved failed question", "failed")], { id: "late_turn", state: "failed", attempt: 1, safeErrorCode: "PROVIDER_TIMEOUT", messageSaved: true, retryable: true });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let retryStarted = false;
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/turns/late_turn/retry", async (route) => { retryStarted = true; await held; await route.fulfill({ json: { data: { failure: { code: "STALE_REPLY", message: "This obsolete failure must not appear" } } } }); });
+  await page.route("**/api/v1/coaching/chat/conversation/archive", (route) => {
+    state = { ...conversation(), generation: 2 };
+    return route.fulfill({ json: { data: { archive: { id: "late_archive", generation: 1, title: "A saved failed question", startedAt: now, archivedAt: now, finalSequence: 1 }, conversation: state } } });
+  });
+  await page.goto("/dashboard/coach");
+  await page.getByRole("button", { name: "Retry reply" }).click();
+  await expect.poll(() => retryStarted).toBe(true);
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
+  await page.getByRole("textbox", { name: "Message ORBIT" }).fill("My new draft");
+  const completed = page.waitForResponse("**/api/v1/coaching/chat/turns/late_turn/retry");
+  release(); await completed;
+  await expect(page.getByText("This obsolete failure must not appear")).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("My new draft");
+  await expect(page.getByRole("list", { name: "Conversation messages" }).getByText("A saved failed question")).toHaveCount(0);
+});
+
+test("Previous chats loads earlier saved messages and retries a failed history read", async ({ page }) => {
+  await mockSession(page);
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
+  let listAttempts = 0;
+  const archive = { id: "paged_archive", generation: 1, title: "A long saved discussion", startedAt: now, archivedAt: now, finalSequence: 60 };
+  await page.route("**/api/v1/coaching/chat/history", (route) => ++listAttempts === 1 ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: { data: { items: [archive], nextBefore: null } } }));
+  await page.route("**/api/v1/coaching/chat/history/paged_archive**", (route) => {
+    const older = new URL(route.request().url()).searchParams.has("before");
+    const messages = Array.from({ length: older ? 20 : 40 }, (_, index) => { const sequence = (older ? 1 : 21) + index; return message(`history_${sequence}`, sequence, "user", `Saved entry ${sequence}`, "completed"); });
+    return route.fulfill({ json: { data: { archive, messages, hasOlder: !older, oldestSequence: older ? 1 : 21 } } });
+  });
+  await page.goto("/dashboard/coach");
+  await page.getByRole("button", { name: "Previous chats", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Previous chats" });
+  await expect(dialog.getByRole("alert")).toContainText("Saved chats could not be loaded");
+  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+  await dialog.getByRole("button", { name: /A long saved discussion/ }).click();
+  await expect(dialog.getByRole("list", { name: "Saved conversation messages" }).getByRole("listitem")).toHaveCount(40);
+  await dialog.getByRole("button", { name: "Load earlier messages" }).click();
+  await expect(dialog.getByRole("list", { name: "Saved conversation messages" }).getByRole("listitem")).toHaveCount(60);
+  await expect(dialog.getByText("Saved entry 1", { exact: true })).toBeVisible();
+});
+
+test("Settings explicitly confirms permanent deletion and clears only the current athlete browser state", async ({ page }) => {
+  await mockSession(page);
+  let deleted = false;
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => {
+    if (route.request().method() === "DELETE") { deleted = true; return route.fulfill({ json: { data: { generation: 3, sequence: 0 } } }); }
+    return route.fulfill({ json: { data: { ...conversation(), generation: 2 } } });
+  });
+  await page.goto("/dashboard/settings?section=coach");
+  await expect(page.getByRole("button", { name: "Permanently delete all coaching history", exact: true })).toBeVisible();
+  await page.evaluate(() => { sessionStorage.setItem("racepredictor.coach.v2.athlete_test.draft", "Delete my draft"); sessionStorage.setItem("racepredictor.coach.v2.other_athlete.draft", "Keep another athlete's state"); });
+  await page.getByRole("button", { name: "Permanently delete all coaching history", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Permanently delete all coaching history?" });
+  await expect(dialog).toContainText("all previous chats");
+  await dialog.getByRole("button", { name: "Delete all history", exact: true }).click();
+  await expect.poll(() => deleted).toBe(true);
+  await expect(dialog).not.toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.athlete_test.draft"))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.other_athlete.draft"))).toBe("Keep another athlete's state");
+});
+
 test("online Coach reflects on a real activity, completes a reply, restores a tab draft and exposes exact record actions", async ({ page }) => {
   let state = conversation();
   await mockSession(page);

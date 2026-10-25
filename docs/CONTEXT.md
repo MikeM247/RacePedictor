@@ -1,5 +1,9 @@
 # CONTEXT
 
+## 25 October 2026 scope amendment: saved Coach discussions
+
+The owner approved viewport-aware Coach panel sizing, archive-before-clear, draft preservation, and read-only Previous chats. Clear chat preserves the current generation's database records and starts a fresh discussion; Settings alone permanently deletes current and archived history. Authoritative training approval boundaries remain unchanged. See [implementation and release contract](plans/COACH_CHAT_HISTORY.md).
+
 ## 21 October 2026 milestone-management scope
 
 The owner authorised the unified Settings milestone manager and contextual Home entry. Historical achievements reuse scoped, revision-checked history CRUD and explicit race confirmation. Planned target additions/edits/removals prepare an athlete-keyed tab-local request; they do not change the approved plan. Requests preserve and verify their approved base, then use the existing full proposal, review, approval and publication process in GOAL_UPDATE_PROCESS. See [the product/architecture handoff](plans/MILESTONE_MANAGEMENT.md).

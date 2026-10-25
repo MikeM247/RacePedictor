@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## Coach discussion archival (25 October 2026)
+
+The V2 Coach reuses its athlete-scoped conversation generation as a discussion boundary. Transactional archive metadata retains original message/turn rows, invalidates pending leases and advances the active generation. Private paginated history reads expose closed generations without sending them to the provider. Core contracts, DB repositories and authenticated web composition preserve existing boundaries. See [Coach chat history](plans/COACH_CHAT_HISTORY.md) and the amendment to ADR 0010.
+
 ## V2 conversation-led Coach (22 October 2026)
 
 The approved AI Companion direction and mature humanoid male ORBIT likeness now guide the online-first V2 Coach implementation. The [design handoff](plans/V2_AI_COMPANION_DESIGN_HANDOFF.md) pins source artwork and layout; [the first-iteration architecture](plans/V2_FIRST_ITERATION_ARCHITECTURE_IMPLEMENTATION_PLAN.md) describes the conversation service, persistence, APIs, release controls and verification. Shared next-session resolution remains in core and is reused by the Today and Coach views. One authenticated athlete conversation uses a bounded, refreshed training context and server-side OpenAI complete replies. Chat history is retained until explicitly cleared and cannot mutate plans, sessions, completion, goals or wellbeing. The additive persistence remains outside device sync and Second Brain. Local Home/tools remain intact; online UI and generation are independently gated off by default. See [ADR 0010](adr/0010-v2-conversation-led-coach.md).

@@ -316,6 +316,9 @@ export class CoachChatConflictError extends Error {}
 export class CoachChatNotFoundError extends Error {}
 export class CoachChatRateLimitError extends Error { retryAfterSeconds: number; }
 export class PrismaCoachChatRepository {
+  archiveConversation(scope: AthleteScope, input: { expectedGeneration: number; expectedSequence: number; requestId: string }): Promise<any>;
+  listArchives(scope: AthleteScope, input?: { beforeGeneration?: number | null }): Promise<any>;
+  getArchive(scope: AthleteScope, archiveId: string, input?: { beforeSequence?: number | null }): Promise<any>;
   constructor(input: { prisma: unknown; now?: () => Date; newLeaseToken?: () => string });
   getConversation(scope: AthleteScope, input?: { beforeSequence?: number | null; limit?: number }): Promise<unknown>;
   getConversationMarker(scope: AthleteScope): Promise<{ id: string | null; generation: number; sequence: number; lastReflectedActivityId: string | null; lastReflectedActivityAt: string | null }>;

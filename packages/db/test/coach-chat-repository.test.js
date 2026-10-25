@@ -54,7 +54,7 @@ function sorted(rows, orderBy = []) {
 }
 
 function createFakePrisma() {
-  const store = { conversations: [], turns: [], messages: [], usage: [], id: 0 };
+  const store = { conversations: [], turns: [], messages: [], archives: [], usage: [], id: 0 };
   let queue = Promise.resolve();
   const id = (prefix) => `${prefix}_${++store.id}`;
   const prisma = {
@@ -72,6 +72,10 @@ function createFakePrisma() {
       },
     },
     coachTurn: {
+      updateMany: async ({ where, data }) => {
+        const rows = store.turns.filter((row) => matches(row, where, store));
+        rows.forEach((row) => applyData(row, data)); return { count: rows.length };
+      },
       findUnique: async ({ where }) => store.turns.find((row) => matches(row, where, store)) ?? null,
       findFirst: async ({ where, orderBy, include }) => {
         const row = sorted(store.turns.filter((candidate) => matches(candidate, where, store)), orderBy)[0] ?? null;
@@ -94,6 +98,12 @@ function createFakePrisma() {
         store.messages = store.messages.filter((row) => !ids.has(row.turnId));
         return { count: ids.size };
       },
+    },
+    coachConversationArchive: {
+      findFirst: async ({ where }) => store.archives.find((row) => matches(row, where, store)) ?? null,
+      findMany: async ({ where, orderBy, take }) => sorted(store.archives.filter((row) => matches(row, where, store)), orderBy).slice(0, take),
+      create: async ({ data }) => { const row = { id: id("archive"), ...data }; store.archives.push(row); return row; },
+      deleteMany: async ({ where }) => { const before = store.archives.length; store.archives = store.archives.filter((row) => !matches(row, where, store)); return { count: before - store.archives.length }; },
     },
     coachMessage: {
       findMany: async ({ where, orderBy, take, include }) => sorted(store.messages.filter((row) => matches(row, where, store)), orderBy).slice(0, take).map((row) => include?.turn ? { ...row, turn: { state: store.turns.find((turn) => turn.id === row.turnId)?.state } } : row),
@@ -241,4 +251,92 @@ test("replay lookup stays athlete and generation scoped and disappears after cle
   assert.equal(await repository.getTurnReplay(other, { expectedGeneration: 1, clientTurnId: "replay_lookup" }), null);
   await repository.clearHistory(scope, { expectedGeneration: 1, expectedSequence: 1 });
   assert.equal(await repository.getTurnReplay(scope, { expectedGeneration: 1, clientTurnId: "replay_lookup" }), null);
+});
+
+const archiveInput = { expectedGeneration: 1, expectedSequence: 2, requestId: "archive_request_1" };
+
+test("archive retains every page, starts an empty generation and excludes archived AI context", async () => {
+  const { repository, prisma } = setup();
+  const first = await repository.beginTurn(scope, turnInput(0, "archive_first", "How should I approach next week?"));
+  await complete(repository, first);
+  // Seed additional persisted messages to exercise pagination independently of provider quotas.
+  for (let sequence = 3; sequence <= 65; sequence++) prisma.store.messages.push({ ...prisma.store.messages[0], id: `older_${sequence}`, sequence, text: `Saved message ${sequence}` });
+  prisma.store.conversations[0].sequence = 65;
+  const saved = await repository.archiveConversation(scope, { ...archiveInput, expectedSequence: 65 });
+  assert.equal(saved.archive.finalSequence, 65);
+  assert.equal(saved.archive.title, "How should I approach next week?");
+  assert.equal(prisma.store.messages.length, 65);
+  assert.deepEqual((await repository.getConversation(scope)).messages, []);
+  assert.equal((await repository.getConversation(scope)).generation, 2);
+  assert.equal((await repository.getConversationMarker(scope)).lastReflectedActivityId, null);
+  assert.deepEqual(await repository.getCompletedHistory(scope), []);
+  const latest = await repository.getArchive(scope, saved.archive.id);
+  assert.equal(latest.messages.length, 40);
+  assert.equal(latest.hasOlder, true);
+  const older = await repository.getArchive(scope, saved.archive.id, { beforeSequence: latest.oldestSequence });
+  assert.equal(older.messages.length, 25);
+  assert.equal(older.hasOlder, false);
+  assert.deepEqual([...older.messages, ...latest.messages].map((item) => item.sequence), Array.from({ length: 65 }, (_, index) => index + 1));
+});
+
+test("archive abandons processing, fences late replies and rejects old-generation replays", async () => {
+  const { repository, prisma } = setup();
+  const pending = await repository.beginTurn(scope, turnInput(0, "pending_archive"));
+  const saved = await repository.archiveConversation(scope, { ...archiveInput, expectedSequence: 1 });
+  assert.equal(prisma.store.turns[0].state, "abandoned");
+  assert.equal(prisma.store.turns[0].leaseToken, null);
+  assert.equal((await complete(repository, pending)).kind, "stale");
+  assert.equal((await repository.getArchive(scope, saved.archive.id)).messages.length, 1);
+  await assert.rejects(repository.beginTurn(scope, turnInput(0, "pending_archive")), CoachChatConflictError);
+  await assert.rejects(repository.retryTurn(scope, { turnId: pending.turn.id, expectedGeneration: 1 }), CoachChatConflictError);
+});
+
+test("archive retries are idempotent, competing clears conflict, and empty chats make no archive", async () => {
+  const { repository, prisma } = setup();
+  assert.equal((await repository.archiveConversation(scope, { ...archiveInput, expectedSequence: 0 })).archive, null);
+  const first = await repository.beginTurn(scope, turnInput(0)); await complete(repository, first);
+  const [a, b] = await Promise.all([repository.archiveConversation(scope, archiveInput), repository.archiveConversation(scope, archiveInput)]);
+  assert.equal(a.archive.id, b.archive.id);
+  assert.equal(prisma.store.archives.length, 1);
+  await assert.rejects(repository.archiveConversation(scope, { ...archiveInput, requestId: "competing" }), CoachChatConflictError);
+  await assert.rejects(repository.archiveConversation(scope, { ...archiveInput, expectedSequence: 1 }), CoachChatConflictError);
+  assert.equal((await repository.getConversation(scope)).generation, 2);
+});
+
+test("a failed archive transaction retains the complete active discussion", async () => {
+  const { repository, prisma } = setup();
+  const first = await repository.beginTurn(scope, turnInput(0)); await complete(repository, first);
+  prisma.coachConversation.update = async () => { throw new Error("synthetic database failure"); };
+  await assert.rejects(repository.archiveConversation(scope, archiveInput), /synthetic database failure/u);
+  assert.equal(prisma.store.archives.length, 0);
+  assert.equal((await repository.getConversation(scope)).sequence, 2);
+  assert.equal((await repository.getCompletedHistory(scope)).length, 2);
+});
+
+test("archives are athlete-scoped and permanent deletion removes all generations", async () => {
+  const { repository, prisma } = setup();
+  const first = await repository.beginTurn(scope, turnInput(0)); await complete(repository, first);
+  const { archive } = await repository.archiveConversation(scope, archiveInput);
+  const other = athleteScopeFor(buildActorContext({ userId: "other_owner", permittedAthleteIds: ["other_athlete"], activeAthleteId: "other_athlete", requestId: "other_request", credentialKind: "session" }));
+  assert.deepEqual((await repository.listArchives(other)).items, []);
+  await assert.rejects(repository.getArchive(other, archive.id), /not found/u);
+  assert.equal((await repository.listArchives(scope)).items.length, 1);
+  await repository.clearHistory(scope, { expectedGeneration: 2, expectedSequence: 0 });
+  assert.equal(prisma.store.messages.length, 0);
+  assert.equal(prisma.store.turns.length, 0);
+  assert.equal(prisma.store.archives.length, 0);
+  await assert.rejects(repository.getArchive(scope, archive.id), /not found/u);
+});
+
+test("history listing pages by generation without duplicates", async () => {
+  const { repository, prisma } = setup();
+  for (let generation = 1; generation <= 25; generation++) prisma.store.archives.push({
+    id: `archive_${generation}`, athleteId: "athlete_test", conversationId: "conversation_test", generation,
+    requestId: `request_${generation}`, title: `Discussion ${generation}`, startedAt: now, archivedAt: now, finalSequence: 1,
+  });
+  const first = await repository.listArchives(scope);
+  assert.equal(first.items.length, 20); assert.equal(first.nextBefore, 6);
+  const second = await repository.listArchives(scope, { beforeGeneration: first.nextBefore });
+  assert.equal(second.items.length, 5); assert.equal(second.nextBefore, null);
+  assert.equal(new Set([...first.items, ...second.items].map((item) => item.id)).size, 25);
 });

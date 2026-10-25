@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import {
   coachContextSchema,
   coachConversationStateSchema,
+  coachArchiveResultSchema,
   type CoachContext,
   type CoachConversationMessage,
   type CoachConversationState,
@@ -15,6 +16,7 @@ import {
 import { createRecoveryContext, readRecoveryContext, recoveryReturnHref } from "../../lib/recovery-context";
 import { DailyWellbeingCheckIn } from "./daily-wellbeing-check-in";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
+import { CoachChatHistory } from "./coach-chat-history";
 import "../dashboard/dashboard.css";
 import "./coach-chat.css";
 
@@ -100,6 +102,47 @@ export function CoachChatShell() {
   const [recoveryReturn, setRecoveryReturn] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLOListElement | null>(null);
   const loadedRef = useRef(false);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const epochRef = useRef(0);
+  const generationRef = useRef(1);
+  const actorRef = useRef<string | null>(null);
+  const tabIdRef = useRef<string | null>(null);
+  const archivingRef = useRef(false);
+  const archiveRequestRef = useRef<{ requestId: string; expectedGeneration: number; expectedSequence: number } | null>(null);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState("");
+  const [archiveStatus, setArchiveStatus] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  function acceptConversation(latest: CoachConversationState) {
+    if (latest.generation < generationRef.current) return false;
+    generationRef.current = latest.generation;
+    setConversation((current) => latest.generation === current.generation && latest.sequence < current.sequence ? current : latest);
+    return true;
+  }
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const fit = () => {
+      const viewport = window.visualViewport;
+      const top = panel.getBoundingClientRect().top + window.scrollY;
+      const mobileNav = document.querySelector<HTMLElement>(".dashboard-nav-primary");
+      const bottomInset = window.innerWidth < 768 ? (mobileNav?.getBoundingClientRect().height ?? 84) + 12 : 16;
+      const available = (viewport?.height ?? window.innerHeight) + (viewport?.offsetTop ?? 0) - top - bottomInset;
+      const controls = Array.from(panel.children).filter((child) => !child.classList.contains("coach-transcript"))
+        .reduce((height, child) => height + child.getBoundingClientRect().height + parseFloat(getComputedStyle(child).marginTop || "0") + parseFloat(getComputedStyle(child).marginBottom || "0"), 0);
+      panel.style.height = `${Math.max(available, controls + 82)}px`;
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(panel.parentElement!);
+    Array.from(panel.children).forEach((child) => observer.observe(child));
+    window.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("scroll", fit);
+    fit();
+    return () => { observer.disconnect(); window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit); };
+  }, [loadState, failure, archiveError, archiveStatus, context]);
 
   const readConversation = useCallback(async (before?: number) => {
     const suffix = before ? `?before=${before}` : "";
@@ -108,8 +151,15 @@ export function CoachChatShell() {
   }, []);
 
   const refreshConversation = useCallback(async () => {
+    const epoch = epochRef.current;
     const latest = await readConversation();
-    setConversation(latest);
+    if (epoch === epochRef.current && !archivingRef.current && latest.generation > generationRef.current) {
+      epochRef.current += 1;
+      acceptConversation(latest); setPending(false); setSending(false); setFailure(null); setTopic("general"); setSelectedRecord(null);
+      void refreshContext("general", null).catch(() => undefined);
+      return latest;
+    }
+    if (epoch !== epochRef.current || archivingRef.current || !acceptConversation(latest)) return latest;
     const processing = latest.currentTurn?.state === "processing";
     setPending(processing);
     if (!processing) setLeaseMayHaveExpired(false);
@@ -120,10 +170,12 @@ export function CoachChatShell() {
   }, [readConversation]);
 
   const refreshContext = useCallback(async (nextTopic = topic, nextRecord = selectedRecord) => {
+    const epoch = epochRef.current;
     const query = new URLSearchParams({ topic: nextTopic });
     if (nextRecord) { query.set("recordType", nextRecord.type); query.set("recordId", nextRecord.id); }
     const result = await requestJson(`/api/v1/coaching/chat/context?${query}`, { cache: "no-store" });
     const latest = validContext(result);
+    if (epoch !== epochRef.current || archivingRef.current) return latest;
     setContext(latest);
     setTopic(latest.selectedTopic);
     setSelectedRecord(latest.selectedRecord);
@@ -131,9 +183,12 @@ export function CoachChatShell() {
   }, [selectedRecord, topic]);
 
   const loadAll = useCallback(async (restore = false) => {
+    if (archivingRef.current) return;
+    const epoch = epochRef.current;
     setLoadState((current) => current === "ready" ? "ready" : "loading");
     try {
       const session = await requestJson("/api/v1/auth/session", { cache: "no-store" });
+      if (epoch !== epochRef.current || archivingRef.current) return;
       const actor = session.actor && typeof session.actor === "object" ? session.actor as Record<string, unknown> : null;
       const activeAthleteId = session.authenticated === true && typeof actor?.activeAthleteId === "string" ? actor.activeAthleteId : null;
       if (!activeAthleteId) {
@@ -143,6 +198,7 @@ export function CoachChatShell() {
       }
       if (actor?.credentialKind !== "session") throw new Error("Coach chat requires your signed-in owner session.");
       setActorId(activeAthleteId);
+      actorRef.current = activeAthleteId;
       const params = new URLSearchParams(window.location.search);
       const recovery = readRecoveryContext(params.get("recovery"));
       if (recovery?.kind === "coach") {
@@ -166,7 +222,7 @@ export function CoachChatShell() {
           } catch { sessionStorage.removeItem(`${prefix}${activeAthleteId}.record`); }
         }
       }
-      if (typeof savedDraft === "string") setDraft(savedDraft);
+      if (!restore && typeof savedDraft === "string") setDraft(savedDraft);
       const savedTopicIsValid = savedTopic === "reflect" || savedTopic === "prepare" || savedTopic === "general";
       const selectedTopic: CoachTopic | null = recovery?.kind === "coach" && recovery.coach
         ? recovery.coach.topic
@@ -184,7 +240,21 @@ export function CoachChatShell() {
           return validContext(await requestJson(`/api/v1/coaching/chat/context?${query}`, { cache: "no-store" }));
         })(),
       ]);
-      setConversation(latestConversation);
+      if (epoch !== epochRef.current || archivingRef.current || latestConversation.generation < generationRef.current) return;
+      const savedGeneration = Number(sessionStorage.getItem(`${prefix}${activeAthleteId}.generation`));
+      const changedGeneration = (loadedRef.current && latestConversation.generation > generationRef.current) || (savedGeneration > 0 && savedGeneration !== latestConversation.generation);
+      acceptConversation(latestConversation);
+      if (changedGeneration) {
+        setSending(false); setOlderLoading(false); setRecoveryReturn(null);
+        setTopic("general"); setSelectedRecord(null);
+        const fresh = validContext(await requestJson("/api/v1/coaching/chat/context?topic=general", { cache: "no-store" }));
+        if (epoch !== epochRef.current || generationRef.current !== latestConversation.generation || archivingRef.current) return;
+        epochRef.current += 1;
+        setContext(fresh); setTopic(fresh.selectedTopic); setSelectedRecord(fresh.selectedRecord);
+        setPending(latestConversation.currentTurn?.state === "processing"); setFailure(null); setLoadState("ready"); setLoadError(""); loadedRef.current = true;
+        if (transcriptRef.current) transcriptRef.current.scrollTop = 0;
+        return;
+      }
       setPending(latestConversation.currentTurn?.state === "processing");
       setContext(latestContext);
       setTopic(latestContext.selectedTopic);
@@ -206,18 +276,29 @@ export function CoachChatShell() {
       }
       loadedRef.current = true;
     } catch (error) {
+      if (epoch !== epochRef.current || archivingRef.current) return;
       setLoadState("error"); setLoadError(error instanceof Error ? error.message : "Coach is temporarily unavailable.");
     }
   }, [readConversation, selectedRecord, topic]);
 
   useEffect(() => {
+    tabIdRef.current ??= crypto.randomUUID();
     void loadAll();
     const focused = () => { if (document.visibilityState === "visible") void loadAll(true); };
     window.addEventListener("focus", focused);
     window.addEventListener("pageshow", focused);
     const visibility = () => { if (document.visibilityState === "visible") void loadAll(true); };
     document.addEventListener("visibilitychange", visibility);
-    const onCleared = (event: MessageEvent) => { if (event.data?.type === "cleared") { setDraft(""); setFailure(null); setPending(false); void Promise.all([refreshConversation(), refreshContext("general", null)]); } };
+    const onCleared = (event: MessageEvent) => {
+      if (!["archived", "cleared"].includes(event.data?.type) || event.data?.athleteId !== actorRef.current || event.data?.sourceId === tabIdRef.current) return;
+      epochRef.current += 1; archiveRequestRef.current = null;
+      generationRef.current = Math.max(generationRef.current, Number(event.data.generation) || 1);
+      setArchiveError(""); setArchiveStatus(event.data.type === "archived" ? "Chat saved in another tab. New discussion started." : "Coaching history permanently deleted.");
+      setFailure(null); setPending(false); setSending(false); setTopic("general"); setSelectedRecord(null); setHistoryOpen(false);
+      if (event.data.type === "cleared") setDraft("");
+      try { for (const key of ["topic", "record", "scrollTop"]) sessionStorage.removeItem(`${prefix}${actorRef.current}.${key}`); } catch { /* optional */ }
+      void Promise.all([refreshConversation(), refreshContext("general", null)]).catch(() => setArchiveError("The discussion changed in another tab. Reload to see the latest chat."));
+    };
     const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("racepredictor.coach-history") : null;
     channel?.addEventListener("message", onCleared);
     return () => { window.removeEventListener("focus", focused); window.removeEventListener("pageshow", focused); document.removeEventListener("visibilitychange", visibility); channel?.removeEventListener("message", onCleared); channel?.close(); };
@@ -234,8 +315,9 @@ export function CoachChatShell() {
       if (selectedRecord) sessionStorage.setItem(`${prefix}${actorId}.record`, JSON.stringify(selectedRecord));
       else sessionStorage.removeItem(`${prefix}${actorId}.record`);
       sessionStorage.setItem(`${prefix}${actorId}.draft`, draft);
+      sessionStorage.setItem(`${prefix}${actorId}.generation`, String(conversation.generation));
     } catch { /* session storage is optional */ }
-  }, [actorId, topic, selectedRecord, draft, loadState]);
+  }, [actorId, topic, selectedRecord, draft, loadState, conversation.generation]);
 
   useEffect(() => {
     if (!pending) return;
@@ -259,12 +341,14 @@ export function CoachChatShell() {
   }, [context, refreshContext]);
 
   async function chooseTopic(nextTopic: CoachTopic) {
+    if (archivingRef.current) return;
     setTopic(nextTopic); setSelectedRecord(null); setFailure(null);
     try { await refreshContext(nextTopic, null); }
     catch (error) { setLoadError(error instanceof Error ? error.message : "Training context is temporarily unavailable."); }
   }
 
   async function selectRecord(reference: CoachRecordReference) {
+    if (archivingRef.current) return;
     setSelectedRecord(reference); setFailure(null);
     try { await refreshContext(topic, reference); }
     catch (error) { setLoadError(error instanceof Error ? error.message : "That training record is no longer available."); }
@@ -272,12 +356,14 @@ export function CoachChatShell() {
 
   async function submitMessage(event?: FormEvent) {
     event?.preventDefault();
-    if (!draft.trim() || !context || sending || pending || !context.canSend) return;
+    if (!draft.trim() || !context || sending || pending || archivingRef.current || archiveError || !context.canSend) return;
+    const epoch = epochRef.current;
     const text = draft.trim();
     setSending(true); setFailure(null);
     const previousSequence = conversation.sequence;
     try {
       const freshContext = await refreshContext(topic, selectedRecord);
+      if (epoch !== epochRef.current || archivingRef.current) return;
       const result = await requestJson("/api/v1/coaching/chat/turns", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -286,47 +372,94 @@ export function CoachChatShell() {
           contextFingerprint: freshContext.fingerprint,
         }),
       });
+      if (epoch !== epochRef.current || archivingRef.current) return;
       const failurePayload = result.failure && typeof result.failure === "object" ? result.failure as Record<string, unknown> : null;
       if (failurePayload) setFailure({ code: String(failurePayload.code ?? "PROVIDER_UNAVAILABLE"), message: String(failurePayload.message ?? "Your message was saved. Retry the reply.") });
       const saved = await refreshConversation();
-      if (saved.sequence > previousSequence) setDraft("");
+      if (epoch !== epochRef.current || archivingRef.current) return;
+      if (saved.generation === conversation.generation && saved.sequence > previousSequence) setDraft((current) => current.trim() === text ? "" : current);
       setPending(saved.currentTurn?.state === "processing");
     } catch (error) {
+      if (epoch !== epochRef.current || archivingRef.current) return;
       const current = await refreshConversation().catch(() => null);
-      if (current && current.sequence > previousSequence) setDraft("");
+      if (epoch !== epochRef.current || archivingRef.current) return;
+      if (current && current.generation === conversation.generation && current.sequence > previousSequence) setDraft((value) => value.trim() === text ? "" : value);
       if (current?.currentTurn?.state === "processing") setPending(true);
       else setFailure({ code: (error as ApiError)?.code ?? "REQUEST_FAILED", message: error instanceof Error ? error.message : "Your message could not be sent." });
-    } finally { setSending(false); }
+    } finally { if (epoch === epochRef.current && !archivingRef.current) setSending(false); }
   }
 
   async function retryReply() {
     const turn = conversation.currentTurn;
-    if (!turn || !context || (!turn.retryable && !(turn.state === "processing" && leaseMayHaveExpired)) || sending) return;
+    if (!turn || !context || (!turn.retryable && !(turn.state === "processing" && leaseMayHaveExpired)) || sending || archivingRef.current) return;
+    const epoch = epochRef.current;
     setSending(true); setFailure(null);
     try {
       const freshContext = await refreshContext(topic, selectedRecord);
+      if (epoch !== epochRef.current || archivingRef.current) return;
       const result = await requestJson(`/api/v1/coaching/chat/turns/${encodeURIComponent(turn.id)}/retry`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ expectedGeneration: conversation.generation, expectedAttempt: turn.attempt, retryId: crypto.randomUUID(), contextFingerprint: freshContext.fingerprint }),
       });
+      if (epoch !== epochRef.current || archivingRef.current) return;
       const failurePayload = result.failure && typeof result.failure === "object" ? result.failure as Record<string, unknown> : null;
       if (failurePayload) setFailure({ code: String(failurePayload.code ?? "PROVIDER_UNAVAILABLE"), message: String(failurePayload.message ?? "The saved message could not be answered yet.") });
       setLeaseMayHaveExpired(false);
       await refreshConversation();
     } catch (error) {
+      if (epoch !== epochRef.current || archivingRef.current) return;
       await refreshConversation().catch(() => undefined);
+      if (epoch !== epochRef.current || archivingRef.current) return;
       setFailure({ code: (error as ApiError)?.code ?? "RETRY_FAILED", message: error instanceof Error ? error.message : "This reply could not be retried." });
-    } finally { setSending(false); }
+    } finally { if (epoch === epochRef.current && !archivingRef.current) setSending(false); }
   }
 
   async function loadOlder() {
-    if (!conversation.hasOlder || !conversation.oldestSequence || olderLoading) return;
+    if (!conversation.hasOlder || !conversation.oldestSequence || olderLoading || archivingRef.current) return;
+    const epoch = epochRef.current;
     setOlderLoading(true);
     try {
       const previous = await readConversation(conversation.oldestSequence);
-      setConversation((current) => ({ ...current, messages: [...previous.messages, ...current.messages], hasOlder: previous.hasOlder, oldestSequence: previous.oldestSequence }));
-    } catch (error) { setFailure({ code: "HISTORY_READ_FAILED", message: error instanceof Error ? error.message : "Older messages could not be loaded." }); }
-    finally { setOlderLoading(false); }
+      if (epoch !== epochRef.current || archivingRef.current) return;
+      setConversation((current) => previous.generation !== current.generation ? current : ({ ...current, messages: [...previous.messages.filter((item) => !current.messages.some((message) => message.id === item.id)), ...current.messages], hasOlder: previous.hasOlder, oldestSequence: previous.oldestSequence }));
+    } catch (error) { if (epoch === epochRef.current && !archivingRef.current) setFailure({ code: "HISTORY_READ_FAILED", message: error instanceof Error ? error.message : "Older messages could not be loaded." }); }
+    finally { if (epoch === epochRef.current && !archivingRef.current) setOlderLoading(false); }
+  }
+
+  async function archiveChat() {
+    if (archivingRef.current || loadState !== "ready") return;
+    archivingRef.current = true; setArchiving(true); setArchiveError(""); setArchiveStatus("");
+    const epoch = ++epochRef.current;
+    archiveRequestRef.current ??= { requestId: crypto.randomUUID(), expectedGeneration: conversation.generation, expectedSequence: conversation.sequence };
+    try {
+      const result = coachArchiveResultSchema.parse(await requestJson("/api/v1/coaching/chat/conversation/archive", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(archiveRequestRef.current),
+      }));
+      if (epoch !== epochRef.current) return;
+      acceptConversation(result.conversation); archiveRequestRef.current = null;
+      setFailure(null); setPending(false); setSending(false); setOlderLoading(false); setTopic("general"); setSelectedRecord(null); setRecoveryReturn(null);
+      try {
+        sessionStorage.setItem(`${prefix}${actorId}.topic`, "general");
+        sessionStorage.setItem(`${prefix}${actorId}.generation`, String(result.conversation.generation));
+        for (const key of ["record", "scrollTop"]) sessionStorage.removeItem(`${prefix}${actorId}.${key}`);
+      } catch { /* optional browser storage */ }
+      try {
+        const channel = new BroadcastChannel("racepredictor.coach-history");
+        channel.postMessage({ type: "archived", athleteId: actorId, generation: result.conversation.generation, sourceId: tabIdRef.current }); channel.close();
+      } catch { /* optional browser messaging */ }
+      setArchiveStatus(result.archive ? "Chat saved. New discussion started." : "New discussion ready.");
+      if (transcriptRef.current) transcriptRef.current.scrollTop = 0;
+      archivingRef.current = false;
+      await refreshContext("general", null).catch(() => { setContext(null); setLoadState("error"); setLoadError("Training context could not be refreshed. Reload before sending."); });
+      requestAnimationFrame(() => document.getElementById("coach-message-input")?.focus({ preventScroll: true }));
+    } catch (error) {
+      if (epoch !== epochRef.current) return;
+      if ((error as ApiError).status === 409) {
+        archiveRequestRef.current = null; archivingRef.current = false;
+        await refreshConversation().catch(() => undefined);
+        setArchiveError("The discussion changed. Review the latest messages, then choose Clear chat again.");
+      } else setArchiveError("The chat could not be saved. Your messages and draft are kept here. Retry saving.");
+    } finally { archivingRef.current = false; setArchiving(false); setSending(false); setOlderLoading(false); }
   }
 
   function contextualHref(href: string, record: CoachRecordReference | null = selectedRecord, focusKey?: string) {
@@ -372,14 +505,15 @@ export function CoachChatShell() {
         <Link id="coach-plan-strip-link" href="/dashboard/plan" onClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)} onAuxClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)}>View race plan</Link>
       </section>
       {recoveryReturn ? <div className="coach-v2-return-note"><span>You’re back from a training record.</span><button type="button" onClick={() => setRecoveryReturn(null)} aria-label="Dismiss return message">×</button></div> : null}
-      <section className="coach-chat-panel" aria-label="Conversation with ORBIT">
+      <section className="coach-chat-panel" ref={panelRef} aria-label="Conversation with ORBIT">
         <header className="coach-chat-heading">
           <div className="orbit-portrait-wrap">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={48} height={48} onError={() => setOrbitAvailable(false)} /> : <span aria-hidden="true">O</span>}</div>
           <div><h2>ORBIT <span>AI COACH</span></h2><p>{context ? `Here with you · ${context.localDate}` : "Your training companion"}</p></div>
           <span className="orbit-presence"><i aria-hidden="true" />{context?.canSend ? " Ready" : context ? " Replies paused" : " Loading"}</span>
+          <div className="coach-history-actions"><button type="button" onClick={() => setHistoryOpen(true)} disabled={archiving}>Previous chats</button><button type="button" title="Save this discussion and start a new one" disabled={archiving || loadState !== "ready"} onClick={() => void archiveChat()}>{archiving ? "Saving…" : "Clear chat"}</button></div>
         </header>
         <div className="coach-topic-picker" role="group" aria-label="Choose what to talk about">
-          {(["reflect", "prepare", "general"] as const).map((value) => <button type="button" key={value} aria-pressed={topic === value} onClick={() => void chooseTopic(value)}>{topicLabels[value]}</button>)}
+          {(["reflect", "prepare", "general"] as const).map((value) => <button type="button" key={value} disabled={archiving} aria-pressed={topic === value} onClick={() => void chooseTopic(value)}>{topicLabels[value]}</button>)}
         </div>
         {context ? <div className="coach-context-row">
           <span className="coach-context-label">{topic === "reflect" ? "REFLECTING ON" : topic === "prepare" ? "GETTING READY FOR" : "TRAINING CONTEXT"}</span>
@@ -389,10 +523,12 @@ export function CoachChatShell() {
           {context.nextSession && topic !== "prepare" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "session", id: context.nextSession!.id })}>Next session · {context.nextSession.title}</button> : null}
         </div> : null}
         {loadState === "loading" ? <p className="coach-v2-state" role="status" aria-busy="true">Loading your training context…</p> : null}
+        {archiveStatus ? <p className="coach-v2-state" role="status">{archiveStatus}</p> : null}
+        {archiveError ? <div className="coach-v2-error" role="alert"><p>{archiveError}</p><button type="button" disabled={archiving} onClick={() => void archiveChat()}>Retry saving</button></div> : null}
         {loadState === "error" ? <div className="coach-v2-error" role="alert"><p>{loadError}</p><button type="button" onClick={() => void loadAll(true)}>Retry</button><Link href="/dashboard/calendar">Open Calendar</Link></div> : null}
         {failure && !messages.length ? <div className="coach-v2-error" role="alert"><p>{failure.message}</p></div> : null}
-        <ol className="coach-transcript" ref={transcriptRef} onScroll={(event) => { if (actorId) { try { sessionStorage.setItem(`${prefix}${actorId}.scrollTop`, String(event.currentTarget.scrollTop)); } catch { /* session storage is optional */ } } }} aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
-          {conversation.hasOlder ? <li className="coach-older-control"><button type="button" disabled={olderLoading} onClick={() => void loadOlder()}>{olderLoading ? "Loading…" : "Load earlier messages"}</button></li> : null}
+        <ol className="coach-transcript" tabIndex={0} ref={transcriptRef} onScroll={(event) => { if (actorId) { try { sessionStorage.setItem(`${prefix}${actorId}.scrollTop`, String(event.currentTarget.scrollTop)); } catch { /* session storage is optional */ } } }} aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
+          {conversation.hasOlder ? <li className="coach-older-control"><button type="button" disabled={archiving || olderLoading} onClick={() => void loadOlder()}>{olderLoading ? "Loading…" : "Load earlier messages"}</button></li> : null}
           {messages.length === 0 && context ? <li className="coach-opening-message"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant"><p>{context.opening.text}</p><time>{context.localDate}</time></div></li> : null}
           {messages.map((message) => <li className={`coach-message coach-message--${message.role}`} key={message.id}>
             {message.role === "assistant" ? <div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div> : null}
@@ -400,17 +536,18 @@ export function CoachChatShell() {
           </li>)}
           {sending || pending ? <li className="coach-message coach-message--assistant"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant coach-generating" role="status" aria-live="polite"><span className="coach-dot-pulse" aria-hidden="true"><i /><i /><i /></span><span>ORBIT is thinking…</span></div></li> : null}
         </ol>
-        {pending && leaseMayHaveExpired ? <div className="coach-v2-error coach-turn-error" role="status"><p>The reply may have stopped before it was saved. You can safely recover this message.</p><button type="button" disabled={sending} onClick={() => void retryReply()}>{sending ? "Recovering…" : "Recover reply"}</button></div> : null}
-        {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
+        {pending && leaseMayHaveExpired ? <div className="coach-v2-error coach-turn-error" role="status"><p>The reply may have stopped before it was saved. You can safely recover this message.</p><button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Recovering…" : "Recover reply"}</button></div> : null}
+        {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
         {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
         <form className="coach-composer" onSubmit={(event) => void submitMessage(event)}>
           <label className="sr-only" htmlFor="coach-message-input">Message ORBIT</label>
-          <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={3} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={loadState !== "ready" || !context?.canSend || sending} />
-          <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={!draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>
+          <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={3} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />
+          <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={archiving || Boolean(archiveError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>
         </form>
         {context && !context.canSend ? <p className="coach-chat-paused" role="status">Chat replies are paused. Your conversation remains available, and your training plan is unchanged.</p> : null}
         <p className="coach-chat-boundary">ORBIT offers training guidance. Your plan only changes when you approve an update.</p>
       </section>
+      <CoachChatHistory open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <section id="wellbeing" className="coach-wellbeing-entry" aria-labelledby="coach-wellbeing-heading">
         <div><p className="coach-v2-overline">RECOVERY CONTEXT</p><h2 id="coach-wellbeing-heading">How are you feeling today?</h2><p>A wellbeing check-in is optional and only saved if you choose to submit it.</p></div>
         <button type="button" aria-expanded={wellbeingOpen} aria-controls="coach-wellbeing-form" onClick={() => setWellbeingOpen((open) => !open)}>{wellbeingOpen ? "Close check-in" : context?.wellbeing?.status === "saved" ? "Review check-in" : "Add check-in"}</button>

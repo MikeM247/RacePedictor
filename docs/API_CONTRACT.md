@@ -1,5 +1,9 @@
 # API_CONTRACT
 
+## Coach saved discussions (25 October 2026)
+
+The additive archive command and paginated history reads are specified in [Coach chat history](plans/COACH_CHAT_HISTORY.md#interfaces). All require an authenticated owner session and athlete scope; mutations require same origin. Existing permanent-history deletion now includes archived generations. Responses remain private/no-store.
+
 ## Reviewed activity pace comparison (6 October 2026)
 
 The owner-scoped `GET /api/v1/activities/:activityId/pace-comparison` returns ready/none/stale with an immutable comparison snapshot. Paired-device context and publication endpoints require an explicit historical plan/session, source hash, split fingerprint and expected revisions. Exact envelopes, error codes and publication commands are in [Activity split comparison](plans/ACTIVITY_SPLIT_COMPARISON.md#api). The strict source is `packages/core/src/contracts/activity-pace-comparison.ts`.

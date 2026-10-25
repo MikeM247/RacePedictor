@@ -5,6 +5,7 @@ const { pathToFileURL } = require("node:url");
 const path = require("node:path");
 const { readdirSync, readFileSync } = require("node:fs");
 const { createHash } = require("node:crypto");
+let phase = "environment";
 
 (async () => {
   const root = path.resolve(__dirname, "..");
@@ -16,15 +17,20 @@ const { createHash } = require("node:crypto");
   const env = { ...process.env, DATABASE_URL: preview.url, DATABASE_URL_UNPOOLED: preview.directUrl };
   const run = (command) => execFileSync(process.execPath, [cli, "migrate", command, "--schema", path.join(root, "packages/db/prisma/schema.prisma")], { env, encoding: "utf8", stdio: "pipe", timeout: 120_000 });
   const baselineOnly = new Set(["20261018120000_milestone_lifecycle", "20261019130000_milestone_reconciliation_jobs"]);
+  phase = "status";
   try { run("status"); } catch (error) {
     const output = `${error.stdout || ""}${error.stderr || ""}`;
     if (error.status !== 1 || /P\d{4}/.test(output) || !["20261022120000_v2_coach_conversations", ...baselineOnly].some((name) => output.includes(name))) throw new Error("PREVIEW_MIGRATION_STATUS_FAILED");
   }
+  phase = "deploy";
   run("deploy");
+  phase = "generate";
   run("generate");
+  phase = "client";
   const { PrismaClient } = appRequire("@prisma/client");
   const prisma = new PrismaClient({ datasources: { db: { url: preview.directUrl } } });
   try {
+    phase = "ledger";
     const rows = await prisma.$queryRawUnsafe('SELECT migration_name, checksum, finished_at, rolled_back_at FROM "_prisma_migrations"');
     const migrations = path.join(root, "packages/db/prisma/migrations");
     const local = readdirSync(migrations, { withFileTypes: true }).filter((item) => item.isDirectory()).map((item) => item.name);
@@ -35,8 +41,8 @@ const { createHash } = require("node:crypto");
     if (rows.some((row) => !local.includes(row.migration_name) && !baselineOnly.has(row.migration_name))) throw new Error("UNEXPECTED_BASELINE_MIGRATION");
     console.log(`[preview-migration] Prisma deploy passed; all ${local.length} checked-in checksums match the dedicated database ledger. Source-baseline entries retained.`);
   } finally { await prisma.$disconnect(); }
-})().catch(() => {
+})().catch((error) => {
   // Prisma errors can contain connection details: do not print child output.
-  console.error("[preview-migration] Failed; inspect the isolated preview migration history. No connection details logged.");
+  console.error(`[preview-migration] Failed at ${phase}: ${error.code || error.name || "UNKNOWN"}. No connection details logged.`);
   process.exitCode = 1;
 });

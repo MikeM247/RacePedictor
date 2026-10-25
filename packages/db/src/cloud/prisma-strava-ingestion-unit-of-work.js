@@ -198,18 +198,22 @@ async function upsertActivity(context, input) {
     },
   });
   if (transaction.activityReviewRequest && ["run", "trail_run", "treadmill_run"].includes(input.activity.sport)) {
-    await transaction.activityReviewRequest.upsert({
-      where: { athleteId_activityId: { athleteId, activityId: input.activity.id } },
-      update: { status: "queued", availableAt: new Date(), activityRevision: revision, inputFingerprint: null, lastErrorCode: null },
-      create: {
+    const requestKey = { athleteId_activityId: { athleteId, activityId: input.activity.id } };
+    const currentRequest = await transaction.activityReviewRequest.findUnique({ where: requestKey });
+    if (currentRequest) {
+      const common = { activityRevision: revision, inputFingerprint: null, lastErrorCode: null };
+      await transaction.activityReviewRequest.update({ where: { id_athleteId: { id: currentRequest.id, athleteId } }, data: currentRequest.status === "processing" ? common : { ...common, status: "queued", executionTarget: "cloud", availableAt: new Date() } });
+    } else {
+      await transaction.activityReviewRequest.create({ data: {
         id: `activity_review_request_${input.activity.id}`,
         athleteId,
         activityId: input.activity.id,
         activityRevision: revision,
         status: "queued",
+        executionTarget: "cloud",
         availableAt: new Date(),
-      },
-    });
+      } });
+    }
   }
   return { activity: input.activity, revision, created: !existing, changed: true };
 }

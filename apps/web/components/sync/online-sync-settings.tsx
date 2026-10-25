@@ -2,6 +2,7 @@
 
 import { DashboardAppearanceSettings } from "../dashboard/dashboard-appearance-settings";
 import { MilestoneSettings } from "../dashboard/milestone-settings";
+import { CoachAiSettings } from "./coach-ai-settings";
 import { CoachHistorySettings } from "../coaching/coach-history-settings";
 
 import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
@@ -95,7 +96,7 @@ export function OnlineSyncSettings() {
     const requestedReturn = params.get("returnTo");
     setReturnTo(safeRecoveryPath(requestedReturn, "/dashboard/settings"));
     const requestedSection = params.get("section");
-    if (requestedSection === "coach" || requestedSection === "connections" || requestedSection === "devices" || requestedSection === "privacy" || requestedSection === "operations" || requestedSection === "appearance" || requestedSection === "milestones") setSettingsGroup(requestedSection);
+    if (requestedSection === "connections" || requestedSection === "devices" || requestedSection === "privacy" || requestedSection === "operations" || requestedSection === "appearance" || requestedSection === "milestones" || requestedSection === "coach") setSettingsGroup(requestedSection);
     void loadSessionAndDevices();
     void loadStrava();
     void loadBackfills();
@@ -317,7 +318,10 @@ export function OnlineSyncSettings() {
         {returnTo !== "/dashboard/settings" ? <div className="coach-actions"><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></div> : null}
         <section className="coaching-content coaching-content--settings">
           <TrainingTools />
-          <SettingsGroup name="coach" title="Coach" open={settingsGroup === "coach"} onToggle={setSettingsGroup}><CoachHistorySettings /></SettingsGroup>
+          <SettingsGroup name="coach" title="AI coach" open={settingsGroup === "coach"} onToggle={setSettingsGroup}>
+            <CoachAiSettings />
+            <CoachHistorySettings />
+          </SettingsGroup>
           <SettingsGroup name="milestones" title="Milestones" open={settingsGroup === "milestones"} onToggle={setSettingsGroup}><MilestoneSettings /></SettingsGroup>
           <SettingsGroup name="appearance" title="Appearance" open={settingsGroup === "appearance"} onToggle={setSettingsGroup}><DashboardAppearanceSettings /></SettingsGroup>
           <SettingsGroup name="connections" title="Connections" open={settingsGroup === "connections"} onToggle={setSettingsGroup}>

@@ -78,19 +78,48 @@ export class PrismaActivityReviewRepository {
     return activities.length;
   }
 
-  async queue(scope, activityId) {
+  async queue(scope, activityId, intent = {}) {
     const athleteId = assertAthleteScope(scope);
-    const activity = await this.#prisma.activity.findFirst({ where: { id: activityId, athleteId, deletedAt: null }, select: { id: true } });
-    if (!activity) return null;
-    const latestRevision = this.#prisma.activityRevision
-      ? await this.#prisma.activityRevision.findFirst({ where: { athleteId, activityId }, orderBy: { revisionNumber: "desc" }, select: { revisionNumber: true } })
-      : null;
     const now = new Date();
-    const existing = await this.#prisma.activityReviewRequest.findUnique({ where: { athleteId_activityId: { athleteId, activityId } } });
-    const request = existing
-      ? await this.#prisma.activityReviewRequest.update({ where: { id_athleteId: { id: existing.id, athleteId } }, data: { status: "queued", availableAt: now, activityRevision: latestRevision?.revisionNumber ?? null, inputFingerprint: null, lastErrorCode: null } })
-      : await this.#prisma.activityReviewRequest.create({ data: { id: `activity_review_request_${randomUUID().replaceAll("-", "")}`, athleteId, activityId, activityRevision: latestRevision?.revisionNumber ?? null, status: "queued", availableAt: now } });
-    return { activityId, requestId: request.id, status: activityReviewRequestStatusSchema.parse(request.status), reused: Boolean(existing), updatedAt: request.updatedAt.toISOString() };
+    try {
+      return await this.#prisma.$transaction(async (tx) => {
+      const activity = await tx.activity.findFirst({ where: { id: activityId, athleteId, deletedAt: null }, select: { id: true } });
+      if (!activity) return null;
+      const [latestRevision, existing, review] = await Promise.all([
+        tx.activityRevision.findFirst({ where: { athleteId, activityId }, orderBy: { revisionNumber: "desc" }, select: { revisionNumber: true } }),
+        tx.activityReviewRequest.findUnique({ where: { athleteId_activityId: { athleteId, activityId } } }),
+        tx.activityCoachReview.findFirst({ where: { athleteId, activityId }, orderBy: { revision: "desc" }, select: { revision: true } }),
+      ]);
+      const regenerate = intent.regenerate === true;
+      if (regenerate && (!review || intent.expectedReviewRevision !== review.revision)) {
+        const error = new Error("The saved feedback changed. Reload it before regenerating.");
+        error.code = "CONFLICT";
+        throw error;
+      }
+      if (existing?.status === "processing" || existing?.status === "queued") {
+        return { activityId, requestId: existing.id, status: activityReviewRequestStatusSchema.parse(existing.status), reused: true, updatedAt: existing.updatedAt.toISOString() };
+      }
+      const data = { status: "queued", executionTarget: "cloud", availableAt: now, activityRevision: latestRevision?.revisionNumber ?? null, inputFingerprint: null, lastErrorCode: null, forceRegenerate: regenerate, expectedReviewRevision: regenerate ? review.revision : null };
+      const request = existing
+        ? await tx.activityReviewRequest.update({ where: { id_athleteId: { id: existing.id, athleteId } }, data })
+        : await tx.activityReviewRequest.create({ data: { id: "activity_review_request_" + randomUUID().replaceAll("-", ""), athleteId, activityId, ...data } });
+      return { activityId, requestId: request.id, status: activityReviewRequestStatusSchema.parse(request.status), reused: Boolean(existing), updatedAt: request.updatedAt.toISOString() };
+      }, { isolationLevel: "Serializable" });
+    } catch (error) {
+      if (error?.code === "P2034" || error?.code === "P2002") {
+        const [active, latestReview] = await Promise.all([
+          this.#prisma.activityReviewRequest.findUnique({ where: { athleteId_activityId: { athleteId, activityId } } }),
+          this.#prisma.activityCoachReview.findFirst({ where: { athleteId, activityId }, orderBy: { revision: "desc" }, select: { revision: true } }),
+        ]);
+        if (intent.regenerate === true && latestReview?.revision !== intent.expectedReviewRevision) {
+          const conflict = new Error("The saved feedback changed. Reload it before regenerating"); conflict.code = "CONFLICT"; throw conflict;
+        }
+        if (active && ["queued", "processing"].includes(active.status)) {
+          return { activityId, requestId: active.id, status: activityReviewRequestStatusSchema.parse(active.status), reused: true, updatedAt: active.updatedAt.toISOString() };
+        }
+      }
+      throw error;
+    }
   }
 
   async publish(scope, artifact, deviceId) {
@@ -100,6 +129,11 @@ export class PrismaActivityReviewRepository {
     if (parsed.athleteId !== athleteId) throw new Error("Review crosses athlete scope");
     const request = await this.#prisma.activityReviewRequest.findUnique({ where: { id_athleteId: { id: requestId, athleteId } } });
     if (!request) throw new Error("Activity review request was not found");
+    if (request.executionTarget === "cloud" && deviceId !== "cloud-coach-worker") throw new Error("Cloud activity reviews cannot be published by a paired device");
+    if (request.forceRegenerate && request.expectedReviewRevision) {
+      const previous = await this.#prisma.activityCoachReview.findFirst({ where: { athleteId, activityId: parsed.activityId }, orderBy: { revision: "desc" }, select: { revision: true } });
+      if (previous?.revision !== request.expectedReviewRevision) throw new Error("The published feedback changed during regeneration");
+    }
     if (request.status !== "processing" || request.lockedBy !== deviceId || request.leaseToken !== leaseToken) throw new Error("Activity review lease is invalid");
     const latestRevision = this.#prisma.activityRevision
       ? await this.#prisma.activityRevision.findFirst({ where: { athleteId, activityId: parsed.activityId }, orderBy: { revisionNumber: "desc" }, select: { revisionNumber: true } })
@@ -116,15 +150,15 @@ export class PrismaActivityReviewRepository {
     return activityCoachReviewSchema.parse(toReview(row));
   }
 
-  async claim(scope, deviceId, limit = 5, activityId = null) {
+  async claim(scope, deviceId, limit = 5, activityId = null, configuration = null) {
     const athleteId = assertAthleteScope(scope);
     if (activityId) {
       const existing = await this.#prisma.activityReviewRequest.findFirst({
         where: { athleteId, activityId, status: "processing", lockedBy: deviceId, leaseToken: { not: null } },
-        select: { id: true, activityId: true, leaseToken: true },
+        select: { id: true, activityId: true, leaseToken: true, provider: true, requestedModel: true, configurationRevision: true, forceRegenerate: true, expectedReviewRevision: true },
       });
       if (existing?.leaseToken) {
-        return { items: [{ requestId: existing.id, activityId: existing.activityId, status: "processing", leaseToken: existing.leaseToken }] };
+        return { items: [{ requestId: existing.id, activityId: existing.activityId, status: "processing", leaseToken: existing.leaseToken, ...(deviceId === "cloud-coach-worker" ? { provider: existing.provider ?? "openai", ...(existing.requestedModel ? { requestedModel: existing.requestedModel } : {}), ...(existing.configurationRevision !== null && existing.configurationRevision !== undefined ? { configurationRevision: existing.configurationRevision } : {}), forceRegenerate: existing.forceRegenerate ?? false, ...(existing.expectedReviewRevision ? { expectedReviewRevision: existing.expectedReviewRevision } : {}) } : {}) }] };
       }
     }
     const now = new Date();
@@ -133,6 +167,7 @@ export class PrismaActivityReviewRepository {
         athleteId,
         ...(activityId ? { activityId } : {}),
         status: { in: ["queued", "retry_wait"] },
+        executionTarget: deviceId === "cloud-coach-worker" ? "cloud" : "device",
         availableAt: { lte: now },
       },
       orderBy: [{ availableAt: "asc" }, { id: "asc" }], take: Math.min(Math.max(Number(limit) || 5, 1), 20),
@@ -141,10 +176,10 @@ export class PrismaActivityReviewRepository {
     for (const candidate of candidates) {
       const leaseToken = randomUUID();
       const claimed = await this.#prisma.activityReviewRequest.updateMany({
-        where: { id: candidate.id, athleteId, status: { in: ["queued", "retry_wait"] } },
-        data: { status: "processing", attemptCount: { increment: 1 }, lockedAt: now, lockedBy: deviceId, leaseToken },
+        where: { id: candidate.id, athleteId, executionTarget: deviceId === "cloud-coach-worker" ? "cloud" : "device", status: { in: ["queued", "retry_wait"] } },
+        data: { status: "processing", attemptCount: { increment: 1 }, lockedAt: now, lockedBy: deviceId, leaseToken, ...(deviceId === "cloud-coach-worker" && configuration ? { provider: configuration.provider, requestedModel: configuration.modelId, configurationRevision: configuration.revision } : {}) },
       });
-      if (claimed.count === 1) items.push({ requestId: candidate.id, activityId: candidate.activityId, status: "processing", leaseToken });
+      if (claimed.count === 1) items.push({ requestId: candidate.id, activityId: candidate.activityId, status: "processing", leaseToken, provider: configuration?.provider ?? "openai", requestedModel: configuration?.modelId ?? null, configurationRevision: configuration?.revision ?? null, forceRegenerate: candidate.forceRegenerate ?? false, expectedReviewRevision: candidate.expectedReviewRevision ?? null });
     }
     return { items };
   }
@@ -185,6 +220,7 @@ export class PrismaActivityReviewRepository {
         providerInputTokens: Number.isInteger(metadata?.inputTokens) ? metadata.inputTokens : null,
         providerOutputTokens: Number.isInteger(metadata?.outputTokens) ? metadata.outputTokens : null,
         providerLatencyMs: Number.isInteger(metadata?.latencyMs) ? metadata.latencyMs : null,
+        providerReturnedModel: typeof metadata?.returnedModel === "string" ? metadata.returnedModel.slice(0, 120) : null,
       },
     });
   }
@@ -223,7 +259,7 @@ function toReview(row) {
     inputFingerprint: row.inputFingerprint, headline: row.headline, assessment: row.assessment,
     nextStep: row.nextStep, comparison: row.comparison, evidence: row.evidence, limitations: row.limitations,
     generatedAt: row.generatedAt.toISOString(), publishedAt: row.publishedAt.toISOString(), model: row.model, promptVersion: row.promptVersion,
-    provenance: row.provenance ?? "legacy_combined",
+    provenance: row.provenance ?? "legacy_combined", provider: row.provider ?? undefined, requestedModel: row.requestedModel ?? undefined, configurationRevision: row.configurationRevision ?? undefined,
   });
 }
 
@@ -234,7 +270,7 @@ function toPrisma(review) {
     headline: review.headline, assessment: review.assessment, nextStep: review.nextStep,
     comparison: review.comparison, evidence: review.evidence, limitations: review.limitations,
     generatedAt: new Date(review.generatedAt), publishedAt: new Date(review.publishedAt),
-    model: review.model, promptVersion: review.promptVersion,
+    model: review.model, provider: review.provider ?? undefined, requestedModel: review.requestedModel ?? null, configurationRevision: review.configurationRevision ?? null, promptVersion: review.promptVersion,
     provenance: review.provenance ?? "legacy_combined",
   };
 }

@@ -33,6 +33,7 @@ test("targeted review claim filters before acquiring a lease", async () => {
   const result = await repository.claim(athleteScopeFor(actor), "device_test", 1, "activity-target");
   assert.equal(queriedWhere.athleteId, "athlete-a");
   assert.equal(queriedWhere.activityId, "activity-target");
+  assert.equal(queriedWhere.executionTarget, "device");
   assert.deepEqual(lockedIds, ["request-target"]);
   assert.deepEqual(result.items.map((item) => item.activityId), ["activity-target"]);
 });
@@ -62,6 +63,36 @@ test("same device can resume its targeted processing lease without claiming anot
   const result = await repository.claim(athleteScopeFor(actor), "device_test", 1, "activity-target");
   assert.equal(searchedQueue, false);
   assert.deepEqual(result.items, [{ requestId: "request-target", activityId: "activity-target", leaseToken: "existing-lease", status: "processing" }]);
+});
+
+test("regeneration is queued with the reviewed revision and cloud execution ownership", async () => {
+  let created;
+  const now = new Date();
+  const tx = {
+    activity: { async findFirst() { return { id: "activity-target" }; } },
+    activityRevision: { async findFirst() { return { revisionNumber: 3 }; } },
+    activityReviewRequest: { async findUnique() { return null; }, async create({ data }) { created = data; return { ...data, updatedAt: now }; } },
+    activityCoachReview: { async findFirst() { return { revision: 4 }; } },
+  };
+  const repository = new PrismaActivityReviewRepository({ prisma: { $transaction: async (fn) => fn(tx), activityReviewRequest: {}, activityCoachReview: {} } });
+  const result = await repository.queue(athleteScopeFor(buildActorContext({ userId: "owner-a", permittedAthleteIds: ["athlete-a"], activeAthleteId: "athlete-a", requestId: "request-test", credentialKind: "session" })), "activity-target", { regenerate: true, expectedReviewRevision: 4 });
+  assert.equal(result.status, "queued");
+  assert.equal(created.executionTarget, "cloud");
+  assert.equal(created.forceRegenerate, true);
+  assert.equal(created.expectedReviewRevision, 4);
+  assert.equal(created.activityRevision, 3);
+});
+
+test("regeneration rejects a stale published review revision", async () => {
+  const tx = {
+    activity: { async findFirst() { return { id: "activity-target" }; } },
+    activityRevision: { async findFirst() { return { revisionNumber: 3 }; } },
+    activityReviewRequest: { async findUnique() { return null; } },
+    activityCoachReview: { async findFirst() { return { revision: 5 }; } },
+  };
+  const repository = new PrismaActivityReviewRepository({ prisma: { $transaction: async (fn) => fn(tx), activityReviewRequest: {}, activityCoachReview: {} } });
+  const scope = athleteScopeFor(buildActorContext({ userId: "owner-a", permittedAthleteIds: ["athlete-a"], activeAthleteId: "athlete-a", requestId: "request-test", credentialKind: "session" }));
+  await assert.rejects(repository.queue(scope, "activity-target", { regenerate: true, expectedReviewRevision: 4 }), /changed/u);
 });
 
 test("local sync client requests only the selected activity review", async () => {

@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export default function PlanRoute() {
   const environment = readCloudEnvironment();
   const onlineMode = shouldRenderOnlineUi(environment);
-  return <PlanPage onlineMode={onlineMode} coachLabel={onlineMode && environment.features.coachUi} />;
+  return <PlanPage onlineMode={onlineMode} />;
 }

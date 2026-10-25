@@ -146,7 +146,7 @@ export function CoachChatShell() {
       const params = new URLSearchParams(window.location.search);
       const recovery = readRecoveryContext(params.get("recovery"));
       if (recovery?.kind === "coach") {
-        setRecoveryReturn(recoveryReturnHref(recovery, "/dashboard"));
+        setRecoveryReturn(recoveryReturnHref(recovery, "/dashboard/coach"));
         if (recovery.coach) {
           setTopic(recovery.coach.topic);
           setSelectedRecord(recovery.coach.selectedRecord ?? null);
@@ -155,6 +155,8 @@ export function CoachChatShell() {
       const savedTopic = sessionStorage.getItem(`${prefix}${activeAthleteId}.topic`);
       const savedRecord = sessionStorage.getItem(`${prefix}${activeAthleteId}.record`);
       const savedDraft = sessionStorage.getItem(`${prefix}${activeAthleteId}.draft`);
+      const savedScrollValue = sessionStorage.getItem(`${prefix}${activeAthleteId}.scrollTop`);
+      const savedScrollTop = savedScrollValue === null ? undefined : Number(savedScrollValue);
       if (recovery?.kind !== "coach" && !restore) {
         if (savedTopic === "reflect" || savedTopic === "prepare" || savedTopic === "general") setTopic(savedTopic);
         if (savedRecord) {
@@ -187,9 +189,14 @@ export function CoachChatShell() {
       setContext(latestContext);
       setTopic(latestContext.selectedTopic);
       setSelectedRecord(latestContext.selectedRecord);
-      if (recovery?.coach?.transcriptScrollTop !== undefined) {
-        requestAnimationFrame(() => { if (transcriptRef.current) transcriptRef.current.scrollTop = recovery.coach!.transcriptScrollTop!; });
-      }
+      const transcriptScrollTop = recovery?.coach?.transcriptScrollTop
+        ?? (Number.isFinite(savedScrollTop) && savedScrollTop! >= 0 && savedScrollTop! <= 10_000_000 ? savedScrollTop : undefined);
+      if (transcriptScrollTop !== undefined || recovery?.kind === "coach") requestAnimationFrame(() => {
+        if (transcriptScrollTop !== undefined && transcriptRef.current) transcriptRef.current.scrollTop = transcriptScrollTop;
+        if (recovery?.kind === "coach" && recovery.focusKey && /^[A-Za-z][A-Za-z0-9_-]{0,95}$/u.test(recovery.focusKey)) {
+          document.getElementById(recovery.focusKey)?.focus();
+        }
+      });
       setLoadState("ready"); setLoadError("");
       const currentTurn = latestConversation.currentTurn;
       if (currentTurn?.state === "failed" || currentTurn?.state === "expired") {
@@ -322,19 +329,21 @@ export function CoachChatShell() {
     finally { setOlderLoading(false); }
   }
 
-  function contextualHref(href: string, record: CoachRecordReference | null = selectedRecord) {
+  function contextualHref(href: string, record: CoachRecordReference | null = selectedRecord, focusKey?: string) {
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const recovery = createRecoveryContext({
-      kind: "coach", path: "/dashboard",
+      kind: "coach", path: "/dashboard/coach",
+      focusKey: focusKey || activeElement?.id || "coach-message-input",
       coach: { topic, selectedRecord: record ?? undefined, transcriptAnchorSequence: conversation.sequence, transcriptScrollTop: transcriptRef.current?.scrollTop ?? 0 },
     });
     const url = new URL(href, "https://racepredictor.invalid");
     url.searchParams.set("recovery", recovery.id);
-    if (url.pathname === "/dashboard/activities") url.searchParams.set("returnTo", "/dashboard");
+    if (url.pathname === "/dashboard/activities") url.searchParams.set("returnTo", "/dashboard/coach");
     return `${url.pathname}${url.search}${url.hash}`;
   }
 
   function navigateWithCoachContext(event: ReactMouseEvent<HTMLAnchorElement>, href: string, record: CoachRecordReference | null = selectedRecord) {
-    const target = contextualHref(href, record);
+    const target = contextualHref(href, record, event.currentTarget.id);
     if (event.type === "click" && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
       event.preventDefault();
       window.location.assign(target);
@@ -354,13 +363,13 @@ export function CoachChatShell() {
   const retryable = Boolean((conversation.currentTurn?.retryable || (conversation.currentTurn?.state === "processing" && leaseMayHaveExpired)) && currentSavedUser?.turnState !== "abandoned");
 
   return <div className="dashboard-layout coach-v2-layout">
-    <DashboardNavigation activePage="home" homeLabel="Coach" />
+    <DashboardNavigation activePage="coach" />
     <main id="dashboard-main-content" className="dashboard-main coach-v2-main" tabIndex={-1} aria-labelledby="coach-page-title">
-      <header className="coach-v2-toolbar"><div><p className="coach-v2-eyebrow">Your training companion</p><h1 id="coach-page-title">Coach</h1></div><Link className="coach-plan-link" href="/dashboard/plan" onClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)} onAuxClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)}>View race plan <span aria-hidden="true">↗</span></Link></header>
+      <header className="coach-v2-toolbar"><div><p className="coach-v2-eyebrow">Your training companion</p><h1 id="coach-page-title">Coach</h1></div><Link id="coach-plan-header-link" className="coach-plan-link" href="/dashboard/plan" onClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)} onAuxClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)}>View race plan <span aria-hidden="true">↗</span></Link></header>
       <section className="coach-v2-goal-strip" aria-label="Training goal">
         <span className="coach-goal-mark" aria-hidden="true">↗</span>
         <div><span className="coach-v2-overline">CURRENT FOCUS</span><strong>{context?.goal?.title ?? "Your training plan"}</strong><span>{context?.nextSession ? `Next · ${context.nextSession.title} · ${context.nextSession.date}` : context?.todaySchedule.message ?? "Your current training context"}</span></div>
-        <Link href="/dashboard/plan" onClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)} onAuxClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)}>View race plan</Link>
+        <Link id="coach-plan-strip-link" href="/dashboard/plan" onClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)} onAuxClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)}>View race plan</Link>
       </section>
       {recoveryReturn ? <div className="coach-v2-return-note"><span>You’re back from a training record.</span><button type="button" onClick={() => setRecoveryReturn(null)} aria-label="Dismiss return message">×</button></div> : null}
       <section className="coach-chat-panel" aria-label="Conversation with ORBIT">
@@ -382,7 +391,7 @@ export function CoachChatShell() {
         {loadState === "loading" ? <p className="coach-v2-state" role="status" aria-busy="true">Loading your training context…</p> : null}
         {loadState === "error" ? <div className="coach-v2-error" role="alert"><p>{loadError}</p><button type="button" onClick={() => void loadAll(true)}>Retry</button><Link href="/dashboard/calendar">Open Calendar</Link></div> : null}
         {failure && !messages.length ? <div className="coach-v2-error" role="alert"><p>{failure.message}</p></div> : null}
-        <ol className="coach-transcript" ref={transcriptRef} aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
+        <ol className="coach-transcript" ref={transcriptRef} onScroll={(event) => { if (actorId) { try { sessionStorage.setItem(`${prefix}${actorId}.scrollTop`, String(event.currentTarget.scrollTop)); } catch { /* session storage is optional */ } } }} aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
           {conversation.hasOlder ? <li className="coach-older-control"><button type="button" disabled={olderLoading} onClick={() => void loadOlder()}>{olderLoading ? "Loading…" : "Load earlier messages"}</button></li> : null}
           {messages.length === 0 && context ? <li className="coach-opening-message"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant"><p>{context.opening.text}</p><time>{context.localDate}</time></div></li> : null}
           {messages.map((message) => <li className={`coach-message coach-message--${message.role}`} key={message.id}>
@@ -393,7 +402,7 @@ export function CoachChatShell() {
         </ol>
         {pending && leaseMayHaveExpired ? <div className="coach-v2-error coach-turn-error" role="status"><p>The reply may have stopped before it was saved. You can safely recover this message.</p><button type="button" disabled={sending} onClick={() => void retryReply()}>{sending ? "Recovering…" : "Recover reply"}</button></div> : null}
         {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
-        {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
+        {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
         <form className="coach-composer" onSubmit={(event) => void submitMessage(event)}>
           <label className="sr-only" htmlFor="coach-message-input">Message ORBIT</label>
           <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={3} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={loadState !== "ready" || !context?.canSend || sending} />
@@ -402,7 +411,7 @@ export function CoachChatShell() {
         {context && !context.canSend ? <p className="coach-chat-paused" role="status">Chat replies are paused. Your conversation remains available, and your training plan is unchanged.</p> : null}
         <p className="coach-chat-boundary">ORBIT offers training guidance. Your plan only changes when you approve an update.</p>
       </section>
-      <section className="coach-wellbeing-entry" aria-labelledby="coach-wellbeing-heading">
+      <section id="wellbeing" className="coach-wellbeing-entry" aria-labelledby="coach-wellbeing-heading">
         <div><p className="coach-v2-overline">RECOVERY CONTEXT</p><h2 id="coach-wellbeing-heading">How are you feeling today?</h2><p>A wellbeing check-in is optional and only saved if you choose to submit it.</p></div>
         <button type="button" aria-expanded={wellbeingOpen} aria-controls="coach-wellbeing-form" onClick={() => setWellbeingOpen((open) => !open)}>{wellbeingOpen ? "Close check-in" : context?.wellbeing?.status === "saved" ? "Review check-in" : "Add check-in"}</button>
         {wellbeingOpen && context ? <div id="coach-wellbeing-form" className="coach-wellbeing-form"><DailyWellbeingCheckIn key={`${context.timezone}-${context.localDate}`} timezone={context.timezone} date={context.localDate} compact={false} dailyModal={false} onSaved={() => { void refreshContext(); }} /></div> : null}

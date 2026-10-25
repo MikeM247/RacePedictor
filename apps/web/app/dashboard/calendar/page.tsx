@@ -15,6 +15,5 @@ export default async function CalendarRoute({ searchParams }: { searchParams: Ca
     initialDate={initialDate}
     focusSessionId={focusSessionId}
     onlineMode={shouldRenderOnlineUi(environment)}
-    coachLabel={shouldRenderOnlineUi(environment) && environment.features.coachUi}
   />;
 }

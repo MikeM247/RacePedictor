@@ -2,14 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { isDashboardPageCurrent } from "../components/dashboard/dashboard-navigation-state.ts";
 
-test("Home and Calendar are independent destinations; supporting URLs stay valid", () => {
+test("Home and Coach are independent destinations; supporting URLs stay valid", () => {
   assert.equal(isDashboardPageCurrent("home", "/dashboard"), true);
+  assert.equal(isDashboardPageCurrent("coach", "/dashboard/coach"), true);
+  assert.equal(isDashboardPageCurrent("coach", "/dashboard/coach/settings"), true);
+  assert.equal(isDashboardPageCurrent("home", "/dashboard/coach"), false);
   assert.equal(isDashboardPageCurrent("home", "/dashboard/activities"), false);
   assert.equal(isDashboardPageCurrent("training", "/dashboard/activities"), true);
   assert.equal(isDashboardPageCurrent("training", "/dashboard/activities/123"), true);
   assert.equal(isDashboardPageCurrent("plan", "/dashboard/plan"), true);
   assert.equal(isDashboardPageCurrent("plan", "/dashboard/calendar"), false);
   assert.equal(isDashboardPageCurrent("calendar", "/dashboard/calendar"), true);
+  assert.equal(isDashboardPageCurrent("coach", "/dashboard/calendar"), false);
   assert.equal(isDashboardPageCurrent("readiness", "/dashboard/readiness"), true);
   assert.equal(isDashboardPageCurrent("readiness", "/dashboard/readiness/details"), true);
   assert.equal(isDashboardPageCurrent("home", "/dashboard/readiness"), false);

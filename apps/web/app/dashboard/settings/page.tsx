@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 
 export default function SettingsRoute() {
   const environment = readCloudEnvironment();
-  return shouldRenderOnlineUi(environment) ? <OnlineSyncSettings homeLabel={environment.features.coachUi ? "Coach" : "Home"} /> : <SettingsPage />;
+  return shouldRenderOnlineUi(environment) ? <OnlineSyncSettings /> : <SettingsPage />;
 }

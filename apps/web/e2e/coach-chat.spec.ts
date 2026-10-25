@@ -21,7 +21,7 @@ function context(topic: "reflect" | "prepare" | "general" = "reflect") {
     recentActivities: [], wellbeing: null,
     actions: [
       { label: "View race plan", href: "/dashboard/plan", kind: "plan" },
-      { label: "View last activity", href: `/dashboard/activities?activityId=${activityRef.id}&returnTo=%2Fdashboard`, kind: "activity" },
+      { label: "View last activity", href: `/dashboard/activities?activityId=${activityRef.id}&returnTo=%2Fdashboard%2Fcoach`, kind: "activity" },
       { label: "View next session", href: "/dashboard/calendar?date=2026-10-23&session=session_next_01", kind: "session" },
     ], selectedRecord: topic === "reflect" ? activityRef : topic === "prepare" ? sessionRef : null,
     ambiguousSessionIds: [], ambiguousSessions: [], canSend: true,
@@ -58,7 +58,7 @@ test("online Coach reflects on a real activity, completes a reply, restores a ta
     await route.fulfill({ json: { data: { turn: { id: "coach_turn_1", state: "completed", attempt: 1, messageSaved: true, retryable: false }, userMessage: user, assistantMessage: assistant, failure: null } } });
   });
 
-  await page.goto("/dashboard");
+  await page.goto("/dashboard/coach");
   await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
   await expect(page.getByText("How did your 8 km run feel?")).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include(".coach-v2-layout").analyze();
@@ -90,6 +90,79 @@ test("online Coach reflects on a real activity, completes a reply, restores a ta
   expect(zoomWidths.document).toBeLessThanOrEqual(zoomWidths.viewport);
 });
 
+test("Home and Coach are separate destinations and Orbit opens chat without sending a message", async ({ page }) => {
+  const sentTurns: string[] = [];
+  await mockSession(page);
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
+  await page.route("**/api/v1/coaching/chat/turns", async (route) => { sentTurns.push(route.request().url()); await route.fulfill({ status: 500 }); });
+  await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context: {
+    state: "ready", plan: { id: "plan_home", version: 1, revision: 1, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
+    goal: { id: "goal_home", athleteId: "athlete_test", revision: 1, title: "Build toward Comrades", why: "Run steadily.", target: { kind: "performance", distanceMeters: 89_000, targetDate: "2027-06-13", eventName: "Build toward Comrades" } },
+    milestones: [], projection: { contextHash: "b".repeat(64), publishedAt: now },
+  } } } }));
+  await page.route("**/api/v1/coaching/race-history", (route) => route.fulfill({ json: { data: { items: [], publishedAt: null } } }));
+  await page.route("**/api/v1/dashboard/appearance", (route) => route.fulfill({ json: { data: { heroImageUrl: "/road-to-comrades-v2.webp" } } }));
+  await page.goto("/dashboard");
+  const nav = page.getByRole("navigation", { name: "Primary navigation" });
+  await expect(nav.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByRole("link", { name: "Coach", exact: true })).not.toHaveAttribute("aria-current", "page");
+  await page.getByRole("link", { name: "Talk to Orbit" }).click();
+  await expect(page).toHaveURL(/\/dashboard\/coach$/u);
+  await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Coach", exact: true })).toHaveAttribute("aria-current", "page");
+  expect(sentTurns).toEqual([]);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/dashboard\/?$/u);
+  await expect(page.getByRole("link", { name: "Talk to Orbit" })).toBeVisible();
+  await expect(page.locator(".coach-composer")).toHaveCount(0);
+  expect(sentTurns).toEqual([]);
+});
+
+test("Coach topic, selected record, unsent draft and transcript position survive Coach to Home to Coach", async ({ page }) => {
+  await mockSession(page);
+  await page.route("**/api/v1/coaching/chat/context**", async (route) => {
+    const topic = new URL(route.request().url()).searchParams.get("topic");
+    await route.fulfill({ json: { data: context(topic === "prepare" ? "prepare" : topic === "reflect" ? "reflect" : "general") } });
+  });
+  const messages = Array.from({ length: 40 }, (_, index) => message(`continuity_${index}`, index + 1, index % 2 ? "assistant" : "user", `Conversation entry ${index + 1}. ${"A detailed training observation. ".repeat(12)}`, "completed", null, "general"));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation(messages) } }));
+  await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context: {
+    state: "ready", plan: { id: "plan_home", version: 1, revision: 1, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
+    goal: { id: "goal_home", athleteId: "athlete_test", revision: 1, title: "Build toward Comrades", why: "Run steadily.", target: { kind: "performance", distanceMeters: 89_000, targetDate: "2027-06-13", eventName: "Build toward Comrades" } },
+    milestones: [], projection: { contextHash: "b".repeat(64), publishedAt: now },
+  } } } }));
+  await page.route("**/api/v1/coaching/race-history", (route) => route.fulfill({ json: { data: { items: [], publishedAt: null } } }));
+  await page.route("**/api/v1/dashboard/appearance", (route) => route.fulfill({ json: { data: { heroImageUrl: "/road-to-comrades-v2.webp" } } }));
+
+  await page.goto("/dashboard/coach");
+  await expect(page.getByText("Ready", { exact: true })).toBeVisible();
+  const prepare = page.getByRole("button", { name: "Prepare for next training" });
+  await prepare.click();
+  await expect(prepare).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Easy run", { exact: true })).toBeVisible();
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Keep this question while I revisit my goal.");
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.athlete_test.draft"))).toBe("Keep this question while I revisit my goal.");
+  const transcript = page.getByRole("list", { name: "Conversation messages" });
+  await transcript.evaluate((node) => { node.scrollTop = 140; node.dispatchEvent(new Event("scroll")); });
+  await expect.poll(() => page.evaluate(() => Number(sessionStorage.getItem("racepredictor.coach.v2.athlete_test.scrollTop")))).toBeGreaterThan(100);
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.athlete_test.topic"))).toBe("prepare");
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.athlete_test.record"))).toContain('"session_next_01"');
+
+  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/?$/u);
+  await expect(page.getByRole("heading", { name: "Build toward Comrades", level: 2 })).toBeVisible();
+  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Coach", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/coach$/u);
+  await expect(page.getByRole("button", { name: "Prepare for next training" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Easy run", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Keep this question while I revisit my goal.");
+  await expect.poll(() => page.getByRole("list", { name: "Conversation messages" }).evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
+});
+
 test("failed reply can be retried without duplicating its saved athlete message", async ({ page }) => {
   const saved = message("coach_user_failed", 1, "user", "Can I shorten tomorrow's run?", "failed");
   let state = conversation([saved], { id: "coach_turn_failed", state: "failed", attempt: 1, safeErrorCode: "PROVIDER_TIMEOUT", messageSaved: true, retryable: true });
@@ -103,7 +176,7 @@ test("failed reply can be retried without duplicating its saved athlete message"
     state = conversation([{ ...saved, turnState: "completed" }, assistant], { id: "coach_turn_failed", state: "completed", attempt: 2, safeErrorCode: null, messageSaved: true, retryable: false });
     await route.fulfill({ json: { data: { turn: { id: "coach_turn_failed", state: "completed", attempt: 2, messageSaved: true, retryable: false }, userMessage: saved, assistantMessage: assistant, failure: null } } });
   });
-  await page.goto("/dashboard");
+  await page.goto("/dashboard/coach");
   await expect(page.getByRole("button", { name: "Retry reply" })).toBeVisible();
   await page.getByRole("button", { name: "Retry reply" }).click();
   await expect(page.getByText(/The current prescription is 40 minutes/u)).toBeVisible();
@@ -121,7 +194,7 @@ test("long history preserves reading position, supports image fallback and a key
     const processing = polls === 1;
     return route.fulfill({ json: { data: { ...conversation(messages, { id: "long_turn", state: processing ? "processing" : "completed", attempt: 1, safeErrorCode: null, messageSaved: true, retryable: false }), hasOlder: true } } });
   });
-  await page.goto("/dashboard");
+  await page.goto("/dashboard/coach");
   const transcript = page.getByRole("list", { name: "Conversation messages" });
   await expect(transcript.locator(".coach-message")).toHaveCount(40);
   await transcript.evaluate((node) => { node.scrollTop = 120; });
@@ -149,7 +222,7 @@ test("Coach reflows at actual Chromium 200 percent browser zoom", async ({ baseU
     await mockSession(page);
     await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
     await page.route("**/api/v1/coaching/chat/conversation**", (route) => route.fulfill({ json: { data: conversation() } }));
-    await page.goto(`${baseURL}/dashboard`);
+    await page.goto(`${baseURL}/dashboard/coach`);
     await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
     const settings = await browser.newPage();
     await settings.goto("chrome://settings/appearance");

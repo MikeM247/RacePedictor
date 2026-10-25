@@ -124,18 +124,17 @@ async function apiRequest(url: string, init?: RequestInit): Promise<JsonRecord> 
   return unwrap(body);
 }
 
-function CoachShell({ page, title, subtitle, meta, homeLabel = "Home", children }: {
+function CoachShell({ page, title, subtitle, meta, children }: {
   page: Page;
   title: string;
   subtitle: string;
   meta?: string;
-  homeLabel?: string;
   children: ReactNode;
 }) {
   const titleId = `${page}-page-title`;
   return (
     <div className={`dashboard-layout coaching-layout coaching-layout--${page}`}>
-      <DashboardNavigation activePage={page} homeLabel={homeLabel} />
+      <DashboardNavigation activePage={page} />
       <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby={titleId}>
         <header className="dashboard-toolbar coaching-toolbar">
           <div><p className="eyebrow">Training workspace</p><h1 id={titleId}>{title}</h1><p>{subtitle}</p></div>
@@ -155,7 +154,7 @@ function CoachReturnBanner() {
     if (context?.kind === "coach") setRecovery(context);
   }, []);
   if (!recovery) return null;
-  return <div className="coach-return-banner"><span>You opened this from your Coach conversation.</span><Link className="button button-secondary" href={recoveryReturnHref(recovery, "/dashboard")}>Return to Coach</Link></div>;
+  return <div className="coach-return-banner"><span>You opened this from your Coach conversation.</span><Link className="button button-secondary" href={recoveryReturnHref(recovery, "/dashboard/coach")}>Return to Coach</Link></div>;
 }
 
 async function planApiRequest<T extends JsonRecord>(url: string, schema: { safeParse(value: unknown): { success: true; data: { data: T } } | { success: false } }, init?: RequestInit): Promise<T> {
@@ -346,7 +345,7 @@ async function uploadActivityFile(file: File) {
   }
 }
 
-export function PlanPage({ onlineMode = false, coachLabel = onlineMode }: { onlineMode?: boolean; coachLabel?: boolean }) {
+export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   const [displayName, setDisplayName] = useState("Athlete");
   const [why, setWhy] = useState("");
   const [goalTitle, setGoalTitle] = useState("");
@@ -774,7 +773,7 @@ export function PlanPage({ onlineMode = false, coachLabel = onlineMode }: { onli
   const currentStage = confirmation && confirmation.snapshot.kind !== "activate" ? "Confirm" : workflowStage === "continue" ? "Continue in Codex" : workflowStage === "import" ? "Import proposal" : workflowStage === "review" ? "Review" : "Goal & context";
   const activeContentVersion = coachingContentVersion(activePlan);
   const activePlanToday = activePlan ? localDateInTimezone(String(activePlan.timezone ?? timezoneDefault)) : "";
-  return <CoachShell page="plan" homeLabel={coachLabel ? "Coach" : "Home"} title="Plan" subtitle={onlineMode ? "Choose which explicitly approved structured plan is active" : "Set your goal and explicitly approve each plan version"} meta={planLoadState === "error" ? "Plan unavailable" : planLoadState === "loading" ? "Loading plan…" : activePlan ? `Active · ${activeContentVersion ?? `record ${String(activePlan.version ?? 1)}`}` : "No active plan"}>
+  return <CoachShell page="plan" title="Plan" subtitle={onlineMode ? "Choose which explicitly approved structured plan is active" : "Set your goal and explicitly approve each plan version"} meta={planLoadState === "error" ? "Plan unavailable" : planLoadState === "loading" ? "Loading plan…" : activePlan ? `Active · ${activeContentVersion ?? `record ${String(activePlan.version ?? 1)}`}` : "No active plan"}>
     <MilestonePlanHandoff onlineMode={onlineMode} onContinue={openPlanCreation} />
     <section className="coach-panel coach-panel--plan-focus" aria-labelledby="active-plan-heading">
       <div className="coach-panel-heading plan-focus-heading"><div><p className="eyebrow">Your training focus</p><h2 id="active-plan-heading" ref={activePlanHeadingRef} tabIndex={-1}>Active plan</h2></div>{onlineMode ? <span className="status-chip">Online plan control</span> : !creationOpen ? <button className="button button-primary" type="button" aria-controls="plan-creation-workflow" aria-expanded={creationOpen} onClick={openPlanCreation}>{creationActionLabel}</button> : <span className="status-chip">Workflow open</span>}</div>
@@ -946,7 +945,7 @@ function formatPace(secondsPerKm: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function CalendarPage({ initialDate, focusSessionId, onlineMode = false, coachLabel = onlineMode }: { initialDate?: string; focusSessionId?: string; onlineMode?: boolean; coachLabel?: boolean }) {
+export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }: { initialDate?: string; focusSessionId?: string; onlineMode?: boolean }) {
   const [compactCalendar, setCompactCalendar] = useState(false);
   const [planTimezone, setPlanTimezone] = useState(timezoneDefault);
   const today = localDateInTimezone(planTimezone);
@@ -1439,7 +1438,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false, 
     return <CalendarDaySummary key={date} date={date} today={today} planned={records.planned} recorded={records.recorded} activitiesUnavailable={activitiesReadStatus === "unavailable"} onOpen={openRecord} />;
   };
 
-  return <CoachShell page="calendar" homeLabel={coachLabel ? "Coach" : "Home"} title="Calendar" subtitle="Your planned sessions and recorded activities" meta={planTimezone}>
+  return <CoachShell page="calendar" title="Calendar" subtitle="Your planned sessions and recorded activities" meta={planTimezone}>
     <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="calendar-month-toolbar"><button className="button button-secondary" type="button" onClick={() => moveMonth(-1)} aria-label="Previous month">‹</button><label className="calendar-month-picker"><span className="sr-only">Choose month</span><select value={range.month} onChange={(event) => chooseDate(`${event.target.value}-01`)} aria-label="Choose month and year">{Array.from({ length: 36 }, (_, index) => { const year = Number(range.month.slice(0, 4)) - 1 + Math.floor(index / 12); const month = String((index % 12) + 1).padStart(2, "0"); return <option value={`${year}-${month}`} key={`${year}-${month}`}>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(`${year}-${month}-01T12:00:00.000Z`))}</option>; })}</select></label><button className="button button-secondary" type="button" onClick={() => moveMonth(1)} aria-label="Next month">›</button><button className="button button-secondary" type="button" onClick={() => chooseDate(today)}>Today</button></div><div className="calendar-legend"><span>● Planned</span><span>● Recorded</span></div><p id="calendar-scroll-help" className="sr-only">Select a date, then open any planned session or recorded activity.</p></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
     {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h2>Calendar could not be loaded</h2><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}

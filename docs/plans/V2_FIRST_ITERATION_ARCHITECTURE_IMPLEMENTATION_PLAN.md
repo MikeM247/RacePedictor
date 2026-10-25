@@ -8,17 +8,17 @@ Decision record: [ADR 0010](../adr/0010-v2-conversation-led-coach.md)
 
 ## Outcome
 
-The first V2 release makes `/dashboard` a conversation-led Coach experience on the authenticated online site. ORBIT offers a deterministic opening based on the latest activity or next effective session, answers free-text questions through the existing server-side OpenAI integration, and retains a single athlete conversation until the athlete clears it. Calendar, activity detail, Readiness, and the existing race plan remain their own destinations. The interface preserves the Coach topic, selected record, draft, and transcript position when the athlete returns.
+The first V2 release keeps `/dashboard` as the landing page and serves the complete conversation-led Coach experience separately at `/dashboard/coach` on the authenticated online site. Home presents the approved goal and scenic running journey, all achieved and upcoming milestones, and a Talk to Orbit link when Coach UI is available. It has no daily check-in, workout, latest-activity, plan, or milestone-management sections. ORBIT offers a deterministic opening based on the latest activity or next effective session, answers free-text questions through the existing server-side OpenAI integration, and retains a single athlete conversation until the athlete clears it. Calendar, activity detail, Readiness, race plan, and Settings remain separate destinations. The interface preserves Coach topic, selected record, draft, and transcript position across Coach re-entry and training-detail returns.
 
-The local Home and tools remain available. Chat is not exposed to device/internal credentials, does not publish conversation data to sync or Second Brain, and has no structured training mutation tools.
+The same minimal Home remains available in local mode; Coach navigation, launcher, and direct route are unavailable there. Chat is not exposed to device/internal credentials, does not publish conversation data to sync or Second Brain, and has no structured training mutation tools.
 
 ## Confirmed implementation decisions
 
-- Runtime: authenticated online site first; local routes return unavailable and local Home remains unchanged.
+- Runtime: authenticated online Coach first; `/dashboard` remains Home in local and online modes. Local mode omits the Coach link and returns direct Coach entry to Home.
 - Provider: existing OpenAI integration through a server-only Responses API adapter.
 - Model default: `gpt-5-mini`, low reasoning effort, `store: false`, no tools, complete text replies, 3,000 output-token ceiling.
 - Conversation: one ongoing conversation per athlete; history is kept until explicit deletion in Settings.
-- Release switches: `RACEPREDICTOR_COACH_UI_ENABLED=false` and `RACEPREDICTOR_COACH_CHAT_ENABLED=false` by default. The former selects the online Coach entry UI; the latter independently gates generation while history reads/deletion remain available.
+- Release switches: `RACEPREDICTOR_COACH_UI_ENABLED=false` and `RACEPREDICTOR_COACH_CHAT_ENABLED=false` by default. The former gates Coach navigation, Home launcher, and `/dashboard/coach` in online mode; the latter independently gates generation while history reads/deletion remain available.
 - OpenAI key absence disables sending in the UI; a generation request that has already been accepted is durably marked failed with a safe recovery state.
 - Model output is plain text. The application builds all URLs and actions from validated current training references.
 
@@ -89,7 +89,7 @@ Athlete messages are limited to 4,000 characters, replies to 8,000, request bodi
 
 ## Interface and continuity
 
-The dark RacePredictor shell contains a compact goal strip and a light glacier conversation surface. Coach, Calendar and Readiness remain primary navigation; Settings is secondary. ORBIT's small static avatar is derived from the approved character sheet and falls back to an initials mark. Real accessible controls, not the design board, form the page. Topic choice and selected record remain explicit. The existing wellbeing form is mounted only after the athlete opens the check-in.
+The dark RacePredictor shell contains a minimal Home and a separate Coach destination. Home shows the approved goal/date and scenic artwork, the complete read-only milestone journey, and revised full-body ORBIT artwork as the Talk to Orbit entry. Home has no daily check-in, View plan, Manage milestones, Today, latest activity, or chat composer. Coach, Calendar, and Readiness are primary navigation; Settings is secondary. ORBIT's Coach avatar falls back to an initials mark. Topic choice and selected record remain explicit. The existing wellbeing form is mounted only after the athlete opens the optional check-in in Coach.
 
 Coach-to-record navigation creates an opaque, two-hour recovery context in tab-local session storage. It carries topic, record identity, transcript anchor/scroll position and focus information; message text never enters the URL. Ordinary links and modifier-clicks retain the recovery link. The activity, calendar and plan views can return to Coach; the client refreshes current training facts and transcript on return.
 
@@ -101,7 +101,13 @@ Drafts are held in `sessionStorage` scoped by athlete. Logout clears Coach keys 
 2. Deploy static avatar derivatives and configure `OPENAI_API_KEY`, `RACEPREDICTOR_COACH_MODEL`, and both false-by-default feature flags.
 3. Run automated tests with an injected provider; use synthetic training data for one deliberately bounded live preview smoke test.
 4. Enable the UI for the online owner, then enable generation separately. Observe content-free latency, failures, lease expiry, duplicate suppression, context conflicts, quotas and usage.
-5. Roll back by disabling chat generation, then disabling the Coach UI to restore the existing Home composition. Retain schema/history; do not reset the database.
+5. Roll back the Home/Coach presentation change with a targeted code revert. Feature switches can independently hide Coach entry or pause generation. Retain chat schema/history; do not reset the database.
+
+## Home and Coach destination amendment — 25 October 2026
+
+The product owner superseded the earlier Coach-as-landing-page composition. `/dashboard` remains Home; the complete Coach chat mounts at `/dashboard/coach`. Coach UI availability is exposed to the shared navigation and Home as one server-derived boolean: it is true only in online mode when `RACEPREDICTOR_COACH_UI_ENABLED` is true. Direct Coach entry redirects Home when unavailable. `RACEPREDICTOR_COACH_CHAT_ENABLED` continues to gate message generation independently.
+
+Home is limited to the existing greeting/date, approved goal/target/date and scenic background, the full read-only milestone journey, and the accessible Talk to Orbit launcher. Settings remains the location for milestone management. Coach retains the existing chat persistence, optional wellbeing form, routes, API contracts, and recovery continuity. Valid legacy Coach recovery records at `/dashboard` are normalized to `/dashboard/coach` without changing their recovery IDs or presentation state. No schema migration or recovery backfill is needed.
 
 ## Historical release environment check — 23 October 2026
 

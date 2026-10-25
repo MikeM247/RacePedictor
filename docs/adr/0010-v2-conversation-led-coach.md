@@ -1,5 +1,7 @@
 # ADR 0010: V2 conversation-led Coach boundary
 
+> **25 October 2026 product-owner amendment:** Coach remains a separate V2 destination at `/dashboard/coach`; it no longer replaces the Home landing page. `/dashboard` is the minimal goal-and-milestone Home with the revised Talk to Orbit artwork entry. The Coach UI switch gates its navigation, launcher, and route; the generation switch continues to gate only chat replies. See the updated [V2 implementation plan](../plans/V2_FIRST_ITERATION_ARCHITECTURE_IMPLEMENTATION_PLAN.md) and [screen contract](../design/screens.md).
+
 - Status: Accepted
 - Date: 22 October 2026
 - Deciders: Product Owner and architecture implementation
@@ -7,7 +9,7 @@
 
 ## Context
 
-The approved V2 first iteration starts with a conversation about the last activity or next effective session and then links into the existing Calendar, activity detail, and race-plan views. The application already owns authoritative training state, explicit plan approval, effective session amendments, activity review generation, wellbeing records, authenticated cloud composition, and a server-side OpenAI integration.
+The approved V2 first iteration makes ORBIT a distinct conversation destination linked from the retained Home page. Coach starts with a conversation about the last activity or next effective session and then links into the existing Calendar, activity detail, and race-plan views. Home continues to present the approved goal, scenic running journey, complete read-only milestones, and a Coach entry. The application already owns authoritative training state, explicit plan approval, effective session amendments, activity review generation, wellbeing records, authenticated cloud composition, and a server-side OpenAI integration.
 
 An interactive conversation needs durable messages and failure recovery, but it must not create a second training authority or make browser/device credentials equivalent to an owner session.
 
@@ -19,7 +21,7 @@ Core owns strict contracts and shared next-session selection. Existing repositor
 
 Database turns use a durable lease, deduplicated client identity, a per-athlete quota reservation, and a fenced completion. A provider call occurs outside the transaction. Clearing history deletes conversation messages/turn snapshots/reflection markers and increments the generation atomically, so an in-flight reply cannot recreate cleared content. Content-free usage counters remain.
 
-Two server-controlled switches independently gate the Coach entry UI and generation. Both default off. The UI is available only in online mode; local Home/tools remain unchanged. History read and deletion remain possible while generation is paused.
+Two server-controlled switches independently gate the Coach entry UI and generation. Both default off. In online mode, the UI switch controls the Coach navigation item, Home launcher, and `/dashboard/coach`; local mode keeps Home/tools and omits Coach. Direct Coach navigation returns Home when the UI is unavailable. History read and deletion remain possible while generation is paused. Home contains no Today, latest activity, plan link, milestone management action, check-in, or chat composer; milestone management stays in Settings.
 
 ## Consequences
 

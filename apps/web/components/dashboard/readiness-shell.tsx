@@ -85,9 +85,9 @@ export function ReadinessShell({
   }, [predictionOptions, analyticsLoading]);
 
   return <div className="dashboard-layout home-layout readiness-layout">
-      <DashboardNavigation activePage="readiness" homeLabel={homeLabel} />
+      <DashboardNavigation activePage="readiness" />
     <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="dashboard-page-title">
-      <header className="dashboard-toolbar"><div className="dashboard-toolbar-title"><h1 id="dashboard-page-title">Readiness</h1><p>Current fitness and the evidence behind it</p></div><Link className="text-link" href="/dashboard">Back to {homeLabel}</Link></header>
+      <header className="dashboard-toolbar"><div className="dashboard-toolbar-title"><h1 id="dashboard-page-title">Readiness</h1><p>Current fitness and the evidence behind it</p></div><Link className="text-link" href={homeLabel === "Coach" ? "/dashboard/coach" : "/dashboard"}>Back to {homeLabel}</Link></header>
       <section className="dashboard-content readiness-content" aria-label="Readiness details">
         <section className="home-evidence" aria-labelledby="readiness-heading">
           <div className="home-evidence-heading"><div><p className="eyebrow">Training evidence</p><h2 id="readiness-heading">Current-fitness estimate</h2></div></div>

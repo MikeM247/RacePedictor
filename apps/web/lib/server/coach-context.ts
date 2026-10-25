@@ -217,10 +217,10 @@ export async function resolveCoachContext(
   };
   const fingerprint = createHash("sha256").update(stableJson(fingerprintInput), "utf8").digest("hex");
   const actions: CoachContext["actions"] = [{ label: "View race plan", href: "/dashboard/plan", kind: "plan" }];
-  if (latestActivity) actions.push({ label: "View last activity", href: `/dashboard/activities?activityId=${encodeURIComponent(latestActivity.id)}&returnTo=%2Fdashboard`, kind: "activity" });
+  if (latestActivity) actions.push({ label: "View last activity", href: `/dashboard/activities?activityId=${encodeURIComponent(latestActivity.id)}&returnTo=%2Fdashboard%2Fcoach`, kind: "activity" });
   if (selectedNext) actions.push({ label: "View next session", href: `/dashboard/calendar?date=${encodeURIComponent(selectedNext.date)}&session=${encodeURIComponent(selectedNext.id)}`, kind: "session" });
   else actions.push({ label: "Open Calendar", href: `/dashboard/calendar?date=${encodeURIComponent(localDate)}`, kind: "calendar" });
-  actions.push({ label: "Add wellbeing check-in", href: "/dashboard#wellbeing", kind: "wellbeing" });
+  actions.push({ label: "Add wellbeing check-in", href: "/dashboard/coach#wellbeing", kind: "wellbeing" });
 
   return coachContextSchema.parse({
     localDate,

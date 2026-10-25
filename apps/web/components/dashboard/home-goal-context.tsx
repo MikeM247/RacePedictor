@@ -9,6 +9,10 @@ import { raceHistoryResponseSchema, type RaceHistoryRecord } from "../../../../p
 import { buildRaceJourney, type JourneyTarget } from "../../../../packages/core/src/services/race-journey.ts";
 import { formatCoachingDate, localDateInTimezone } from "../../lib/coaching-ui-state";
 import { formatDuration } from "../../lib/activity-formatters";
+import { useDashboardFeatures } from "./dashboard-feature-context";
+
+const defaultHeroImage = "/road-to-comrades-v2.webp";
+const legacyHeroImage = "/road-to-comrades.webp";
 
 export function raceTargetLabel(title: string, seconds?: number) {
   const explicit = /\b(sub[- ]?\s*\d{1,3}(?::\d{2}){0,2}|under\s+\d{1,3}\s*(?:hours?|hrs?|minutes?|mins?)?)\b/iu.exec(title)?.[0];
@@ -18,23 +22,35 @@ export function raceTargetLabel(title: string, seconds?: number) {
 function TargetStop({ target, nextId }: { target: JourneyTarget; nextId: string | null }) {
   return <li className={`road-stop${target.id === nextId ? " road-stop--next" : ""}`}>
     <span className="road-node" aria-hidden="true" />
-    <Link href="/dashboard/plan" className="road-stop-title">{target.eventName || target.title}</Link>
+    <span className="road-stop-title">{target.eventName || target.title}</span>
   </li>;
 }
 
 function AchievementStop({ record }: { record: RaceHistoryRecord }) {
   return <li className="road-stop road-stop--achieved">
     <span className="road-node" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="3"><path d="m5 12 4 4L19 6" /></svg></span>
-    {record.activityId ? <Link className="road-stop-title" href={`/dashboard/activities?activityId=${encodeURIComponent(record.activityId)}&returnTo=%2Fdashboard`}>{record.title}</Link> : <span className="road-stop-title">{record.title}</span>}
+    <span className="road-stop-title">{record.title}</span>
   </li>;
 }
 
+function OrbitLaunch({ coachAvailable, imageAvailable, onImageError }: { coachAvailable: boolean; imageAvailable: boolean; onImageError: () => void }) {
+  if (!coachAvailable) return null;
+  return <Link className="road-orbit-launch" href="/dashboard/coach" aria-label="Talk to Orbit">
+    {imageAvailable
+      ? <Image className="road-orbit-image" src="/images/orbit-coach-full.webp" alt="" width={124} height={186} sizes="(max-width: 767px) 82px, 124px" priority onError={onImageError} />
+      : <span className="road-orbit-fallback" aria-hidden="true">O</span>}
+    <span className="road-orbit-launch-label">Talk to Orbit <span aria-hidden="true">→</span></span>
+  </Link>;
+}
+
 export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }: { now: Date; onTimezone?: (timezone: string) => void; refreshKey?: number; heroHeader?: ReactNode }) {
+  const { coachAvailable } = useDashboardFeatures();
   const [context, setContext] = useState<GoalContextRouteData | null>(null);
   const [goalState, setGoalState] = useState<"loading" | "ready" | "error">("loading");
   const [history, setHistory] = useState<RaceHistoryRecord[]>([]);
   const [historyState, setHistoryState] = useState<"loading" | "ready" | "error">("loading");
-  const [heroImage, setHeroImage] = useState("/road-to-comrades.webp");
+  const [heroImage, setHeroImage] = useState(defaultHeroImage);
+  const [orbitImageAvailable, setOrbitImageAvailable] = useState(true);
   const [goalRetry, setGoalRetry] = useState(0);
   const [historyRetry, setHistoryRetry] = useState(0);
   const sceneRef = useRef<HTMLElement>(null);
@@ -92,11 +108,9 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
       const date = scene.querySelector<HTMLElement>(".road-hero-greeting p");
       const imageFrame = scene.querySelector<HTMLElement>(".road-hero-image-frame");
       const content = scene.querySelector<HTMLElement>(".road-hero-content");
-      const footer = scene.querySelector<HTMLElement>(".road-hero-footer");
       const panel = scene.querySelector<HTMLElement>(".road-journey");
-      const details = panel?.querySelector<HTMLDetailsElement>(".road-all-milestones");
-      const actions = scene.querySelector<HTMLElement>(".road-journey-actions");
-      if (!hero || !date || !imageFrame || !content || !footer || !panel || !actions) return;
+      const orbitLaunch = scene.querySelector<HTMLElement>(".road-orbit-launch");
+      if (!hero || !date || !imageFrame || !content || !panel) return;
 
       if (window.innerWidth < 1100) {
         scene.style.removeProperty("--road-hero-min-height");
@@ -111,7 +125,7 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
       if (!sceneWidth) return;
       scenePageTop ??= sceneBox.top + window.scrollY;
 
-      if (heroImage === "/road-to-comrades.webp") {
+      if (heroImage === defaultHeroImage) {
         const scale = 0.9 * sceneWidth / 1672;
         const dateBottom = date.getBoundingClientRect().bottom - sceneBox.top;
         imageFrame.style.left = String(sceneWidth * 0.05) + "px";
@@ -123,17 +137,13 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
         imageFrame.style.removeProperty("top");
       }
 
-      if (!details?.open) collapsedPanelHeight = panel.getBoundingClientRect().height;
-      if (details?.open && collapsedPanelHeight === 0) return;
-
       const contentBottom = content.getBoundingClientRect().bottom - sceneBox.top;
-      const footerBottom = footer.getBoundingClientRect().bottom - sceneBox.top;
-      const naturalHeroHeight = Math.max(350, contentBottom, footerBottom + 20);
+      const orbitBottom = orbitLaunch ? orbitLaunch.getBoundingClientRect().bottom - sceneBox.top : 0;
+      const naturalHeroHeight = Math.max(350, contentBottom + 20, orbitBottom + 12);
       const idealPanelTop = 115 + 499 * sceneWidth / 1672;
-      const actionBox = actions.getBoundingClientRect();
-      const actionMargin = Number.parseFloat(getComputedStyle(actions).marginTop) || 0;
+      collapsedPanelHeight = panel.getBoundingClientRect().height;
       const availableHeight = Math.max(0, window.innerHeight - scenePageTop);
-      const maximumPanelTop = availableHeight - collapsedPanelHeight - actionBox.height - actionMargin - 16;
+      const maximumPanelTop = availableHeight - collapsedPanelHeight - 16;
       const targetHeroHeight = Math.max(naturalHeroHeight, Math.min(idealPanelTop, maximumPanelTop));
 
       if (!Number.isFinite(lastHeroHeight) || Math.abs(targetHeroHeight - lastHeroHeight) >= 0.5) {
@@ -148,14 +158,10 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
     };
 
     const resizeObserver = new ResizeObserver(schedule);
-    for (const selector of [".road-home-scene", ".road-hero-greeting", ".road-hero-content", ".road-journey", ".road-journey-actions"]) {
+    for (const selector of [".road-home-scene", ".road-hero-header", ".road-hero-greeting", ".road-hero-content", ".road-orbit-launch", ".road-journey"]) {
       const element = scene.querySelector<HTMLElement>(selector);
       if (element) resizeObserver.observe(element);
     }
-
-    const details = scene.querySelector(".road-all-milestones");
-    const disclosureObserver = new MutationObserver(schedule);
-    if (details) disclosureObserver.observe(details, { attributes: true, attributeFilter: ["open"] });
 
     window.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
@@ -166,7 +172,6 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
       disposed = true;
       if (frame) window.cancelAnimationFrame(frame);
       resizeObserver.disconnect();
-      disclosureObserver.disconnect();
       window.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("resize", schedule);
     };
@@ -182,10 +187,10 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
 
   return <div className="home-goal-context road-goal-context">
     <section ref={sceneRef} className="road-home-scene" aria-label="Your goal and running journey">
-      <div className="road-hero">
+      <div className={`road-hero${coachAvailable ? " road-hero--with-orbit" : ""}`}>
         <div className="road-hero-photo" aria-hidden="true">
-          <div className="road-hero-image-frame" data-background-source={heroImage === "/road-to-comrades.webp" ? "default" : "custom"}>
-            <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage("/road-to-comrades.webp")} alt="" fill sizes={heroImage === "/road-to-comrades.webp" ? "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc((100vw - 180px) * 0.9)" : "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc(100vw - 180px)"} priority />
+          <div className="road-hero-image-frame" data-background-source={heroImage === defaultHeroImage ? "default" : "custom"}>
+            {heroImage ? <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage((current) => current === defaultHeroImage ? legacyHeroImage : current === legacyHeroImage ? "" : defaultHeroImage)} alt="" fill sizes={heroImage === defaultHeroImage ? "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc((100vw - 180px) * 0.9)" : "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc(100vw - 180px)"} priority /> : null}
           </div>
           <div className="road-hero-shade" />
         </div>
@@ -197,26 +202,24 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
             <p className="road-hero-target">{performance ? raceTargetLabel(goal.title, performance.targetTimeSeconds) : goal.title}</p>
             {performance ? <p className="road-hero-date"><time dateTime={performance.targetDate}>{formatCoachingDate(performance.targetDate, timezone)}</time><span>{(performance.distanceMeters / 1000).toLocaleString("en-ZA", { maximumFractionDigits: 1 })} km</span></p> : null}
           </> : <p className="road-hero-state" role="status">{goalState === "loading" ? "Loading your goal…" : goalState === "error" ? "Your goal is temporarily unavailable." : stateMessage}</p>}
-          <div className="road-hero-footer"><p>Every run has a reason.</p><Link className="text-link" href="/dashboard/plan">View plan →</Link></div>
         </div>
+        <OrbitLaunch coachAvailable={coachAvailable} imageAvailable={orbitImageAvailable} onImageError={() => setOrbitImageAvailable(false)} />
       </div>
       <section className="road-journey" aria-labelledby="road-journey-heading">
-        <h3 id="road-journey-heading" className="sr-only">Your running journey</h3>
+        <h3 id="road-journey-heading" className="road-screen-reader-only">Your running journey</h3>
         {goalState === "error" ? <p className="road-inline-state" role="status">{context ? "Showing the last loaded goal. Refresh unavailable." : "Your goal could not be loaded."} <button className="text-link" onClick={() => setGoalRetry((value) => value + 1)}>Retry goal</button></p> : null}
         {context?.state === "goal_only" ? <p className="road-inline-state">Your approved plan is not available right now.</p> : null}
         <div className="road-timeline">
           <div className="road-timeline-group road-timeline-group--achieved"><h4>Achieved</h4>
-            {journey.achieved.length ? <ol className="road-stops">{journey.achieved.slice(-3).map((record) => <AchievementStop key={record.id} record={record} />)}</ol> : <p className="road-empty" role="status">{historyState === "loading" ? "Loading your achievements…" : historyState === "error" ? "Your achievements could not be loaded." : "Add your first confirmed achievement."}</p>}
+            {journey.achieved.length ? <ol className="road-stops">{journey.achieved.map((record) => <AchievementStop key={record.id} record={record} />)}</ol> : <p className="road-empty" role="status">{historyState === "loading" ? "Loading your achievements…" : historyState === "error" ? "Your achievements could not be loaded." : "No completed milestones yet."}</p>}
           </div>
           <div className="road-now"><strong>Now</strong><span aria-hidden="true"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="16.7" cy="4.4" r="2" /><path d="m13.6 8.6 3.1 2.3 3.1.3M9.1 21l3.5-6.1-3.2-2.7 2.7-4.6c.4-.7 1.3-.9 2-.5l1.6 1.1M9.4 12.2l-3.1 4.5m7.7-1.8 3.8 1.5 1.8 4.1" /></svg></span></div>
           <div className="road-timeline-group road-timeline-group--ahead"><h4>Ahead</h4>
-            {journey.ahead.length ? <ol className="road-stops">{journey.ahead.slice(0, 3).map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} />)}</ol> : <p className="road-empty">{goalState === "loading" ? "Loading your next goals…" : goalState === "error" || context?.state === "unavailable" || context?.state === "projection_pending" ? "Upcoming races are unavailable." : "Your next chapter is ready to plan."}</p>}
+            {journey.ahead.length ? <ol className="road-stops">{journey.ahead.map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} />)}</ol> : <p className="road-empty">{goalState === "loading" ? "Loading your next goals…" : goalState === "error" || context?.state === "unavailable" || context?.state === "projection_pending" ? "Upcoming races are unavailable." : "No upcoming milestones."}</p>}
           </div>
         </div>
         {historyState === "error" ? <p className="road-inline-state" role="status">{history.length ? "Showing saved achievements; history could not be refreshed." : "Race history is temporarily unavailable."} <button className="text-link" onClick={() => setHistoryRetry((value) => value + 1)}>Retry history</button></p> : null}
-        {journey.achieved.length > 3 || journey.ahead.length > 3 ? <details className="road-all-milestones"><summary>All {journey.achieved.length + journey.ahead.length} milestones</summary><div className="road-all-groups"><section aria-label="All achieved milestones"><h4>Achieved</h4><ol className="road-stops">{journey.achieved.map((record) => <AchievementStop key={record.id} record={record} />)}</ol></section><section aria-label="All upcoming milestones"><h4>Ahead</h4><ol className="road-stops">{journey.ahead.map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} />)}</ol></section></div></details> : null}
       </section>
-      <div className="road-journey-actions"><Link className="road-manage text-link" href="/dashboard/settings?section=milestones#milestones">Manage milestones</Link></div>
     </section>
   </div>;
 }

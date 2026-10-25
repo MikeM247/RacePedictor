@@ -38,6 +38,8 @@ export default defineConfig({
       // Protected online fixture pages use the fixed synthetic test actor;
       // production accepts only the configured GitHub owner session.
       RACEPREDICTOR_E2E_OWNER_AUTH_ENABLED: "true",
+      RACEPREDICTOR_COACH_UI_ENABLED: "true",
+      RACEPREDICTOR_COACH_CHAT_ENABLED: "true",
     },
   },
 });

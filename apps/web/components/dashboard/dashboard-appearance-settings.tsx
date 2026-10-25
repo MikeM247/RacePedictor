@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import "./dashboard-appearance-settings.css";
 
-const defaultImage = "/road-to-comrades.webp";
+const defaultImage = "/road-to-comrades-v2.webp";
 
 export function DashboardAppearanceSettings() {
   const [savedImage, setSavedImage] = useState(defaultImage);

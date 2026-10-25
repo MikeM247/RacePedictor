@@ -66,7 +66,7 @@ function SettingsGroup({
   </details>;
 }
 
-export function OnlineSyncSettings({ homeLabel = "Coach" }: { homeLabel?: string }) {
+export function OnlineSyncSettings() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("Home computer");
@@ -308,7 +308,7 @@ export function OnlineSyncSettings({ homeLabel = "Coach" }: { homeLabel?: string
 
   return (
     <div className="dashboard-layout coaching-layout coaching-layout--settings">
-      <DashboardNavigation activePage="settings" homeLabel={homeLabel} />
+      <DashboardNavigation activePage="settings" />
       <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="settings-page-title">
         <header className="dashboard-toolbar coaching-toolbar">
           <div><p className="eyebrow">Training workspace</p><h1 id="settings-page-title">Settings</h1><p>Secure local sync and selected Second Brain context</p></div>

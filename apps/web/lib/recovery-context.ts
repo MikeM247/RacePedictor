@@ -36,7 +36,7 @@ export type RecoveryContext = {
 
 const storagePrefix = "racepredictor.recovery.v1.";
 const maxAgeMs = 2 * 60 * 60 * 1000;
-const allowedPaths = new Set(["/dashboard", "/dashboard/readiness", "/dashboard/activities", "/dashboard/calendar", "/dashboard/plan", "/dashboard/data-quality", "/dashboard/settings"]);
+const allowedPaths = new Set(["/dashboard", "/dashboard/coach", "/dashboard/readiness", "/dashboard/activities", "/dashboard/calendar", "/dashboard/plan", "/dashboard/data-quality", "/dashboard/settings"]);
 const ids = /^[A-Za-z0-9_-]{8,96}$/u;
 
 export function safeRecoveryPath(value: string | null | undefined, fallback = "/dashboard/activities") {
@@ -59,13 +59,15 @@ export function safeRecoveryPath(value: string | null | undefined, fallback = "/
 
 export function createRecoveryContext(input: Omit<RecoveryContext, "version" | "id" | "createdAt" | "expiresAt" | "path"> & { path?: string }) {
   const now = Date.now();
+  const fallbackPath = input.kind === "coach" ? "/dashboard/coach" : input.kind === "home" ? "/dashboard" : "/dashboard/activities";
+  const validatedPath = safeRecoveryPath(input.path ?? currentPath(), fallbackPath);
   const context: RecoveryContext = {
     ...input,
     version: 1,
     id: newRecoveryId(),
     createdAt: now,
     expiresAt: now + maxAgeMs,
-    path: safeRecoveryPath(input.path ?? currentPath(), input.kind === "home" || input.kind === "coach" ? "/dashboard" : "/dashboard/activities"),
+    path: input.kind === "coach" && validatedPath === "/dashboard" ? "/dashboard/coach" : validatedPath,
     loadedCursors: safeCursors(input.loadedCursors),
   };
   saveRecoveryContext(context);
@@ -84,7 +86,9 @@ export function readRecoveryContext(id: string | null | undefined): RecoveryCont
     const parsed = JSON.parse(window.sessionStorage.getItem(`${storagePrefix}${id}`) ?? "null") as Partial<RecoveryContext> | null;
     if (!parsed || parsed.version !== 1 || parsed.id !== id || typeof parsed.expiresAt !== "number" || parsed.expiresAt < Date.now()) return null;
     const validatedPath = safeRecoveryPath(parsed.path, "");
-    const path = parsed.disclosure === "readiness" && validatedPath === "/dashboard"
+    const path = parsed.kind === "coach" && validatedPath === "/dashboard"
+      ? "/dashboard/coach"
+      : parsed.disclosure === "readiness" && validatedPath === "/dashboard"
       ? "/dashboard/readiness"
       : validatedPath;
     if (!path) return null;
@@ -135,7 +139,9 @@ export function dataQualityHref(context: RecoveryContext, source: "file" | "stra
 export function recoveryReturnHref(context: RecoveryContext | null, fallback: string) {
   if (!context) return safeRecoveryPath(fallback, "/dashboard/activities");
   const validatedPath = safeRecoveryPath(context.path, fallback);
-  const path = context.disclosure === "readiness" && validatedPath === "/dashboard"
+  const path = context.kind === "coach" && validatedPath === "/dashboard"
+    ? "/dashboard/coach"
+    : context.disclosure === "readiness" && validatedPath === "/dashboard"
     ? "/dashboard/readiness"
     : validatedPath;
   const url = new URL(path, "https://racepredictor.invalid");

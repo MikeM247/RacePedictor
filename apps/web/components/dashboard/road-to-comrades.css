@@ -2,7 +2,7 @@
 .road-layout { --road-content-gutter: 32px; --road-lime: #bbf359; --road-cyan: #28d8f5; --road-node-size: 29px; --road-now-size: 39px; --road-heading-height: 15px; --road-heading-gap: 8px; --road-font: "Race Sans Condensed", "Arial Narrow", Arial, sans-serif; background: #07121f; font-family: var(--road-font); }
 @font-face { font-family: "Race Sans Condensed"; src: url("/fonts/DejaVuSansCondensed.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: swap; }
 @font-face { font-family: "Race Sans Condensed"; src: url("/fonts/DejaVuSansCondensed-Bold.ttf") format("truetype"); font-style: normal; font-weight: 700; font-display: swap; }
-.road-layout .dashboard-content.home-content { width: 100%; padding: 0 var(--road-content-gutter) 40px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+.road-layout .dashboard-content.home-content { width: 100%; padding: 0 var(--road-content-gutter) 18px; grid-template-columns: minmax(0, 1fr); gap: 0; }
 .road-layout .home-goal { margin-inline: calc(-1 * var(--road-content-gutter)); }
 .road-layout .home-goal-panel { min-width: 0; padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; }
 .road-home-scene { position: relative; isolation: isolate; display: grid; min-width: 0; gap: 0; padding-bottom: 18px; background: #071725; container-type: inline-size; }
@@ -10,27 +10,27 @@
 .road-hero-image-frame { position: absolute; top: calc(var(--road-date-bottom, 76px) + 12px - 12.9187cqw); left: 5cqw; width: 90cqw; aspect-ratio: 1672 / 941; mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent); mask-size: 100% 100%; }
 .road-hero-image { object-fit: contain; object-position: center bottom; }
 .road-hero-shade { position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg, #04101c42 0%, transparent 23%, #04101c16 46%, #061524ab 100%), linear-gradient(90deg, #04101cdb 0%, #04101c9e 39%, #04101c36 70%, #04101c08 100%); pointer-events: none; }
-.road-hero { position: static; display: grid; align-content: start; min-height: 350px; gap: 0; }
+.road-hero { position: relative; display: grid; align-content: start; min-height: 350px; gap: 0; }
 .road-hero-header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; width: 100%; padding: 24px 32px 0; }
 .road-hero-greeting { min-width: 0; }
 .road-hero-greeting h1 { margin: 0; color: #f6f9fc; font-size: clamp(28px, 2.5vw, 36px); font-weight: 700; letter-spacing: -.025em; line-height: 1.08; }
 .road-hero-greeting p { margin: 4px 0 0; color: #e1eaf2; font-size: 14px; }
-.road-hero-header > .daily-check-in-state { margin: 8px 8px 0 0; color: #e1eaf2; font-size: 12px; }
-.road-hero-content { width: 100%; padding: 40px 32px 40px; }
+.road-hero-content { position: relative; z-index: 1; width: 100%; padding: 40px 32px 32px; }
 .road-hero-content .eyebrow { margin: 0 0 8px; color: #c6e6fa; font-size: 13px; font-weight: 400; letter-spacing: .30em; line-height: 1.4; text-transform: uppercase; }
 .road-hero-content h2 { max-width: 50%; margin: 0; color: #fff; font-size: clamp(38px, 4.5vw, 58px); font-weight: 700; line-height: .98; letter-spacing: -.015em; text-transform: uppercase; text-wrap: balance; overflow-wrap: anywhere; }
 .road-hero-target { margin: 8px 0 0; color: #fff; font-size: clamp(25px, 3vw, 37px); font-weight: 700; line-height: 1.04; text-transform: uppercase; letter-spacing: -.01em; }
 .road-hero-date { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0 0; color: #f0f5fa; font-size: 13px; font-weight: 700; letter-spacing: .23em; line-height: 1.5; text-transform: uppercase; }
 .road-hero-date span { border-left: 2px solid var(--road-lime); padding-left: 16px; }
-.road-hero-footer { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-top: 16px; }
-.road-hero-footer p { margin: 0; color: #f4f7fa; font-size: 16px; font-weight: 400; letter-spacing: .04em; }
-.road-hero-footer p::before { content: ""; display: block; width: 38px; height: 3px; margin-bottom: 9px; background: var(--road-lime); }
-.road-layout .road-hero-footer .text-link { color: #bcefff; font-size: 14px; white-space: nowrap; }
+.road-orbit-launch { position: absolute; z-index: 2; top: 78px; right: clamp(18px, 3vw, 54px); display: grid; justify-items: center; gap: 4px; width: 138px; color: #f3fbff; text-decoration: none; text-align: center; }
+.road-orbit-image { display: block; width: auto; height: 186px; object-fit: contain; }
+.road-orbit-fallback { display: grid; place-items: center; width: 124px; height: 186px; border: 1px solid #45dff4; border-radius: 50% 50% 12px 12px; background: radial-gradient(ellipse at center, #174058 0%, #071725 75%); color: #dffbff; font-size: 40px; font-weight: 700; }
+.road-orbit-launch-label { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 6px; padding: 4px 12px; border: 1px solid #57d9f2; border-radius: 999px; background: #061725ed; color: #e4faff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.road-orbit-launch:hover .road-orbit-launch-label { background: #102b3d; color: #fff; }
+.road-orbit-launch:focus-visible { border-radius: 8px; outline: 3px solid #bbf359; outline-offset: 4px; }
 .road-journey { position: relative; z-index: 1; margin: -24px 18px 0; padding: 17px 20px 18px; border: 1px solid #72889a; border-radius: 15px; background: #071725ed; box-shadow: 0 12px 26px #020a12a6; backdrop-filter: blur(7px); }
 .road-journey-header { margin: 0; }
 .road-layout .road-manage, .settings-panel--milestones .road-manage { min-height: 44px; padding: 4px 8px; border: 0; background: transparent; color: #a9d8e5; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .road-layout .road-manage:hover, .settings-panel--milestones .road-manage:hover { color: #d2f8ff; }
-.road-journey-actions { display: flex; justify-content: flex-end; margin: 2px 26px 0; }
 .road-timeline { display: grid; grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr); gap: 0; }
 .road-timeline-group { min-width: 0; }
 .road-timeline-group h4, .road-all-groups h4 { margin: 0 0 var(--road-heading-gap); color: #d2e0ee; font-size: 12px; font-weight: 700; letter-spacing: .20em; line-height: var(--road-heading-height); text-transform: uppercase; }
@@ -132,9 +132,9 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-home-scene { --road-hero-min-height: min(calc(115px + 29.8445cqw), calc(100svh - 260px)); }
   .road-hero { min-height: max(350px, var(--road-hero-min-height)); }
   .road-hero-header { padding-top: 16px; }
+  .road-hero--with-orbit .road-hero-content { padding-right: 220px; }
   .road-hero-image-frame[data-background-source="custom"] { top: 0; left: 0; width: 100%; mask-image: none; }
   .road-hero-content { padding: 64px 32px 20px; }
-  .road-hero-footer { margin-top: 24px; }
   .road-journey { margin-top: 0; }
   .road-hero-date { margin-top: 16px; }
   .road-timeline-group--ahead > h4 { text-align: right; }
@@ -146,23 +146,34 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-timeline-group--ahead > .road-stops > .road-stop:last-child::before { right: 0; }
 }
 @media (max-width: 1099px) {
-  .road-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); grid-template-areas: "goal" "activity" "today"; }
+  .road-layout .dashboard-content.home-content { grid-template-columns: minmax(0, 1fr); }
   .road-hero { position: relative; min-height: 350px; }
   .road-hero-photo { inset: 0; }
   .road-hero-image-frame, .road-hero-image-frame[data-background-source="custom"] { inset: 0; top: 0; left: 0; width: 100%; height: 100%; aspect-ratio: auto; mask-image: none; }
   .road-hero-image { object-fit: cover; object-position: 67% 31%; }
   .road-hero-content { padding-top: 36px; }
-  .road-hero-content h2 { font-size: clamp(26px, 4vw, 44px); }
+  .road-hero-content h2 { max-width: 100%; font-size: clamp(26px, 4vw, 44px); }
   .road-journey { margin: -22px 14px 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+  .road-hero--with-orbit .road-hero-content { padding-right: 138px; }
   .road-timeline { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .road-timeline-group { padding: 14px 15px 16px; border: 1px solid #668096; border-radius: 13px; background: #071725f2; box-shadow: 0 8px 22px #020a1280; }
   .road-timeline-group h4 { margin-bottom: 10px; }
+  .road-timeline-group > .road-stops { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; grid-auto-columns: auto; gap: 0; }
+  .road-stop { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; justify-items: start; gap: 2px 9px; padding: 0; text-align: left; }
+  .road-stop::before { top: 0; right: auto; bottom: 0; left: calc(var(--road-node-size) / 2); width: 2px; height: auto; transform: none; }
+  .road-stop:first-child::before { top: 50%; left: calc(var(--road-node-size) / 2); }
+  .road-stop:last-child::before { right: auto; bottom: 50%; }
+  .road-stop .road-node { grid-column: 1; grid-row: 1; margin: 0; }
+  .road-stop-title { grid-column: 2; justify-content: flex-start; min-height: 44px; text-align: left; }
   .road-now { --road-progress-direction: 180deg; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) var(--road-now-size) minmax(0, 1fr); min-height: 57px; align-items: center; gap: 9px; }
   .road-now::before { top: 0; right: auto; bottom: 0; left: 50%; width: 2px; height: auto; mask-image: repeating-linear-gradient(to bottom, #000 0 6px, transparent 6px 10px); transform: translateX(-50%); }
   .road-now strong { grid-column: 3; grid-row: 1; justify-self: start; margin: 0; padding: 2px 4px; background: #071725; }
   .road-now > span { grid-column: 2; grid-row: 1; margin-top: 0; }
   .road-timeline-group--ahead::after { display: none; }
-  .road-journey-actions { margin: 5px 12px 0; }
+  .road-orbit-launch { top: 70px; right: 18px; width: 110px; }
+  .road-orbit-image { height: 123px; }
+  .road-orbit-fallback { width: 82px; height: 123px; font-size: 30px; }
+  .road-orbit-launch-label { min-height: 44px; padding-inline: 8px; font-size: 11px; }
 }
 @media (max-width: 767px) {
   .road-layout { --road-content-gutter: 12px; --road-node-size: 26px; --road-now-size: 36px; padding-top: 0; }
@@ -176,25 +187,21 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-hero-header { align-items: center; gap: 4px 8px; padding: calc(78px + env(safe-area-inset-top)) 16px 0; }
   .road-hero-greeting h1 { font-size: 27px; }
   .road-hero-greeting p { font-size: 12px; }
-  .road-hero-header > .daily-check-in-state { margin: 0; font-size: 11px; }
-  .road-check-in-chip { font-size: 11px; gap: 5px; }
-  .road-hero-content { padding: 38px 17px 42px; }
+  .road-hero-content { padding: 30px 17px 36px; }
+  .road-hero--with-orbit .road-hero-content { padding-right: 122px; }
+  .road-orbit-launch { top: calc(72px + env(safe-area-inset-top)); right: 8px; width: 105px; }
+  .road-orbit-launch-label { min-height: 44px; padding-inline: 6px; font-size: 10px; }
   .road-hero-content .eyebrow { font-size: 10px; margin-bottom: 8px; }
   .road-hero-content h2 { font-size: clamp(20px, 6vw, 27px); }
   .road-hero-target { margin-top: 7px; font-size: clamp(24px, 6.5vw, 28px); }
   .road-hero-date { gap: 6px 12px; margin-top: 9px; font-size: 10px; letter-spacing: .18em; }
   .road-hero-date span { padding-left: 11px; }
-  .road-hero-footer { margin-top: 14px; gap: 8px; }
-  .road-hero-footer p { font-size: 12px; letter-spacing: .025em; }
-  .road-layout .road-hero-footer .text-link { font-size: 12px; }
   .road-journey { margin-inline: 10px; }
   .road-timeline-group { padding: 12px 11px 14px; }
   .road-stop { padding-inline: 3px; }
   .road-stop-title { font-size: 12px; }
   .road-now { min-height: 54px; }
   .road-now strong { font-size: 11px; }
-  .road-journey-actions { margin-inline: 8px; }
-  .road-layout .road-manage { font-size: 12px; }
   .road-layout .home-workout-surface, .road-layout .home-session-summary--compact { min-height: 0; padding: 20px; }
   .road-layout .home-workout-surface .today-coach-main { display: grid; gap: 8px; }
   .road-layout .home-workout-surface .today-coach-main h2 { font-size: 23px; }
@@ -215,6 +222,7 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-hero { min-height: 315px; }
   .road-hero-header { align-items: flex-start; }
   .road-hero-content { padding-inline: 14px; }
+  .road-hero--with-orbit .road-hero-content { padding-right: 116px; }
   .road-stops, .road-timeline-group > .road-stops { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; grid-auto-columns: auto; gap: 9px; }
   .road-stop { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; justify-items: start; gap: 2px 9px; padding: 0; text-align: left; }
   .road-stop::before { display: none; }
@@ -222,3 +230,4 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-stop-title { grid-column: 2; justify-content: flex-start; text-align: left; }
 }
 @media (prefers-reduced-motion: reduce) { .road-layout *, .road-dialog * { scroll-behavior: auto; transition: none; } }
+.road-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

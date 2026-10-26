@@ -268,7 +268,7 @@ test("Home and Coach are separate destinations and Orbit opens chat without send
   await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
   await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
   await page.route("**/api/v1/coaching/chat/turns", async (route) => { sentTurns.push(route.request().url()); await route.fulfill({ status: 500 }); });
-  await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context: {
+  await page.route("**/api/v1/coaching/milestones", (route) => route.fulfill({ json: { data: { revision: 0, sourceVersion: "coach-home-fixture", today: "2026-10-22", history: [], availability: { goal: true, history: true }, entries: [], removed: [], context: {
     state: "ready", plan: { id: "plan_home", version: 1, revision: 1, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
     goal: { id: "goal_home", athleteId: "athlete_test", revision: 1, title: "Build toward Comrades", why: "Run steadily.", target: { kind: "performance", distanceMeters: 89_000, targetDate: "2027-06-13", eventName: "Build toward Comrades" } },
     milestones: [], projection: { contextHash: "b".repeat(64), publishedAt: now },
@@ -301,7 +301,7 @@ test("Coach topic, selected record, unsent draft and transcript position survive
   });
   const messages = Array.from({ length: 40 }, (_, index) => message(`continuity_${index}`, index + 1, index % 2 ? "assistant" : "user", `Conversation entry ${index + 1}. ${"A detailed training observation. ".repeat(12)}`, "completed", null, "general"));
   await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation(messages) } }));
-  await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context: {
+  await page.route("**/api/v1/coaching/milestones", (route) => route.fulfill({ json: { data: { revision: 0, sourceVersion: "coach-home-fixture", today: "2026-10-22", history: [], availability: { goal: true, history: true }, entries: [], removed: [], context: {
     state: "ready", plan: { id: "plan_home", version: 1, revision: 1, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
     goal: { id: "goal_home", athleteId: "athlete_test", revision: 1, title: "Build toward Comrades", why: "Run steadily.", target: { kind: "performance", distanceMeters: 89_000, targetDate: "2027-06-13", eventName: "Build toward Comrades" } },
     milestones: [], projection: { contextHash: "b".repeat(64), publishedAt: now },

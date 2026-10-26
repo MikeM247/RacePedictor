@@ -121,10 +121,23 @@ export class PrismaTrainingPlanGoalContextRepository {
   }
 
   async findForPlan(scope, plan) {
+    return findForPlan(this.#prisma, scope, plan);
+  }
+}
+
+/** Read-only transaction adapter; publishing still requires the full repository. */
+export function createTrainingPlanGoalContextReader({ prisma }) {
+  if (!prisma?.trainingPlanGoalContextProjection || !prisma?.trainingPlanProjection) {
+    throw new Error("A Prisma training-plan goal-context read client is required");
+  }
+  return Object.freeze({ findForPlan: (scope, plan) => findForPlan(prisma, scope, plan) });
+}
+
+async function findForPlan(prisma, scope, plan) {
     const athleteId = assertAthleteScope(scope);
     const parsedPlan = trainingPlanSchema.parse(plan);
     assertAthleteOwnership(scope, parsedPlan.athleteId);
-    const row = await this.#prisma.trainingPlanGoalContextProjection.findUnique({
+    const row = await prisma.trainingPlanGoalContextProjection.findUnique({
       where: { athleteId_planId: { athleteId, planId: parsedPlan.id } },
     });
     if (!row) return null;
@@ -139,7 +152,6 @@ export class PrismaTrainingPlanGoalContextRepository {
       throw new TrainingPlanGoalContextUnavailableError();
     }
     return result;
-  }
 }
 
 function toProjection(row) {

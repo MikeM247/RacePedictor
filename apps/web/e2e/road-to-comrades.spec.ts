@@ -4,6 +4,7 @@ import path from "node:path";
 import { e2eRoot, e2eRepositoryRoot } from "./fixture-paths.ts";
 import { expectAxeClean, recordApplicationWrites } from "./test-helpers.ts";
 import { assertHomeLayout, assertRoadTimelineLayout } from "./home-layout-assertions.ts";
+import { mockMilestoneRead, resetMilestoneFixtureState } from "./milestone-read-fixture.ts";
 
 const context = {
   state: "ready",
@@ -15,13 +16,16 @@ const context = {
   ],
   projection: null,
 };
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "wait" }); });
 
 async function mockHome(page: Page) {
+  await mockMilestoneRead(page, context);
   await page.clock.setFixedTime(new Date("2026-10-17T07:00:00.000Z"));
   await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context } } }));
 }
 
 async function seedHistory(page: Page) {
+  resetMilestoneFixtureState();
   const list = await page.request.get("/api/v1/coaching/race-history");
   expect(list.ok()).toBeTruthy();
   for (const record of (await list.json()).data.items) await page.request.delete(`/api/v1/coaching/race-history?id=${record.id}&revision=${record.revision}`);
@@ -103,6 +107,7 @@ test("Home refreshes approved targets and history without inventing future compl
   await page.goto("/dashboard");
   await expect(page.locator(".road-stop--achieved")).toHaveCount(3);
   const revised = { ...context, milestones: context.milestones.map((race) => race.id === "road-oldies" ? { ...race, eventName: "Updated checkpoint" } : race) };
+  await mockMilestoneRead(page, revised);
   await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context: revised } } }));
   const futureResult = await page.request.put("/api/v1/coaching/race-history", { data: { record: { id: "road-result", title: "Future race result", confirmedBy: "user", achievement: "goal_achieved", raceDate: "2026-11-01", distanceMeters: 10_000, elapsedTimeSeconds: 3_590 }, expectedRevision: 0 } });
   expect(futureResult.ok()).toBeTruthy();

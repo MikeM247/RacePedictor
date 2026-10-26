@@ -109,7 +109,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
   ]);
   const backfillResume = new URL("providers/strava/backfill/resume/route.ts", apiRoot).href;
   assert.ok(routeFiles.some((route) => route.href === backfillResume), "owner-scoped backfill resume route is required");
-  assert.equal(routeFiles.length, 75, "route inventory changed; classify every new route explicitly");
+  assert.equal(routeFiles.length, 77, "route inventory changed; classify every new route explicitly");
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;
@@ -139,6 +139,15 @@ test("every current sensitive API handler uses the route-level security wrapper"
       /export const (GET|POST|PUT|PATCH|DELETE) = withSensitiveRoute/,
       `${routeFile.pathname} must wrap its exported handler`,
     );
+  }
+});
+
+test("milestone management reads and changes require the actor-scoped owner boundary and private responses", async () => {
+  for (const route of ["milestones/route.ts", "milestones/changes/route.ts"]) {
+    const source = await readFile(new URL(`../app/api/v1/coaching/${route}`, import.meta.url), "utf8");
+    assert.match(source, /withSensitiveRoute/);
+    assert.match(source, /cloudHandling: "actor-scoped"/);
+    assert.match(source, /private, no-store/);
   }
 });
 

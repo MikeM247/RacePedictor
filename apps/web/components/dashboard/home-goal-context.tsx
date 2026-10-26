@@ -4,9 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { goalContextApiResponseSchema, type GoalContextRouteData } from "../../../../packages/core/src/contracts/coaching.ts";
-import { raceHistoryResponseSchema, type RaceHistoryRecord } from "../../../../packages/core/src/contracts/race-history.ts";
-import { buildRaceJourney, type JourneyTarget } from "../../../../packages/core/src/services/race-journey.ts";
+import type { RaceHistoryRecord } from "../../../../packages/core/src/contracts/race-history.ts";
+import type { JourneyTarget } from "../../../../packages/core/src/services/race-journey.ts";
+import type { MilestoneEntry } from "../../../../packages/core/src/contracts/milestone-timeline.ts";
+import { useMilestoneTimeline } from "../../lib/use-milestone-timeline.ts";
 import { formatCoachingDate, localDateInTimezone } from "../../lib/coaching-ui-state";
 import { formatDuration } from "../../lib/activity-formatters";
 import { useDashboardFeatures } from "./dashboard-feature-context";
@@ -26,10 +27,11 @@ function TargetStop({ target, nextId }: { target: JourneyTarget; nextId: string 
   </li>;
 }
 
-function AchievementStop({ record }: { record: RaceHistoryRecord }) {
+function AchievementStop({ record, performance }: { record: RaceHistoryRecord; performance: MilestoneEntry["performance"] }) {
   return <li className="road-stop road-stop--achieved">
     <span className="road-node" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="3"><path d="m5 12 4 4L19 6" /></svg></span>
     <span className="road-stop-title">{record.title}</span>
+    {performance !== "not_set" ? <span className="road-stop-result">{performance === "achieved" ? "Target achieved" : performance === "missed" ? "Completed · target missed" : "Completed · target unassessed"}</span> : null}
   </li>;
 }
 
@@ -45,41 +47,17 @@ function OrbitLaunch({ coachAvailable, imageAvailable, onImageError }: { coachAv
 
 export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }: { now: Date; onTimezone?: (timezone: string) => void; refreshKey?: number; heroHeader?: ReactNode }) {
   const { coachAvailable } = useDashboardFeatures();
-  const [context, setContext] = useState<GoalContextRouteData | null>(null);
-  const [goalState, setGoalState] = useState<"loading" | "ready" | "error">("loading");
-  const [history, setHistory] = useState<RaceHistoryRecord[]>([]);
-  const [historyState, setHistoryState] = useState<"loading" | "ready" | "error">("loading");
+  const { data: timeline, error: timelineError, refresh: refreshTimeline } = useMilestoneTimeline(false, refreshKey);
+  const context = timeline?.context ?? null;
+  const goalState = timelineError ? "error" : timeline ? "ready" : "loading";
+  const historyState = goalState;
   const [heroImage, setHeroImage] = useState(defaultHeroImage);
   const [orbitImageAvailable, setOrbitImageAvailable] = useState(true);
-  const [goalRetry, setGoalRetry] = useState(0);
-  const [historyRetry, setHistoryRetry] = useState(0);
   const sceneRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void fetch("/api/v1/coaching/goal-context/active", { cache: "no-store", signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw new Error("Goal unavailable");
-      return goalContextApiResponseSchema.parse(await response.json()).data.context;
-    }).then((next) => {
-      if (controller.signal.aborted) return;
-      setContext(next); setGoalState("ready");
-      onTimezone?.(next.plan?.timezone ?? "Africa/Johannesburg");
-    }).catch(() => {
-      if (!controller.signal.aborted) { setGoalState("error"); if (!context) onTimezone?.("Africa/Johannesburg"); }
-    });
-    return () => controller.abort();
-  }, [goalRetry, refreshKey, onTimezone]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch("/api/v1/coaching/race-history", { cache: "no-store", signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw new Error("History unavailable");
-      return raceHistoryResponseSchema.parse(await response.json()).data.items;
-    }).then((items) => {
-      if (!controller.signal.aborted) { setHistory(items); setHistoryState("ready"); }
-    }).catch(() => { if (!controller.signal.aborted) setHistoryState("error"); });
-    return () => controller.abort();
-  }, [historyRetry, refreshKey]);
+    if (timeline || timelineError) onTimezone?.(timeline?.context?.plan?.timezone ?? "Africa/Johannesburg");
+  }, [timeline, timelineError, onTimezone]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -180,7 +158,9 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
 
   const timezone = context?.plan?.timezone ?? "Africa/Johannesburg";
   const today = localDateInTimezone(timezone, now);
-  const journey = buildRaceJourney(context, history, today);
+  const completed = timeline?.entries.filter((entry) => entry.completion === "completed" && entry.achievement) ?? [];
+  const ahead = timeline?.entries.flatMap((entry) => entry.completion !== "completed" && entry.target ? [entry.target] : []) ?? [];
+  const journey = { achieved: completed, ahead, nextId: ahead.find((target) => target.date >= today)?.id ?? null };
   const goal = context?.goal;
   const performance = goal?.target.kind === "performance" ? goal.target : null;
   const stateMessage = context?.state === "projection_pending" ? "Your approved goal is syncing."
@@ -208,18 +188,18 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
       </div>
       <section className="road-journey" aria-labelledby="road-journey-heading">
         <h3 id="road-journey-heading" className="road-screen-reader-only">Your running journey</h3>
-        {goalState === "error" ? <p className="road-inline-state" role="status">{context ? "Showing the last loaded goal. Refresh unavailable." : "Your goal could not be loaded."} <button className="text-link" onClick={() => setGoalRetry((value) => value + 1)}>Retry goal</button></p> : null}
+        {goalState === "error" ? <p className="road-inline-state" role="status">{timeline ? "Showing your last saved milestone view. Refresh unavailable." : "Your milestone view could not be loaded."} <button className="text-link" onClick={refreshTimeline}>Reload milestones</button></p> : null}
         {context?.state === "goal_only" ? <p className="road-inline-state">Your approved plan is not available right now.</p> : null}
         <div className="road-timeline">
-          <div className="road-timeline-group road-timeline-group--achieved"><h4>Achieved</h4>
-            {journey.achieved.length ? <ol className="road-stops">{journey.achieved.map((record) => <AchievementStop key={record.id} record={record} />)}</ol> : <p className="road-empty" role="status">{historyState === "loading" ? "Loading your achievements…" : historyState === "error" ? "Your achievements could not be loaded." : "No completed milestones yet."}</p>}
+          <div className="road-timeline-group road-timeline-group--achieved"><h4>Completed</h4>
+            {journey.achieved.length ? <ol className="road-stops">{journey.achieved.map((entry) => <AchievementStop key={entry.id} record={entry.achievement!} performance={entry.performance} />)}</ol> : <p className="road-empty" role="status">{historyState === "loading" ? "Loading your achievements…" : historyState === "error" ? "Your achievements could not be loaded." : "No completed milestones yet."}</p>}
           </div>
           <div className="road-now"><strong>Now</strong><span aria-hidden="true"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="16.7" cy="4.4" r="2" /><path d="m13.6 8.6 3.1 2.3 3.1.3M9.1 21l3.5-6.1-3.2-2.7 2.7-4.6c.4-.7 1.3-.9 2-.5l1.6 1.1M9.4 12.2l-3.1 4.5m7.7-1.8 3.8 1.5 1.8 4.1" /></svg></span></div>
           <div className="road-timeline-group road-timeline-group--ahead"><h4>Ahead</h4>
             {journey.ahead.length ? <ol className="road-stops">{journey.ahead.map((target) => <TargetStop key={target.id} target={target} nextId={journey.nextId} />)}</ol> : <p className="road-empty">{goalState === "loading" ? "Loading your next goals…" : goalState === "error" || context?.state === "unavailable" || context?.state === "projection_pending" ? "Upcoming races are unavailable." : "No upcoming milestones."}</p>}
           </div>
         </div>
-        {historyState === "error" ? <p className="road-inline-state" role="status">{history.length ? "Showing saved achievements; history could not be refreshed." : "Race history is temporarily unavailable."} <button className="text-link" onClick={() => setHistoryRetry((value) => value + 1)}>Retry history</button></p> : null}
+        {timeline ? <p className="road-milestone-count">{timeline.entries.length} milestones</p> : null}
       </section>
     </section>
   </div>;

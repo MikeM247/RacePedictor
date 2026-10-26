@@ -4,6 +4,7 @@ import path from "node:path";
 import prepareHome from "./home-local-fixture.ts";
 import { e2eDatabasePath } from "./fixture-paths.ts";
 import { createLocalSchema } from "../../../packages/db/src/local-garmin-pipeline.js";
+import { seedApprovedMilestonePlan } from "./milestone-timeline-fixture.ts";
 
 export default async function prepareMilestones() {
   await prepareHome(); await mkdir(path.dirname(e2eDatabasePath), { recursive: true });
@@ -14,4 +15,5 @@ export default async function prepareMilestones() {
       db.prepare("INSERT OR IGNORE INTO activities (id, athlete_id, source_type, occurred_at, local_occurred_at, ended_at, elapsed_time_s, sport, title, distance_m, avg_pace_sec_per_km, dedupe_hash, source_payload_json, created_at) VALUES (?, ?, 'gpx', ?, ?, ?, ?, 'run', ?, 10000, ?, ?, '{}', ?)").run(id, "e2e_athlete", `${date}T06:00:00Z`, `${date}T08:00:00+02:00`, `${date}T07:00:00Z`, elapsed, title, elapsed / 10, id, `${date}T08:00:00Z`);
     }
   } finally { db.close(); }
+  await seedApprovedMilestonePlan();
 }

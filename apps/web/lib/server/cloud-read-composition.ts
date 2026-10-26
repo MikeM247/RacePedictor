@@ -17,10 +17,9 @@ import { assertServerRuntime } from "./server-runtime.ts";
 
 assertServerRuntime("cloud-read-composition");
 
-let singleton: ReturnType<typeof buildComposition> | undefined;
+let singleton: ReturnType<typeof createCloudReadComposition> | undefined;
 
-function buildComposition() {
-  const prisma = getCloudPrismaClient();
+export function createCloudReadComposition(prisma = getCloudPrismaClient()) {
   return Object.freeze({
     activities: new PrismaCloudActivityRepository({ prisma }),
     coaching: new PrismaCloudCoachingRepository({ prisma }),
@@ -38,6 +37,6 @@ function buildComposition() {
 }
 
 export function getCloudReadComposition() {
-  singleton ??= buildComposition();
+  singleton ??= createCloudReadComposition();
   return singleton;
 }

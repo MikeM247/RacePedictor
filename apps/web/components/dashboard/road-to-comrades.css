@@ -47,6 +47,8 @@
 .road-stop--achieved .road-node { border-color: #d4ff77; background: var(--road-lime); color: #15310a; box-shadow: 0 0 11px #bbf3599c; }
 .road-stop--next .road-node { border-color: #a8c1de; box-shadow: none; }
 .road-stop-title { max-width: 100%; color: #f1f6fb; font-size: 14px; line-height: 1.28; font-weight: 700; overflow-wrap: anywhere; text-decoration: none; }
+.road-stop-result { max-width: 100%; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; color: #d7e6f4; }
+.road-milestone-count { margin: 16px 0 0; font-size: 14px; color: #d7e6f4; }
 a.road-stop-title { display: inline-flex; align-items: center; min-height: 44px; }
 a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 .road-now { --road-progress-direction: 90deg; position: relative; display: flex; flex-direction: column; align-items: center; color: var(--road-lime); }
@@ -164,6 +166,7 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
   .road-stop:first-child::before { top: 50%; left: calc(var(--road-node-size) / 2); }
   .road-stop:last-child::before { right: auto; bottom: 50%; }
   .road-stop .road-node { grid-column: 1; grid-row: 1; margin: 0; }
+  .road-stop-result { grid-column: 2; }
   .road-stop-title { grid-column: 2; justify-content: flex-start; min-height: 44px; text-align: left; }
   .road-now { --road-progress-direction: 180deg; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) var(--road-now-size) minmax(0, 1fr); min-height: 57px; align-items: center; gap: 9px; }
   .road-now::before { top: 0; right: auto; bottom: 0; left: 50%; width: 2px; height: auto; mask-image: repeating-linear-gradient(to bottom, #000 0 6px, transparent 6px 10px); transform: translateX(-50%); }

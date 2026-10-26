@@ -1,5 +1,11 @@
 # DB_SCHEMA
 
+## Milestone timeline membership
+
+`MilestoneTimelineState` maps to `milestone_timeline_state`: athlete ID primary/foreign key, positive management revision, validated JSON state, creation/update timestamps. The JSON stores versioned explicit race/result links, selected removal groups and negative link decisions; it does not overwrite approved plan or result snapshots. Conditional inserts/updates and serializable transactions enforce revision checks. Migration: `20261025190000_milestone_timeline_state`.
+
+Local SQLite uses the equivalent athlete key, revision, JSON text and update time. Reads do not create a table or row; the first explicit command creates the table inside the reserved transaction. Neither storage joins device sync or Second Brain publication. Persisted removals survive plan republication with the same source identity. New target IDs require explicit linking. Retain membership rows during rollback; see [ADR 0011](adr/0011-settings-owned-milestone-timeline.md).
+
 ## V2 Coach conversations
 
 The additive migration `20261022120000_v2_coach_conversations` adds four athlete-scoped PostgreSQL models: `CoachConversation`, `CoachTurn`, `CoachMessage`, and `CoachUsageBucket`. Conversation generation/sequence and reflection marker support optimistic concurrency and explicit history deletion. Turns retain bounded context snapshots, lifecycle/lease state, safe error codes and provider usage metadata. Message sequences and client identities are unique within the conversation generation; a partial unique index permits at most one assistant message per turn. Composite athlete-aware foreign keys prevent messages/turns from crossing tenants. Quota buckets are independent from Strava/activity-review usage. These records do not join the device sync cursor or Second Brain publication graph. History remains until the athlete clears it; deletion preserves training/journal records and content-free usage counters. See [ADR 0010](adr/0010-v2-conversation-led-coach.md) and the [implementation plan](plans/V2_FIRST_ITERATION_ARCHITECTURE_IMPLEMENTATION_PLAN.md).

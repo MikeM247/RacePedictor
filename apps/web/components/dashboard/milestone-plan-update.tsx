@@ -52,6 +52,7 @@ export function MilestoneTargetForm({ context, latestContext, target, onPrepared
 }
 
 export function PreparedMilestoneChange({ request, onDiscard }: { request: MilestoneChangeRequest; onDiscard: () => void }) {
+  if (request.operation === "remove") return <aside className="milestone-notice" role="status"><p>This prepared removal is obsolete. Remove the milestone directly in Settings; no replacement plan is needed.</p><button className="text-link" onClick={onDiscard}>Discard obsolete request</button></aside>;
   return <aside className="milestone-notice" aria-label="Prepared plan change"><strong>Plan update prepared</strong><p>{milestoneChangeLabel(request)}</p><p>Kept in this browser tab only. The approved plan stays active until a replacement is approved and published.</p><div className="milestone-actions"><Link className="text-link" href="/dashboard/plan?milestoneUpdate=1">Continue in Plan →</Link><button className="text-link" type="button" onClick={onDiscard}>Discard prepared change</button></div></aside>;
 }
 
@@ -80,7 +81,7 @@ export function MilestonePlanHandoff({ onlineMode, onContinue }: { onlineMode: b
     return () => { controller.abort(); window.removeEventListener("focus", refresh); };
   }, [retry]);
 
-  const current = Boolean(request && milestoneChangeIsCurrent(request, context));
+  const current = Boolean(request && request.operation !== "remove" && milestoneChangeIsCurrent(request, context));
   async function copyInstructions() {
     if (!request || !current) return;
     try { await navigator.clipboard.writeText(milestoneChangeInstructions(request)); setMessage("Instructions copied. Review a complete proposal before approval."); }
@@ -98,7 +99,7 @@ export function MilestonePlanHandoff({ onlineMode, onContinue }: { onlineMode: b
     catch { setMessage("The browser could not discard this request. Retry after allowing session storage."); }
   }
   async function continueToReview() {
-    if (!request || continuing) return;
+    if (!request || request.operation === "remove" || continuing) return;
     setContinuing(true);
     try {
       const response = await fetch("/api/v1/coaching/goal-context/active", { cache: "no-store" });
@@ -114,7 +115,7 @@ export function MilestonePlanHandoff({ onlineMode, onContinue }: { onlineMode: b
   return <section className="coach-panel milestone-plan-handoff" aria-labelledby="milestone-handoff-heading"><h2 id="milestone-handoff-heading">Milestone plan update</h2>
     {state === "loading" ? <p role="status">Checking the current approved plan…</p> : state === "error" ? <div role="alert"><p>The prepared change or current approved plan could not be verified. Your approved plan has not changed.</p><button type="button" className="button button-secondary" onClick={() => setRetry((value) => value + 1)}>Retry milestone handoff</button>{context?.goal ? <button className="text-link" type="button" onClick={discard}>Discard invalid request</button> : null}</div> : !request ? <p>No prepared milestone request exists for this athlete in this tab. <Link href="/dashboard/settings?section=milestones">Return to Milestones</Link>.</p> : <>
       <p><strong>{milestoneChangeLabel(request)}</strong> · Based on approved plan version {request.basePlan.version}.</p>
-      {!current ? <p className="milestone-notice" role="alert">The approved plan changed since this request was prepared. Return to Milestones and prepare it against the current plan. This request cannot be used automatically.</p> : <>
+      {!current ? <p className="milestone-notice" role="alert">{request.operation === "remove" ? "This prepared removal is obsolete. Remove the milestone directly in Settings. No replacement plan is needed." : "The approved plan changed since this request was prepared. Return to Milestones and prepare it against the current plan. This request cannot be used automatically."}</p> : <>
         <p>This is a prepared request, not an approved plan. {onlineMode ? "Download or copy it to the paired local planning workflow." : "Copy these instructions for Codex, then continue with the existing plan workflow."} Preserve the primary goal and review any training changes.</p>
         <label className="milestone-instructions">Coaching instructions<textarea readOnly rows={9} value={milestoneChangeInstructions(request)} /></label>
         <div className="coach-actions"><button type="button" className="button button-secondary" onClick={() => void copyInstructions()}>Copy milestone instructions</button><button type="button" className="button button-secondary" onClick={download}>Download change request</button>{!onlineMode ? <button type="button" className="button button-primary" disabled={continuing} onClick={() => void continueToReview()}>{continuing ? "Checking plan…" : "Continue to plan review"}</button> : null}</div>

@@ -4,6 +4,8 @@
 **Use this process whenever the primary race goal changes, a new goal is set, or a race milestone is added, removed, or retargeted.**  
 **Authority:** this guide follows the approval and publication rules in [ADR 0002](adr/0002-digital-coach-control-boundaries.md) and [ADR 0008](adr/0008-home-approved-goal-context-projection.md).
 
+**Timeline membership exception (26 October 2026):** Settings can immediately remove or restore a milestone on Home and explicitly link a race to its existing achievement. These actions preserve the approved plan and result facts; they do not require a replacement proposal. The process below still applies to changing the approved goal, adding a planned target, retargeting dates/times, or removing a race from the approved training plan itself. See [ADR 0011](adr/0011-settings-owned-milestone-timeline.md).
+
 ## The rule
 
 The currently active approved plan is the only source for the Home Page's approved goal. A conversation, Second Brain note, generated proposal, or imported draft does not update that goal. A new goal becomes approved only after the owner reviews and explicitly approves its proposal in RacePredictor. The approved version is immutable. To change it later, create and approve another version.

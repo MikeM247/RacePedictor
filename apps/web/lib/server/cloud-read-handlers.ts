@@ -290,7 +290,10 @@ export async function handleCloudActivePlan(
 
 export async function handleCloudActiveGoalContext(
   security: SensitiveRouteContext,
-  getComposition: GetCloudReadComposition = getCloudReadComposition,
+  getComposition: () => {
+    coaching: Pick<CloudReadComposition["coaching"], "getActivePlan">;
+    goalContexts: Pick<CloudReadComposition["goalContexts"], "findForPlan">;
+  } = getCloudReadComposition,
 ) {
   const scope = requireScope(security);
   let plan;

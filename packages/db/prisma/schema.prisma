@@ -341,6 +341,7 @@ model Athlete {
   id                      String                     @id @default(cuid())
   displayName             String?
   raceAchievements        RaceAchievement[]
+  milestoneTimelineState  MilestoneTimelineState?
   dashboardAppearance     DashboardAppearance?
   createdAt               DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime                   @updatedAt @db.Timestamptz(3)
@@ -377,6 +378,17 @@ model Athlete {
   coachTurns              CoachTurn[]
   coachUsageBuckets       CoachUsageBucket[]
   @@map("athletes")
+}
+
+model MilestoneTimelineState {
+  athleteId String @id
+  revision Int
+  state Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@map("milestone_timeline_state")
 }
 
 model RaceAchievement {

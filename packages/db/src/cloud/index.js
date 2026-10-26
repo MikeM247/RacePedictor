@@ -25,6 +25,7 @@ export { CloudSyncCursorError, PrismaSyncChangeRepository } from "./prisma-sync-
 export { PrismaTrainingPlanProjectionPublisher, TrainingPlanProjectionConflictError } from "./prisma-training-plan-projection-publisher.js";
 export {
   PrismaTrainingPlanGoalContextRepository,
+  createTrainingPlanGoalContextReader,
   TrainingPlanGoalContextConflictError,
   TrainingPlanGoalContextUnavailableError,
   TrainingPlanGoalContextHashError,

@@ -1,3 +1,4 @@
+import { mockMilestoneRead } from "./milestone-read-fixture.ts";
 import { chromium, expect, test, type Page } from "@playwright/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -5,6 +6,7 @@ import path from "node:path";
 import { expectAxeClean } from "./test-helpers.ts";
 
 const today = "2026-10-25";
+test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "wait" }); });
 const goal = {
   id: "goal_comrades", athleteId: "e2e_athlete", revision: 2, title: "Comrades Marathon 2027 Down Run: sub-11",
   why: "Run a strong, steady Comrades.", target: { kind: "performance", distanceMeters: 89_000, targetDate: "2027-06-13", targetTimeSeconds: 39_600, eventName: "Comrades Marathon 2027 Down Run" },
@@ -21,19 +23,12 @@ const achievements = [
 type HomeOptions = { milestoneCount?: number; achievementCount?: number; longMilestoneName?: boolean; goalUnavailable?: boolean; historyUnavailable?: boolean; background?: string };
 
 async function mockHome(page: Page, options: HomeOptions = {}) {
-  await page.clock.setFixedTime(new Date(`${today}T08:00:00.000Z`));
-  await page.route("**/api/v1/coaching/goal-context/active", (route) => options.goalUnavailable
-    ? route.fulfill({ status: 503, json: { error: { code: "UNAVAILABLE", message: "Goal context unavailable", details: [] } } })
-    : route.fulfill({ json: { data: { context: {
-      state: "ready",
-      plan: { id: "plan_comrades", version: 3, revision: 2, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
-      goal: { ...goal },
-      milestones: milestones.slice(0, options.milestoneCount ?? 5).map((item, index) => options.longMilestoneName && index === 0 ? { ...item, eventName: `A very long race milestone name ${"that remains readable ".repeat(7)}`.slice(0, 200) } : item),
-      projection: { contextHash: "b".repeat(64), publishedAt: "2026-10-20T08:00:00.000Z" },
-    } } } }));
-  await page.route("**/api/v1/coaching/race-history", (route) => options.historyUnavailable
-    ? route.fulfill({ status: 503, json: { error: { code: "UNAVAILABLE", message: "Race history unavailable", details: [] } } })
-    : route.fulfill({ json: { data: { items: achievements.slice(0, options.achievementCount ?? achievements.length), publishedAt: null } } }));
+  await page.clock.setFixedTime(new Date(today + "T08:00:00.000Z"));
+  const context = { state: "ready", plan: { id: "plan_comrades", version: 3, revision: 2, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
+    goal: { ...goal }, milestones: milestones.slice(0, options.milestoneCount ?? 5).map((item, index) => options.longMilestoneName && index === 0 ? { ...item, eventName: ("A very long race milestone name " + "that remains readable ".repeat(7)).slice(0, 200) } : item),
+    projection: { contextHash: "b".repeat(64), publishedAt: "2026-10-20T08:00:00.000Z" } };
+  await mockMilestoneRead(page, context, achievements.slice(0, options.achievementCount ?? achievements.length));
+  if (options.goalUnavailable || options.historyUnavailable) await page.route(/\/api\/v1\/coaching\/milestones(?:\?.*)?$/u, (route) => route.fulfill({ status: 503, json: { error: { message: "Milestones unavailable" } } }));
   await page.route("**/api/v1/dashboard/appearance", (route) => route.fulfill({ json: { data: { heroImageUrl: options.background ?? "/road-to-comrades-v2.webp" } } }));
 }
 
@@ -62,8 +57,8 @@ test("Home contains only the goal, full milestone journey and optional Orbit ent
   } else {
     await expect(orbit).toHaveCount(0);
   }
-  expect(requests).toContain("/api/v1/coaching/goal-context/active");
-  expect(requests).toContain("/api/v1/coaching/race-history");
+  expect(requests).toContain("/api/v1/coaching/milestones");
+  expect(requests).not.toContain("/api/v1/coaching/race-history");
   expect(requests).toContain("/api/v1/dashboard/appearance");
   expect(requests.some((url) => /chat|wellbeing-check-ins|coaching\/today|activities/u.test(url))).toBe(false);
   await expectAxeClean(page, "minimal Home");
@@ -110,29 +105,15 @@ test("saved custom scenery is retained and a failed custom image falls back to t
   await expect(page.locator(".road-hero-image-frame")).toHaveAttribute("data-background-source", "default");
 });
 
-test("Home keeps goal and history errors independent and exposes scoped retry", async ({ page }) => {
-  let goalReads = 0;
-  let historyReads = 0;
-  await page.route("**/api/v1/coaching/goal-context/active", (route) => {
-    goalReads += 1;
-    return route.fulfill(goalReads === 1
-      ? { status: 503, json: { error: { code: "UNAVAILABLE", message: "Goal context unavailable", details: [] } } }
-      : { json: { data: { context: { state: "no_active_plan", plan: null, goal: null, milestones: null, projection: null } } } });
-  });
-  await page.route("**/api/v1/coaching/race-history", (route) => {
-    historyReads += 1;
-    return route.fulfill(historyReads === 1
-      ? { status: 503, json: { error: { code: "UNAVAILABLE", message: "Race history unavailable", details: [] } } }
-      : { json: { data: { items: [], publishedAt: null } } });
-  });
-  await page.route("**/api/v1/dashboard/appearance", (route) => route.fulfill({ json: { data: { heroImageUrl: "/road-to-comrades-v2.webp" } } }));
+test("Home fails closed when the shared milestone view is unavailable and provides retry", async ({ page }) => {
+  await mockMilestoneRead(page, { state: "no_active_plan", plan: null, goal: null, milestones: null, projection: null }, []);
+  let reads = 0;
+  await page.route(/\/api\/v1\/coaching\/milestones(?:\?.*)?$/u, (route) => ++reads === 1 ? route.fulfill({ status: 503, json: { error: {} } }) : route.fallback());
   await page.goto("/dashboard");
-  await expect(page.getByRole("button", { name: "Retry goal" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry history" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry goal" }).click();
+  await expect(page.getByRole("button", { name: "Reload milestones" })).toBeVisible();
+  await expect(page.locator(".road-stop-title")).toHaveCount(0);
+  await page.getByRole("button", { name: "Reload milestones" }).click();
   await expect(page.getByText("Set a race goal to start your next chapter.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry history" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry history" }).click();
   await expect(page.getByText("No completed milestones yet.")).toBeVisible();
 });
 

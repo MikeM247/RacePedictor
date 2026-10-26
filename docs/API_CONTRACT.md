@@ -1,5 +1,13 @@
 # API_CONTRACT
 
+## Settings-owned milestone timeline (26 October 2026)
+
+- `GET /api/v1/coaching/milestones` returns `{ data: { revision, sourceVersion, context, history, availability, entries, removed, today } }`. `includeRemoved=true` includes saved removal groups for Settings. Entries expose stable source references, completion and separate target-performance status. The default response omits removal groups.
+- `POST /api/v1/coaching/milestones/changes` accepts `{ operation, entryId, expectedRevision, sourceVersion, achievementId?, confirmedSameRace? }`. Operations are `remove`, `restore`, `link`, `unlink`; linking requires a saved achievement ID and `confirmedSameRace: true`. Removal creates a recoverable membership decision, never a source DELETE. Restore addresses the removal-group ID.
+- Reads and writes are athlete scoped; cloud writes require the owner browser session. Success returns the complete current projection. JSON validation errors are `400`, stale/changed identities or revisions are `409`, unverifiable sources are `503`. Responses are private/no-store. Management-state failure never falls back to raw approved targets. The strict contracts live in `packages/core/src/contracts/milestone-timeline.ts`.
+
+The existing race-history and goal-context endpoints remain compatible. Planned target additions/date/time changes retain the proposal workflow. See [ADR 0011](adr/0011-settings-owned-milestone-timeline.md).
+
 ## Reviewed activity pace comparison (6 October 2026)
 
 The owner-scoped `GET /api/v1/activities/:activityId/pace-comparison` returns ready/none/stale with an immutable comparison snapshot. Paired-device context and publication endpoints require an explicit historical plan/session, source hash, split fingerprint and expected revisions. Exact envelopes, error codes and publication commands are in [Activity split comparison](plans/ACTIVITY_SPLIT_COMPARISON.md#api). The strict source is `packages/core/src/contracts/activity-pace-comparison.ts`.

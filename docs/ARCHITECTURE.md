@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## Settings-owned milestone timeline (26 October 2026)
+
+Core composes verified goal context, race history and versioned membership state. A shared `/api/v1/coaching/milestones` reader supplies Home and Settings; owner-scoped commands remove, restore, link or unlink without rewriting approved plans, activities or result snapshots. PostgreSQL reads use one repeatable snapshot and mutations use a serializable transaction with management/source revision checks; SQLite uses a reserved write transaction. Database adapters own persistent JSON state. Explicit race identity is independent of time-target evidence. Readers fail closed when management state is unavailable and retain a labelled prior composed view during refresh failures. See [ADR 0011](adr/0011-settings-owned-milestone-timeline.md).
+
 ## V2 conversation-led Coach (22 October 2026)
 
 The approved AI Companion direction and mature humanoid male ORBIT likeness now guide the online-first V2 Coach implementation. The [design handoff](plans/V2_AI_COMPANION_DESIGN_HANDOFF.md) pins source artwork and layout; [the first-iteration architecture](plans/V2_FIRST_ITERATION_ARCHITECTURE_IMPLEMENTATION_PLAN.md) describes the conversation service, persistence, APIs, release controls and verification. Shared next-session resolution remains in core and is reused by the Today and Coach views. One authenticated athlete conversation uses a bounded, refreshed training context and server-side OpenAI complete replies. Chat history is retained until explicitly cleared and cannot mutate plans, sessions, completion, goals or wellbeing. The additive persistence remains outside device sync and Second Brain. Local Home/tools remain intact; online UI and generation are independently gated off by default. See [ADR 0010](adr/0010-v2-conversation-led-coach.md).

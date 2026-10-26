@@ -12,14 +12,16 @@ import {
   PrismaAthleteFeedbackRepository,
   PrismaAthleteJournalRepository,
   PrismaCoachChatRepository,
+  createTrainingPlanGoalContextReader,
 } from "../../../../packages/db/src/cloud/index.js";
 import { assertServerRuntime } from "./server-runtime.ts";
 
 assertServerRuntime("cloud-read-composition");
 
-let singleton: ReturnType<typeof createCloudReadComposition> | undefined;
+let singleton: ReturnType<typeof buildComposition> | undefined;
 
-export function createCloudReadComposition(prisma = getCloudPrismaClient()) {
+function buildComposition() {
+  const prisma = getCloudPrismaClient();
   return Object.freeze({
     activities: new PrismaCloudActivityRepository({ prisma }),
     coaching: new PrismaCloudCoachingRepository({ prisma }),
@@ -37,6 +39,14 @@ export function createCloudReadComposition(prisma = getCloudPrismaClient()) {
 }
 
 export function getCloudReadComposition() {
-  singleton ??= createCloudReadComposition();
+  singleton ??= buildComposition();
   return singleton;
+}
+
+/** Transaction clients can read projections without constructing write-capable services. */
+export function createCloudGoalContextReadComposition(prisma = getCloudPrismaClient()) {
+  return Object.freeze({
+    coaching: new PrismaCloudCoachingRepository({ prisma }),
+    goalContexts: createTrainingPlanGoalContextReader({ prisma }),
+  });
 }

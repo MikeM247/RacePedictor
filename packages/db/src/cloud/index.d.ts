@@ -200,6 +200,8 @@ export class PrismaTrainingPlanGoalContextRepository {
   } | null>;
 }
 
+export function createTrainingPlanGoalContextReader(input: { prisma: unknown }): Pick<PrismaTrainingPlanGoalContextRepository, "findForPlan">;
+
 export class PrismaOnlineStatusRepository {
   constructor(input: { prisma: unknown });
   getFacts(scope: AthleteScope): Promise<OnlineStatusFacts>;

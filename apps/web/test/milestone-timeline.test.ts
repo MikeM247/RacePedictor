@@ -10,6 +10,9 @@ import { emptyMilestoneState } from "../../../packages/core/src/contracts/milest
 import { readCloudMilestoneState, writeCloudMilestoneState, readLocalMilestoneState, writeLocalMilestoneState, withLocalMilestoneTransaction, MilestoneRevisionConflict } from "../../../packages/db/src/milestone-timeline.ts";
 import { readMilestones, mutateMilestones, milestoneView, verifyMilestoneChange } from "../lib/server/milestone-timeline.ts";
 import { saveLocalRaceHistory, readLocalRaceHistory } from "../lib/server/race-history.ts";
+import { createCloudGoalContextReadComposition } from "../lib/server/cloud-read-composition.ts";
+import { buildActorContext } from "../../../packages/core/src/contracts/auth.ts";
+import { handleCloudActiveGoalContext } from "../lib/server/cloud-read-handlers.ts";
 
 test("local reads never create state; transactions persist athlete-scoped removals, reject stale writes and roll back", () => {
   const file = path.join(mkdtempSync(path.join(tmpdir(), "milestone-state-")), "state.sqlite");
@@ -70,4 +73,16 @@ test("API service removes and restores without deleting results; stale source ed
 test("unavailable sources fail closed and management/source revisions are both required", () => {
   const view = milestoneView({ context: null, history: [], availability: { goal: false, history: true } }, { revision: 0, state: emptyMilestoneState() });
   assert.throws(() => verifyMilestoneChange({ operation: "remove", entryId: "target:x", expectedRevision: 0, sourceVersion: view.sourceVersion }, view), { status: 503 });
+});
+
+test("cloud goal-context reads accept transaction-only clients without constructing publishing repositories", async () => {
+  const transaction = {
+    trainingPlanProjection: { findMany: async () => [] },
+    trainingPlanGoalContextProjection: { findUnique: async () => null },
+  } as unknown as Parameters<typeof createCloudGoalContextReadComposition>[0];
+  const composition = createCloudGoalContextReadComposition(transaction);
+  assert.equal("publish" in composition.goalContexts, false);
+  const actor = buildActorContext({ userId: "owner", activeAthleteId: "a", permittedAthleteIds: ["a"], requestId: "test", credentialKind: "session" });
+  const response = await handleCloudActiveGoalContext({ mode: "authenticated", actor }, () => composition);
+  assert.equal((await response.json()).data.context.state, "no_active_plan");
 });

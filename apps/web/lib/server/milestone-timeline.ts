@@ -8,7 +8,7 @@ import { getCloudPrismaClient } from "../../../../packages/db/src/cloud/prisma-c
 import { createLocalCoachingService } from "../local-coaching-service.ts";
 import { readCloudRaceHistory, readLocalRaceHistory, raceHistoryActor } from "./race-history.ts";
 import { handleCloudActiveGoalContext } from "./cloud-read-handlers.ts";
-import { createCloudReadComposition } from "./cloud-read-composition.ts";
+import { createCloudGoalContextReadComposition } from "./cloud-read-composition.ts";
 import { localDateInTimezone } from "../coaching-ui-state.ts";
 import { ApiHttpError } from "./api-response.ts";
 import type { SensitiveRouteContext } from "./route-security.ts";
@@ -30,7 +30,7 @@ export function verifyMilestoneChange(change: MilestoneMutation, view: Milestone
 async function cloudSources(security: SensitiveRouteContext, sql = getCloudPrismaClient()): Promise<Sources> {
   const athleteId = raceHistoryActor(security);
   const [goal, history] = await Promise.allSettled([
-    handleCloudActiveGoalContext(security, () => createCloudReadComposition(sql)).then(async (response) => goalContextApiResponseSchema.parse(await response.json()).data.context),
+    handleCloudActiveGoalContext(security, () => createCloudGoalContextReadComposition(sql)).then(async (response) => goalContextApiResponseSchema.parse(await response.json()).data.context),
     readCloudRaceHistory(athleteId, sql),
   ]);
   const context = goal.status === "fulfilled" ? goal.value : null;

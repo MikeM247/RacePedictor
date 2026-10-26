@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## Coach discussion archival (25 October 2026)
+
+The V2 Coach reuses its athlete-scoped conversation generation as a discussion boundary. Transactional archive metadata retains original message/turn rows, invalidates pending leases and advances the active generation. Private paginated history reads expose closed generations without sending them to the provider. Core contracts, DB repositories and authenticated web composition preserve existing boundaries. See [Coach chat history](plans/COACH_CHAT_HISTORY.md) and the amendment to ADR 0010.
+
 ## Settings-owned milestone timeline (26 October 2026)
 
 Core composes verified goal context, race history and versioned membership state. A shared `/api/v1/coaching/milestones` reader supplies Home and Settings; owner-scoped commands remove, restore, link or unlink without rewriting approved plans, activities or result snapshots. PostgreSQL reads use one repeatable snapshot and mutations use a serializable transaction with management/source revision checks; SQLite uses a reserved write transaction. Database adapters own persistent JSON state. Explicit race identity is independent of time-target evidence. Readers fail closed when management state is unavailable and retain a labelled prior composed view during refresh failures. See [ADR 0011](adr/0011-settings-owned-milestone-timeline.md).

@@ -963,9 +963,28 @@ model CoachConversation {
   athlete                 Athlete        @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   messages                CoachMessage[]
   turns                   CoachTurn[]
+  archives                CoachConversationArchive[]
 
   @@unique([id, athleteId])
   @@map("coach_conversations")
+}
+
+model CoachConversationArchive {
+  id             String @id @default(cuid())
+  athleteId      String
+  conversationId String
+  generation     Int
+  requestId      String
+  title          String
+  startedAt      DateTime @db.Timestamptz(3)
+  archivedAt     DateTime @default(now()) @db.Timestamptz(3)
+  finalSequence  Int
+  conversation   CoachConversation @relation(fields: [conversationId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([conversationId, generation])
+  @@unique([athleteId, requestId])
+  @@index([athleteId, generation(sort: Desc)])
+  @@map("coach_conversation_archives")
 }
 
 model CoachTurn {

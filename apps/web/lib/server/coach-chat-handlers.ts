@@ -3,6 +3,11 @@ import { z } from "zod";
 import { athleteScopeFor } from "../../../../packages/core/src/contracts/auth.ts";
 import {
   coachClearRequestSchema,
+  coachArchiveRequestSchema,
+  coachArchiveResultSchema,
+  coachHistoryListSchema,
+  coachHistoryMessagesSchema,
+  coachArchiveSummarySchema,
   coachContextSchema,
   coachConversationStateSchema,
   coachRecordReferenceSchema,
@@ -219,13 +224,54 @@ export async function handleCoachRetry(security: SensitiveRouteContext, request:
   });
 }
 
-export async function handleClearCoachHistory(security: SensitiveRouteContext, request: Request) {
+export async function handleCoachArchive(security: SensitiveRouteContext, request: Request, compositionOverride?: ChatComposition) {
+  const scope = requireOwnerScope(security);
+  assertSameOrigin(request);
+  const parsed = coachArchiveRequestSchema.safeParse(await readBoundedJson(request));
+  if (!parsed.success) throw validationError(parsed.error);
+  const composition = compositionOverride ?? getChatComposition();
+  try {
+    const result = await composition.coachChat.archiveConversation(scope, parsed.data);
+    const conversation = await composition.coachChat.getConversation(scope);
+    console.info("coach.archive.saved", { requestId: parsed.data.requestId, generation: parsed.data.expectedGeneration, archived: Boolean(result.archive) });
+    return success(coachArchiveResultSchema.parse({ ...result, conversation }));
+  } catch (error) {
+    console.warn("coach.archive.failed", { requestId: parsed.data.requestId, generation: parsed.data.expectedGeneration });
+    throw mapChatError(error);
+  }
+}
+
+function historyBefore(request: Request) {
+  const value = new URL(request.url).searchParams.get("before");
+  if (value === null) return null;
+  const parsed = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).safeParse(value);
+  if (!parsed.success) throw validationError(parsed.error);
+  return parsed.data;
+}
+
+export async function handleCoachHistory(security: SensitiveRouteContext, request: Request, compositionOverride?: ChatComposition) {
+  const scope = requireOwnerScope(security);
+  const beforeGeneration = historyBefore(request);
+  try { return success(coachHistoryListSchema.parse(await (compositionOverride ?? getChatComposition()).coachChat.listArchives(scope, { beforeGeneration }))); }
+  catch (error) { throw mapChatError(error); }
+}
+
+export async function handleCoachHistoryMessages(security: SensitiveRouteContext, request: Request, archiveId: string, compositionOverride?: ChatComposition) {
+  const scope = requireOwnerScope(security);
+  const parsedId = coachArchiveSummarySchema.shape.id.safeParse(archiveId);
+  if (!parsedId.success) throw validationError(parsedId.error);
+  const beforeSequence = historyBefore(request);
+  try { return success(coachHistoryMessagesSchema.parse(await (compositionOverride ?? getChatComposition()).coachChat.getArchive(scope, parsedId.data, { beforeSequence }))); }
+  catch (error) { throw mapChatError(error); }
+}
+
+export async function handleClearCoachHistory(security: SensitiveRouteContext, request: Request, compositionOverride?: ChatComposition) {
   const scope = requireOwnerScope(security);
   assertSameOrigin(request);
   const parsed = coachClearRequestSchema.safeParse(await readBoundedJson(request));
   if (!parsed.success) throw validationError(parsed.error);
   try {
-    const result = await getChatComposition().coachChat.clearHistory(scope, parsed.data);
+    const result = await (compositionOverride ?? getChatComposition()).coachChat.clearHistory(scope, parsed.data);
     return success(result);
   } catch (error) { throw mapChatError(error); }
 }

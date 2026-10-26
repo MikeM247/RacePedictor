@@ -1,5 +1,16 @@
 # ROADMAP
 
+## 25 October 2026: Coach panel and saved discussion history
+
+- [x] 26 October: applied the archive migration to the isolated work Preview and deployed the feature to the stable staging URL. [Release and rollback evidence](deployment/coach-chat-history-staging-2026-10-26.md).
+
+- [x] Fit complete Coach panel to standard desktop viewports; retain accessible scrolling on small screens and at enlarged text.
+- [x] Atomically archive complete generations, preserve drafts, abandon pending replies, and open a fresh discussion.
+- [x] Add private paginated read-only Previous chats and explicit permanent deletion of all discussion history.
+- [x] Validate concurrency, rollback, tenant isolation, migration constraints, routes, responsive bounds, cross-tab drafts and late responses.
+- Release: apply the additive archive migration before deploying the updated UI; live deployment is outside this implementation task.
+- Implementation/release contract: [Coach chat history](plans/COACH_CHAT_HISTORY.md).
+
 ## 21 October 2026: milestone management
 
 - [x] Exact UX/Product Owner → Architect flow and implementation architecture.

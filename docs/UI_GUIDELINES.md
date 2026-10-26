@@ -1,5 +1,9 @@
 # UI_GUIDELINES.md
 
+## Coach viewport and history controls (25 October 2026)
+
+Keep the Coach composer, send action, training links and approval-boundary footer outside transcript scrolling. Bound textarea growth and keep scroll regions keyboard-focusable with visible focus. Respect visual viewport changes and mobile navigation/safe areas; allow page scrolling at small heights and enlarged text. Clear chat means save-and-start-fresh; permanent deletion must use distinct wording and confirmation. See [behavior and acceptance details](plans/COACH_CHAT_HISTORY.md).
+
 > **4 October 2026 Home/Calendar presentation:** Retain real brand assets and `--rp-*` tokens. Use 16px summary prose, 14px supporting facts and at least 44px controls. Home uses three ordered cards; milestone sits beside the goal at wide desktop widths and stacks below it at compact widths. Phone section labels sit inside the goal and Today cards; detail actions sit alongside the Home heading. Calendar uses a month/day pane at 1200px and above and a compact Monday-first month grid with full day dialogs below. Normal short-fixture fit is checked at 390×844 (Goal and Today above the fixed navigation) and 1440×900 (all three summaries). Expanded explanations, material warnings, long titles and 320px reflow may scroll naturally; never clip conditions or shrink prose to force fit. See [measured verification](plans/HOME_CALENDAR_REDESIGN_IMPLEMENTATION.md).
 
 > Redesign authority: [Design Intent Contract](design/DESIGN_INTENT_CONTRACT.md) governs redesign visual and interaction decisions where these guidelines differ, including navigation, control sizing, typography, and responsive behavior. Use the remaining compatible guidance below as supporting context.

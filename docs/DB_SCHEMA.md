@@ -1,5 +1,9 @@
 # DB_SCHEMA
 
+## Coach discussion archives (25 October 2026)
+
+`CoachConversationArchive` / `coach_conversation_archives` adds metadata per conversation/generation, with unique athlete/request identity and a composite conversation/athlete foreign key. Messages and turns stay under their original generation; only the active generation enters conversational AI history. The additive migration is `20261025180000_coach_conversation_archives`; no active-data backfill is required. See [lifecycle and release details](plans/COACH_CHAT_HISTORY.md).
+
 ## Milestone timeline membership
 
 `MilestoneTimelineState` maps to `milestone_timeline_state`: athlete ID primary/foreign key, positive management revision, validated JSON state, creation/update timestamps. The JSON stores versioned explicit race/result links, selected removal groups and negative link decisions; it does not overwrite approved plan or result snapshots. Conditional inserts/updates and serializable transactions enforce revision checks. Migration: `20261025190000_milestone_timeline_state`.

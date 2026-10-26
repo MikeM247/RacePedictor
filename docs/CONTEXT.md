@@ -1,5 +1,9 @@
 # CONTEXT
 
+## 25 October 2026 scope amendment: saved Coach discussions
+
+The owner approved viewport-aware Coach panel sizing, archive-before-clear, draft preservation, and read-only Previous chats. Clear chat preserves the current generation's database records and starts a fresh discussion; Settings alone permanently deletes current and archived history. Authoritative training approval boundaries remain unchanged. See [implementation and release contract](plans/COACH_CHAT_HISTORY.md).
+
 ## 26 October 2026 milestone timeline authority
 
 Settings owns persistent timeline removal, restoration and explicit race/achievement reconciliation. Home and Settings consume the same athlete-scoped projection. Membership decisions are stored separately from immutable approved plans and confirmed result facts. Completed races and time-target success are separate states; explicit same-race confirmation can reconcile GPS-distance differences without awarding a time target. Planned additions and target date/time changes still require the existing proposal, approval and publication process. Old tab-local removal requests are obsolete. See [ADR 0011](adr/0011-settings-owned-milestone-timeline.md). This supersedes the timeline-removal behavior in the 21 October management scope below.

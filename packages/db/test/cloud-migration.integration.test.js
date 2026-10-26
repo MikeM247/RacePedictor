@@ -332,6 +332,14 @@ test("all migrations apply to PostgreSQL and enforce tenant-safe cloud persisten
         "id", "athleteId", "conversationId", "turnId", "generation", "sequence", "role", "text", "topic"
       ) VALUES ('coach-foreign-message', 'athlete_other', 'coach-conversation-1', 'coach-turn-1', 1, 3, 'user', 'Foreign', 'reflect')
     `), /foreign key constraint/iu);
+    await database.exec(`INSERT INTO "coach_conversation_archives" ("id", "athleteId", "conversationId", "generation", "requestId", "title", "startedAt", "finalSequence")
+      VALUES ('archive_1', 'athlete_legacy', 'coach-conversation-1', 1, 'archive_request_1', 'A saved discussion', CURRENT_TIMESTAMP, 2)`);
+    await assert.rejects(database.exec(`INSERT INTO "coach_conversation_archives" ("id", "athleteId", "conversationId", "generation", "requestId", "title", "startedAt", "finalSequence")
+      VALUES ('archive_foreign', 'athlete_other', 'coach-conversation-1', 2, 'archive_foreign', 'Foreign', CURRENT_TIMESTAMP, 2)`), /foreign key constraint/iu);
+    await assert.rejects(database.exec(`INSERT INTO "coach_conversation_archives" ("id", "athleteId", "conversationId", "generation", "requestId", "title", "startedAt", "finalSequence")
+      VALUES ('archive_duplicate', 'athlete_legacy', 'coach-conversation-1', 1, 'archive_request_2', 'Duplicate', CURRENT_TIMESTAMP, 2)`), /unique constraint/iu);
+    await database.exec(`UPDATE "coach_conversations" SET "generation" = 2, "sequence" = 0 WHERE "id" = 'coach-conversation-1'`);
+    assert.equal((await database.query(`SELECT COUNT(*)::int AS count FROM "coach_messages" WHERE "generation" = 1`)).rows[0].count, 2);
     const usageIsolation = await database.query(`SELECT "athleteId", "attemptCount" FROM "coach_usage_buckets" ORDER BY "athleteId"`);
     assert.deepEqual(usageIsolation.rows, [{ athleteId: "athlete_legacy", attemptCount: 1 }, { athleteId: "athlete_other", attemptCount: 2 }]);
   } finally {

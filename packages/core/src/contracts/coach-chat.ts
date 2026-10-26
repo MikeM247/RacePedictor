@@ -147,3 +147,28 @@ export type CoachClearRequest = z.infer<typeof coachClearRequestSchema>;
 export type CoachConversationMessage = z.infer<typeof coachConversationMessageSchema>;
 export type CoachConversationState = z.infer<typeof coachConversationStateSchema>;
 export type CoachContext = z.infer<typeof coachContextSchema>;
+
+export const coachArchiveRequestSchema = coachClearRequestSchema.extend({ requestId: z.string().uuid() });
+export const coachArchiveSummarySchema = z.object({
+  id: stableId,
+  generation: z.number().int().positive(),
+  title: z.string().min(1).max(80),
+  archivedAt: z.string().datetime(),
+  startedAt: z.string().datetime(),
+  finalSequence: z.number().int().positive(),
+}).strict();
+export const coachArchiveResultSchema = z.object({
+  archive: coachArchiveSummarySchema.nullable(),
+  conversation: coachConversationStateSchema,
+}).strict();
+export const coachHistoryListSchema = z.object({
+  items: z.array(coachArchiveSummarySchema).max(20),
+  nextBefore: z.number().int().positive().nullable(),
+}).strict();
+export const coachHistoryMessagesSchema = z.object({
+  archive: coachArchiveSummarySchema,
+  messages: z.array(coachConversationMessageSchema).max(40),
+  hasOlder: z.boolean(),
+  oldestSequence: z.number().int().positive().nullable(),
+}).strict();
+export type CoachArchiveSummary = z.infer<typeof coachArchiveSummarySchema>;

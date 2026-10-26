@@ -1,5 +1,9 @@
 # PRODUCT
 
+## Coach saved discussions (25 October 2026)
+
+Coach keeps its composer, send action, training links and guidance footer within the normal desktop viewport by scrolling the transcript. Clear chat saves the complete discussion before starting a fresh one and carries the unsent draft forward. Previous chats provides read-only access; Settings offers explicit permanent deletion of active and previous discussions. Saved discussions do not become AI memory for new discussions. See [Coach chat history](plans/COACH_CHAT_HISTORY.md).
+
 > **4 October 2026 presentation amendment:** Home and Calendar are the primary destinations for the approved training companion. Home shows Goal + next milestone, Today, then latest recorded activity; existing approved explanations and reviews remain qualified. Adherence and race-day assessment remain unavailable without compatible evidence. Secondary Settings links to Plan management, activity history/import and recovery in both runtimes. See [implementation and verification](plans/HOME_CALENDAR_REDESIGN_IMPLEMENTATION.md). Older analytics scope below is historical context; domain authority, privacy and stable APIs remain unchanged.
 
 ## v1 Product Scope

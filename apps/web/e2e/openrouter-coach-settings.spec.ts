@@ -21,14 +21,14 @@ test("online coach provider/model selection saves and survives reload", async ({
   await expect(panel.getByRole("heading", { name: "AI coach" })).toBeVisible();
   await panel.getByLabel("Provider").selectOption("openrouter");
   await panel.getByLabel("Search models").fill("claude-sonnet");
-  await expect(panel.getByLabel("Model").getByRole("option")).toContainText(["Choose a model", "Claude Sonnet 4 · anthropic/claude-sonnet-4"]);
-  await panel.getByLabel("Model").selectOption("anthropic/claude-sonnet-4");
+  await expect(panel.getByRole("combobox", { name: "Model", exact: true }).getByRole("option")).toContainText(["Choose a model", "Claude Sonnet 4 · anthropic/claude-sonnet-4"]);
+  await panel.getByRole("combobox", { name: "Model", exact: true }).selectOption("anthropic/claude-sonnet-4");
   await panel.getByRole("button", { name: "Save coach settings" }).click();
   await expect(panel.getByText("Saved for new feedback attempts.")).toBeVisible();
   expect(saveBody).toMatchObject({ provider: "openrouter", modelId: "anthropic/claude-sonnet-4", expectedRevision: 0 });
   await page.reload();
   await expect(panel.getByLabel("Provider")).toHaveValue("openrouter");
-  await expect(panel.getByLabel("Model")).toHaveValue("anthropic/claude-sonnet-4");
+  await expect(panel.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("anthropic/claude-sonnet-4");
 });
 
 

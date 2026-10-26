@@ -165,6 +165,7 @@ export class PrismaCoachChatRepository {
         } },
       });
       if (existing) {
+        if (conversation.generation !== input.expectedGeneration) throw new CoachChatConflictError("This discussion has been archived. Reload before sending.");
         if (existing.requestHash !== input.requestHash) throw new CoachChatConflictError("This turn identity was already used with different content.");
         const userMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: existing.id, role: "user" } });
         const assistantMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: existing.id, role: "assistant" } });
@@ -342,13 +343,62 @@ export class PrismaCoachChatRepository {
     });
   }
 
+  async archiveConversation(scope, input) {
+    const athleteId = assertAthleteScope(scope);
+    return this.#prisma.$transaction(async (tx) => {
+      await tx.coachConversation.upsert({ where: { athleteId }, update: {}, create: { athleteId } });
+      const conversation = await lockConversation(tx, athleteId);
+      const replay = await tx.coachConversationArchive.findFirst({ where: { athleteId, requestId: input.requestId } });
+      if (replay) {
+        if (replay.generation !== input.expectedGeneration || replay.finalSequence !== input.expectedSequence) throw new CoachChatConflictError("This archive request was already used for another discussion.");
+        return { archive: archiveDto(replay) };
+      }
+      assertExpectedState(conversation, input.expectedGeneration, input.expectedSequence);
+      if (conversation.sequence === 0) return { archive: null };
+      const first = await tx.coachMessage.findFirst({ where: { athleteId, conversationId: conversation.id, generation: conversation.generation, role: "user" }, orderBy: { sequence: "asc" } });
+      if (!first) throw new CoachChatConflictError("The discussion could not be saved safely. Reload and try again.");
+      const archive = await tx.coachConversationArchive.create({ data: {
+        athleteId, conversationId: conversation.id, generation: conversation.generation,
+        requestId: input.requestId, title: first.text.trim().replace(/\s+/gu, " ").slice(0, 80) || "Saved discussion",
+        startedAt: first.createdAt, archivedAt: this.#now(), finalSequence: conversation.sequence,
+      } });
+      await tx.coachTurn.updateMany({ where: { athleteId, conversationId: conversation.id, generation: conversation.generation, state: "processing" },
+        data: { state: "abandoned", safeErrorCode: "DISCUSSION_ARCHIVED", leaseToken: null, leaseExpiresAt: null } });
+      await tx.coachConversation.update({ where: { id: conversation.id }, data: {
+        generation: { increment: 1 }, sequence: 0, lastReflectedActivityId: null, lastReflectedActivityAt: null,
+      } });
+      return { archive: archiveDto(archive) };
+    });
+  }
+
+  async listArchives(scope, { beforeGeneration = null } = {}) {
+    const athleteId = assertAthleteScope(scope);
+    const rows = await this.#prisma.coachConversationArchive.findMany({ where: { athleteId,
+      ...(beforeGeneration ? { generation: { lt: beforeGeneration } } : {}) }, orderBy: { generation: "desc" }, take: 21 });
+    const items = rows.slice(0, 20).map(archiveDto);
+    return { items, nextBefore: rows.length > 20 ? items.at(-1).generation : null };
+  }
+
+  async getArchive(scope, archiveId, { beforeSequence = null } = {}) {
+    const athleteId = assertAthleteScope(scope);
+    const archive = await this.#prisma.coachConversationArchive.findFirst({ where: { id: archiveId, athleteId } });
+    if (!archive) throw new CoachChatNotFoundError("The saved discussion was not found.");
+    const rows = await this.#prisma.coachMessage.findMany({ where: {
+      athleteId, conversationId: archive.conversationId, generation: archive.generation,
+      ...(beforeSequence ? { sequence: { lt: beforeSequence } } : {}),
+    }, include: { turn: { select: { state: true } } }, orderBy: { sequence: "desc" }, take: 41 });
+    const page = rows.slice(0, 40).reverse();
+    return { archive: archiveDto(archive), messages: page.map(messageDto), hasOlder: rows.length > 40, oldestSequence: page[0]?.sequence ?? null };
+  }
+
   async clearHistory(scope, input) {
     const athleteId = assertAthleteScope(scope);
     return this.#prisma.$transaction(async (tx) => {
       await tx.coachConversation.upsert({ where: { athleteId }, update: {}, create: { athleteId } });
       const conversation = await lockConversation(tx, athleteId);
       assertExpectedState(conversation, input.expectedGeneration, input.expectedSequence);
-      await tx.coachTurn.deleteMany({ where: { athleteId, conversationId: conversation.id, generation: conversation.generation } });
+      await tx.coachTurn.deleteMany({ where: { athleteId, conversationId: conversation.id } });
+      await tx.coachConversationArchive.deleteMany({ where: { athleteId, conversationId: conversation.id } });
       const cleared = await tx.coachConversation.update({
         where: { id: conversation.id },
         data: {
@@ -448,6 +498,10 @@ function turnStateDto(turn, messageSaved) {
     messageSaved,
     retryable: ["failed", "expired"].includes(turn.state),
   };
+}
+
+function archiveDto(row) {
+  return { id: row.id, generation: row.generation, title: row.title, startedAt: row.startedAt.toISOString(), archivedAt: row.archivedAt.toISOString(), finalSequence: row.finalSequence };
 }
 
 function emptyConversation() {

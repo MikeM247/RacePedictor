@@ -101,12 +101,15 @@ test("every current sensitive API handler uses the route-level security wrapper"
   const coachRoutes = new Set([
     new URL("coaching/chat/context/route.ts", apiRoot).href,
     new URL("coaching/chat/conversation/route.ts", apiRoot).href,
+    new URL("coaching/chat/conversation/archive/route.ts", apiRoot).href,
+    new URL("coaching/chat/history/route.ts", apiRoot).href,
+    new URL("coaching/chat/history/[archiveId]/route.ts", apiRoot).href,
     new URL("coaching/chat/turns/route.ts", apiRoot).href,
     new URL("coaching/chat/turns/[turnId]/retry/route.ts", apiRoot).href,
   ]);
   const backfillResume = new URL("providers/strava/backfill/resume/route.ts", apiRoot).href;
   assert.ok(routeFiles.some((route) => route.href === backfillResume), "owner-scoped backfill resume route is required");
-  assert.equal(routeFiles.length, 74, "route inventory changed; classify every new route explicitly");
+  assert.equal(routeFiles.length, 77, "route inventory changed; classify every new route explicitly");
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;

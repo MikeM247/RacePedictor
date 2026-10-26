@@ -1,5 +1,7 @@
 # ADR 0010: V2 conversation-led Coach boundary
 
+> **25 October 2026 saved-discussion amendment:** Coach's Clear chat archives the complete current generation before opening a fresh discussion, preserving the unsent draft. Previous chats is read-only; old generations are excluded from AI conversational history. Archive metadata, lease invalidation and generation advancement commit under the existing conversation lock. Only the explicit permanent-deletion control in Settings deletes current and archived history. This supersedes the original clear-means-delete wording below. See [implementation and release details](../plans/COACH_CHAT_HISTORY.md).
+
 > **25 October 2026 product-owner amendment:** Coach remains a separate V2 destination at `/dashboard/coach`; it no longer replaces the Home landing page. `/dashboard` is the minimal goal-and-milestone Home with the revised Talk to Orbit artwork entry. The Coach UI switch gates its navigation, launcher, and route; the generation switch continues to gate only chat replies. See the updated [V2 implementation plan](../plans/V2_FIRST_ITERATION_ARCHITECTURE_IMPLEMENTATION_PLAN.md) and [screen contract](../design/screens.md).
 
 - Status: Accepted

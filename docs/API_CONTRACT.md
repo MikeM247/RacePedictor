@@ -1,5 +1,9 @@
 # API_CONTRACT
 
+## Coach saved discussions (25 October 2026)
+
+The additive archive command and paginated history reads are specified in [Coach chat history](plans/COACH_CHAT_HISTORY.md#interfaces). All require an authenticated owner session and athlete scope; mutations require same origin. Existing permanent-history deletion now includes archived generations. Responses remain private/no-store.
+
 ## Settings-owned milestone timeline (26 October 2026)
 
 - `GET /api/v1/coaching/milestones` returns `{ data: { revision, sourceVersion, context, history, availability, entries, removed, today } }`. `includeRemoved=true` includes saved removal groups for Settings. Entries expose stable source references, completion and separate target-performance status. The default response omits removal groups.

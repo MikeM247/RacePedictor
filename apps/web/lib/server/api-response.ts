@@ -16,7 +16,10 @@ export type ApiErrorCode =
   | "OAUTH_STATE_REPLAYED"
   | "OAUTH_ACCESS_DENIED"
   | "OAUTH_SCOPE_INSUFFICIENT"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "PROVIDER_NOT_CONFIGURED"
+  | "MODEL_UNAVAILABLE"
+  | "CATALOG_UNAVAILABLE";
 
 export class ApiHttpError extends Error {
   readonly status: number;

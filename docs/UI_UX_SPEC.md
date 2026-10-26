@@ -205,3 +205,8 @@ Activity detail adds a separate **Your reflection** section with optional Traini
 ## Owner sign-in origin (21 October 2026)
 
 If AUTH_URL configures a canonical OAuth origin, visiting Login from another deployment hostname redirects to that origin before rendering the sign-in form. Unauthenticated Dashboard entry follows the same rule. This keeps the verification cookie on the hostname receiving GitHub's callback. The sign-in controls and owner-only access rules remain as documented in the cloud operations runbook.
+
+
+## Online AI coach settings (25 October 2026)
+
+Settings includes an AI coach accordion addressable by `?section=coach`. The flow is Provider → searchable Model → Save coach settings. Draft changes remain separate from saved values; changing provider clears only an incompatible draft. Each server key shows configured/missing status and its environment variable, with a note that configuration does not verify credit or model access. Catalog/read errors preserve the saved choice and draft and expose retry. Save success says “Saved for new feedback attempts.” Saving never generates feedback. Published activity reviews offer Regenerate feedback, warn about API usage, retain the old review while work runs, and replace it only after successful publication.

@@ -90,7 +90,7 @@ export class PrismaCloudActivityImportRepository {
         const contentHash = sha256(JSON.stringify(activity));
         await transaction.activityRevision.create({ data: { athleteId, activityId, rawObjectId: null, revisionNumber: 1, contentHash, normalizerVersion: parserVersion, changeSummary: { source: "upload", filename, checksumSha256 }, recordedAt: new Date(activity.occurredAt) } });
         if (["run", "trail_run", "treadmill_run"].includes(activity.sport)) {
-          await transaction.activityReviewRequest.create({ data: { id: `activity_review_request_${activityId}`, athleteId, activityId, activityRevision: 1, status: "queued", availableAt: new Date() } });
+          await transaction.activityReviewRequest.create({ data: { id: `activity_review_request_${activityId}`, athleteId, activityId, activityRevision: 1, status: "queued", executionTarget: "cloud", availableAt: new Date() } });
         }
         const latest = await transaction.syncChange.aggregate({ where: { athleteId }, _max: { cursor: true } });
         await transaction.syncChange.create({ data: { athleteId, cursor: (latest._max.cursor ?? 0n) + 1n, entityType: "activity", entityId: activityId, operation: "upsert", entityVersion: 1, selectedFields: { id: activityId, occurredAt: activity.occurredAt, sport: activity.sport, distanceM: activity.distanceM }, occurredAt: new Date(activity.occurredAt) } });

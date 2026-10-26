@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { athleteScopeFor, buildActorContext } from "../../../../packages/core/src/contracts/auth.ts";
 import { buildReviewComparison, buildReviewFacts, buildReviewPrompt, validateGeneratedReview } from "../../../../packages/core/src/services/activity-coach-review.ts";
-import { getCloudPrismaClient, PrismaActivityReviewRepository, PrismaCalendarSessionAmendmentRepository, PrismaCloudActivityRepository, PrismaCloudCoachingRepository } from "../../../../packages/db/src/cloud/index.js";
+import { PrismaActivityReviewRepository } from "../../../../packages/db/src/cloud/prisma-activity-review-repository.js";
+import { PrismaCalendarSessionAmendmentRepository } from "../../../../packages/db/src/cloud/prisma-calendar-session-amendment-repository.js";
+import { PrismaCloudActivityRepository } from "../../../../packages/db/src/cloud/prisma-cloud-activity-repository.js";
+import { PrismaCloudCoachingRepository } from "../../../../packages/db/src/cloud/prisma-cloud-coaching-repository.js";
+import { PrismaCoachAiConfigurationRepository, OPENAI_COACH_MODELS } from "../../../../packages/db/src/cloud/prisma-coach-ai-configuration-repository.js";
 
 const DEFAULT_MODEL = "gpt-5-mini";
 const DEVICE_ID = "cloud-coach-worker";
@@ -14,7 +18,7 @@ const generatedReviewSchema = z.object({
   limitations: z.array(z.string().trim().min(1).max(500)).max(8),
 }).strict();
 
-export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null, limit = 5, fetchImpl = globalThis.fetch, apiKey = process.env.OPENAI_API_KEY, model = process.env.RACEPREDICTOR_ACTIVITY_REVIEW_MODEL || DEFAULT_MODEL, reasoningEffort = process.env.RACEPREDICTOR_ACTIVITY_REVIEW_REASONING_EFFORT, now = () => new Date() }: {
+export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null, limit = 5, fetchImpl = globalThis.fetch, apiKey, model = process.env.RACEPREDICTOR_ACTIVITY_REVIEW_MODEL || DEFAULT_MODEL, reasoningEffort = process.env.RACEPREDICTOR_ACTIVITY_REVIEW_REASONING_EFFORT, now = () => new Date() }: {
   athleteId: string;
   activityId?: string | null;
   limit?: number;
@@ -24,7 +28,8 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
   reasoningEffort?: string;
   now?: () => Date;
 }) {
-  const prisma = getCloudPrismaClient() as any;
+  const cachedPrisma = (globalThis as typeof globalThis & Record<string, unknown>).__racePredictorCloudPrismaClient;
+  const prisma = (cachedPrisma ?? (await import("../../../../packages/db/src/cloud/prisma-client.js")).getCloudPrismaClient()) as any;
   const reviews = new PrismaActivityReviewRepository({ prisma });
   const scope = athleteScopeFor(buildActorContext({ userId: DEVICE_ID, permittedAthleteIds: [athleteId], activeAthleteId: athleteId, requestId: `coach:${randomUUID()}`, credentialKind: "internal" }));
   const dayStart = new Date(now());
@@ -32,12 +37,11 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
   const attempted = await prisma.activityReviewRequest.aggregate({ where: { athleteId, updatedAt: { gte: dayStart } }, _sum: { attemptCount: true } });
   const remaining = Math.max(0, 20 - Number(attempted._sum.attemptCount ?? 0));
   if (remaining === 0) return { status: "queued", processed: 0, reason: "DAILY_LIMIT" };
-  const claim = await reviews.claim(scope, DEVICE_ID, Math.min(Math.max(limit, 1), remaining), activityId);
+  let configuration: { provider: "openai" | "openrouter"; modelId: string; revision: number } = { provider: "openai", modelId: model, revision: 0 };
+  if (prisma.coachAiConfiguration) configuration = await new PrismaCoachAiConfigurationRepository({ prisma }).get(scope);
+  const claim = await reviews.claim(scope, DEVICE_ID, Math.min(Math.max(limit, 1), remaining), activityId, configuration);
   if (claim.items.length === 0) return { status: "idle", processed: 0 };
-  if (!apiKey || apiKey.trim().length < 20) {
-    for (const item of claim.items) await reviews.markFailure(scope, item.requestId, DEVICE_ID, "OPENAI_API_KEY_NOT_CONFIGURED", false);
-    return { status: "attention", processed: 0, reason: "OPENAI_API_KEY_NOT_CONFIGURED" };
-  }
+
   const activities = new PrismaCloudActivityRepository({ prisma });
   const coaching = new PrismaCloudCoachingRepository({ prisma });
   const calendar = new PrismaCalendarSessionAmendmentRepository({ prisma });
@@ -67,13 +71,18 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
         })),
       });
       const existing = await reviews.get(scope, item.activityId);
-      if (existing.review?.inputFingerprint === facts.fingerprint) {
+      const provider = item.provider ?? configuration.provider;
+      const requestedModel = item.requestedModel ?? (item.provider && item.provider !== configuration.provider ? (process.env.RACEPREDICTOR_ACTIVITY_REVIEW_MODEL || DEFAULT_MODEL) : configuration.modelId);
+      if (!item.forceRegenerate && existing.review?.inputFingerprint === facts.fingerprint && existing.review.provider === provider && existing.review.requestedModel === requestedModel && existing.review.configurationRevision === item.configurationRevision) {
         await reviews.markReady(scope, item.requestId, DEVICE_ID);
         results.push({ activityId: item.activityId, status: "ready" });
         continue;
       }
       await reviews.recordInputSnapshot(scope, item.requestId, DEVICE_ID, { activityRevision: await activities.currentRevision(scope, item.activityId), inputFingerprint: facts.fingerprint, planComparison: buildReviewComparison(facts) });
-      const generated = await generate({ fetchImpl, apiKey, model, reasoningEffort, prompt: buildReviewPrompt(facts) });
+      const providerKey = apiKey ?? (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY);
+      if (!providerKey || providerKey.trim().length < 20) throw new Error(provider === "openrouter" ? "OPENROUTER_API_KEY_NOT_CONFIGURED" : "OPENAI_API_KEY_NOT_CONFIGURED");
+      const modelCapabilities = OPENAI_COACH_MODELS.find((item: any) => item.id === requestedModel);
+      const generated = await generate({ fetchImpl, apiKey: providerKey, provider, model: requestedModel, reasoningEffort: provider === "openai" && (modelCapabilities?.reasoning ?? /^gpt-6-/u.test(requestedModel)) ? reasoningEffort : undefined, prompt: buildReviewPrompt(facts) });
       await reviews.recordProviderResult(scope, item.requestId, DEVICE_ID, generated.metadata);
       const timestamp = now().toISOString();
       const review = validateGeneratedReview({
@@ -90,7 +99,10 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
         limitations: [...new Set([...facts.limitations, ...generated.review.limitations])].slice(0, 8),
         generatedAt: timestamp,
         publishedAt: timestamp,
-        model,
+        model: generated.returnedModel ?? requestedModel,
+        provider,
+        requestedModel,
+        configurationRevision: item.configurationRevision ?? configuration.revision,
         promptVersion: "activity-coach-review.cloud-metrics.v1",
         provenance: "cloud_metrics_plan",
       });
@@ -99,51 +111,51 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
       results.push({ activityId: item.activityId, status: "ready" });
     } catch (error) {
       const reason = error instanceof Error ? error.message.slice(0, 80) : "ACTIVITY_COACH_REVIEW_FAILED";
-      await reviews.markFailure(scope, item.requestId, DEVICE_ID, reason, !/NOT_CONFIGURED|NOT_FOUND|INVALID|ZOD|REFUSAL|INCOMPLETE|OPENAI_401|OPENAI_403|stale/i.test(reason));
+      await reviews.markFailure(scope, item.requestId, DEVICE_ID, reason, !/(NOT_CONFIGURED|NOT_FOUND|INVALID|ZOD|REFUSAL|INCOMPLETE|_(400|401|402|403|404)|stale)/i.test(reason));
       results.push({ activityId: item.activityId, status: "retry_wait", reason });
     }
   }
   return { status: "processed", processed: results.length, results };
 }
 
-async function generate({ fetchImpl, apiKey, model, reasoningEffort, prompt }: { fetchImpl: typeof fetch; apiKey: string; model: string; reasoningEffort?: string; prompt: string }) {
+async function generate({ fetchImpl, apiKey, provider, model, reasoningEffort, prompt }: { fetchImpl: typeof fetch; apiKey: string; provider: "openai" | "openrouter"; model: string; reasoningEffort?: string; prompt: string }) {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
-  let response;
+  let response: Response;
   try {
-    response = await fetchImpl("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({ model, ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}), store: false, input: prompt, text: { format: {
-        type: "json_schema", name: "activity_coach_review", strict: true,
-        schema: { type: "object", additionalProperties: false, required: ["headline", "assessment", "nextStep", "evidence", "limitations"], properties: {
-          headline: { type: "string" }, assessment: { type: "string" }, nextStep: { type: "string" },
-          evidence: { type: "array", items: { type: "object", additionalProperties: false, required: ["source", "label"], properties: { source: { type: "string", enum: ["activity", "plan", "recent_history", "second_brain"] }, label: { type: "string" } } } },
-          limitations: { type: "array", items: { type: "string" } },
-        } },
-      } } }),
-    });
+    const schema = { type: "object", additionalProperties: false, required: ["headline", "assessment", "nextStep", "evidence", "limitations"], properties: {
+      headline: { type: "string" }, assessment: { type: "string" }, nextStep: { type: "string" },
+      evidence: { type: "array", items: { type: "object", additionalProperties: false, required: ["source", "label"], properties: { source: { type: "string", enum: ["activity", "plan", "recent_history", "second_brain"] }, label: { type: "string" } } } },
+      limitations: { type: "array", items: { type: "string" } },
+    } };
+    const url = provider === "openrouter" ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.openai.com/v1/responses";
+    const body = provider === "openrouter"
+      ? { model, messages: [{ role: "user", content: prompt }], provider: { require_parameters: true }, response_format: { type: "json_schema", json_schema: { name: "activity_coach_review", strict: true, schema } } }
+      : { model, ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}), store: false, input: prompt, text: { format: { type: "json_schema", name: "activity_coach_review", strict: true, schema } } };
+    response = await fetchImpl(url, { method: "POST", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" }, signal: controller.signal, body: JSON.stringify(body) });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw new Error("OPENAI_TIMEOUT");
-    throw new Error("OPENAI_NETWORK_ERROR");
-  } finally {
-    clearTimeout(timeout);
-  }
+    if (error instanceof Error && error.name === "AbortError") throw new Error(`${provider.toUpperCase()}_TIMEOUT`);
+    throw new Error(`${provider.toUpperCase()}_NETWORK_ERROR`);
+  } finally { clearTimeout(timeout); }
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(`OPENAI_${response.status}`);
-  if (payload?.status === "incomplete") throw new Error("OPENAI_INCOMPLETE");
-  if (payload?.refusal || payload?.output?.some((item: any) => item?.content?.some((content: any) => content?.type === "refusal"))) throw new Error("OPENAI_REFUSAL");
-  return {
-    review: generatedReviewSchema.parse(JSON.parse(extractResponseText(payload))),
-    metadata: {
-      requestId: response.headers.get("x-request-id"),
-      inputTokens: Number.isInteger(payload?.usage?.input_tokens) ? payload.usage.input_tokens : null,
-      outputTokens: Number.isInteger(payload?.usage?.output_tokens) ? payload.usage.output_tokens : null,
-      latencyMs: Date.now() - startedAt,
-    },
-  };
+  const prefix = provider.toUpperCase();
+  if (!response.ok) throw new Error(`${prefix}_${response.status}`);
+  if (provider === "openai" && payload?.status === "incomplete") throw new Error("OPENAI_INCOMPLETE");
+  const choice = payload?.choices?.[0];
+  if (provider === "openrouter" && choice?.finish_reason === "length") throw new Error("OPENROUTER_INCOMPLETE");
+  if (provider === "openrouter" && choice?.finish_reason === "content_filter") throw new Error("OPENROUTER_REFUSAL");
+  if (payload?.refusal || choice?.message?.refusal || payload?.output?.some((item: any) => item?.content?.some((content: any) => content?.type === "refusal"))) throw new Error(`${prefix}_REFUSAL`);
+  const content = provider === "openrouter" ? choice?.message?.content : extractResponseText(payload);
+  if (typeof content !== "string") throw new Error(`${prefix}_RESPONSE_MISSING_TEXT`);
+  const parsed = generatedReviewSchema.parse(JSON.parse(content));
+  return { review: parsed, returnedModel: typeof payload?.model === "string" ? payload.model.slice(0, 120) : model, metadata: {
+    requestId: response.headers.get("x-request-id") ?? (typeof payload?.id === "string" ? payload.id : null),
+    returnedModel: typeof payload?.model === "string" ? payload.model : model,
+    inputTokens: Number.isInteger(payload?.usage?.input_tokens ?? payload?.usage?.prompt_tokens) ? (payload.usage.input_tokens ?? payload.usage.prompt_tokens) : null,
+    outputTokens: Number.isInteger(payload?.usage?.output_tokens ?? payload?.usage?.completion_tokens) ? (payload.usage.output_tokens ?? payload.usage.completion_tokens) : null,
+    latencyMs: Date.now() - startedAt,
+  } };
 }
 
 function extractResponseText(payload: any) {

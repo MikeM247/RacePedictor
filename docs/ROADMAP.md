@@ -185,3 +185,13 @@ Detailed criteria: `docs/product/FUTURE_PLAN_SESSION_EDITING.md`.
 - [ ] Auth (email/password + JWT HTTP-only cookies)
 - [ ] Mobile app in `apps/mobile` using same contracts/core
 - [ ] Optional vector search (pgvector) when semantic retrieval is clearly needed
+
+
+## 25 October 2026: configurable online AI coach provider
+
+- [x] Provider/model contracts, athlete-scoped settings persistence, server catalog routes and migration.
+- [x] OpenAI and OpenRouter cloud adapters, generation snapshots, provenance and cloud-owned queue handling.
+- [x] Settings selector and explicit safe regeneration.
+- [x] Architecture/API/database/UX documentation and draft PR preparation.
+
+See [ADR 0010](adr/0010-configurable-online-coach-provider.md).

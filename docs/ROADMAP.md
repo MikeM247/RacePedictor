@@ -2,6 +2,8 @@
 
 ## 25 October 2026: Coach panel and saved discussion history
 
+- [x] 26 October: applied the archive migration to the isolated work Preview and deployed the feature to the stable staging URL. [Release and rollback evidence](deployment/coach-chat-history-staging-2026-10-26.md).
+
 - [x] Fit complete Coach panel to standard desktop viewports; retain accessible scrolling on small screens and at enlarged text.
 - [x] Atomically archive complete generations, preserve drafts, abandon pending replies, and open a fresh discussion.
 - [x] Add private paginated read-only Previous chats and explicit permanent deletion of all discussion history.

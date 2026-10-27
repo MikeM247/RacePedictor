@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 import { e2eRepositoryRoot, e2eRoot } from "./e2e/fixture-paths.ts";
 
-const port = 3312;
+const port = Number(process.env.RACEPREDICTOR_E2E_ONLINE_PORT ?? 3312);
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({

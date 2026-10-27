@@ -69,8 +69,14 @@ async function mockDashboard(page: Page, overview = dashboard) {
   } }) }));
 }
 
-test("mobile readiness startup is black with a centered logo until dashboard data arrives", async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 393, height: 852 });
+const startupViewports = [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "mobile", width: 390, height: 844 },
+  { name: "narrow-mobile", width: 320, height: 568 },
+  { name: "landscape", width: 844, height: 390 },
+];
+
+async function holdStartup(page: Page) {
   await mockDashboard(page);
   let releaseOverview!: () => void;
   const overviewReady = new Promise<void>((resolve) => { releaseOverview = resolve; });
@@ -78,21 +84,133 @@ test("mobile readiness startup is black with a centered logo until dashboard dat
     await overviewReady;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dashboard) });
   });
+  return releaseOverview;
+}
 
+for (const viewport of startupViewports) {
+test(`scenic startup fills ${viewport.name} until dashboard data arrives`, async ({ page }, testInfo) => {
+  await page.setViewportSize(viewport);
+  const releaseOverview = await holdStartup(page);
   try {
     await page.goto("/dashboard/readiness");
     const splash = page.getByRole("status", { name: "Loading Race Predictor" });
     await expect(splash).toBeVisible();
-    await expect(splash).toHaveCSS("background-color", "rgb(0, 0, 0)");
-    const bounds = await splash.boundingBox();
-    expect(bounds).toEqual({ x: 0, y: 0, width: 393, height: 852 });
-    const logo = splash.locator("img");
-    await expect.poll(() => logo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
-    const logoBounds = (await logo.boundingBox())!;
-    expect(logoBounds.x + logoBounds.width / 2).toBeCloseTo(393 / 2, 0);
-    expect(logoBounds.y + logoBounds.height / 2).toBeCloseTo(852 / 2, 0);
-    expect(logoBounds.width).toBeCloseTo(393 * 0.625, 0);
-    await page.screenshot({ path: testInfo.outputPath("startup-mobile.png") });
+    await expect(splash).toHaveCSS("background-color", "rgb(7, 23, 37)");
+    expect(await splash.boundingBox()).toEqual({ x: 0, y: 0, width: viewport.width, height: viewport.height });
+    await expect(splash).toHaveText("");
+    await expect(splash.locator("button, a, input, svg")).toHaveCount(0);
+    const photo = splash.locator("img");
+    await expect(photo).toHaveJSProperty("src", new URL("/road-to-comrades-v2.webp", page.url()).href);
+    await expect(photo).toHaveAttribute("alt", "");
+    await expect(photo).toHaveCSS("object-fit", "cover");
+    await expect(photo).toHaveCSS("object-position", viewport.width >= 1100 ? "50% 30%" : "67% 30%");
+    await expect.poll(() => photo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+    expect(await photo.boundingBox()).toEqual(await splash.boundingBox());
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeHidden();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => !!document.activeElement?.closest("[hidden]"))).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`startup-${viewport.name}.png`), style: "nextjs-portal { display: none; }" });
+    if (viewport.name === "desktop") {
+      for (const width of [1099, 1100, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(photo).toHaveCSS("object-position", width >= 1100 ? "50% 30%" : "67% 30%");
+        expect(await splash.boundingBox()).toEqual({ x: 0, y: 0, width, height: 900 });
+      }
+    }
+  } finally {
+    releaseOverview();
+  }
+  await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
+});
+}
+
+test("scenic startup uses a warm browser-cached photo", async ({ page }) => {
+  // Playwright HTTP routing disables the browser cache. Stub only fetch here,
+  // leaving the real image transport and HTTP cache enabled for this case.
+  await page.addInitScript(({ overview, syncStatus }) => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.pathname === "/api/v1/dashboard/overview") {
+        await new Promise<void>((resolve) => window.addEventListener("release-scenic-startup", () => resolve(), { once: true }));
+        return Response.json(overview);
+      }
+      if (url.pathname === "/api/v1/sync/status") return Response.json({ data: syncStatus });
+      return originalFetch(input, init);
+    };
+  }, { overview: dashboard, syncStatus: status });
+  try {
+    await page.goto("/road-to-comrades-v2.webp");
+    await expect.poll(() => page.locator("img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await page.goto("/dashboard/readiness");
+    const photo = page.getByRole("status", { name: "Loading Race Predictor" }).locator("img");
+    await expect.poll(() => photo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+    const timing = await page.evaluate(() => {
+      const entry = performance.getEntriesByType("resource").find((resource) => resource.name.endsWith("/road-to-comrades-v2.webp")) as PerformanceResourceTiming | undefined;
+      return entry && { transferSize: entry.transferSize, decodedBodySize: entry.decodedBodySize };
+    });
+    // Next's development asset server revalidates cached files (304); permit
+    // response headers, but no second transfer of the image body.
+    expect(timing?.transferSize).toBeLessThanOrEqual(300);
+    expect(timing?.decodedBodySize).toBeGreaterThan(0);
+  } finally {
+    await page.evaluate(() => window.dispatchEvent(new Event("release-scenic-startup")));
+  }
+  await expect(page.getByRole("status", { name: "Loading Race Predictor" })).toHaveCount(0);
+});
+
+test.describe("server-rendered startup", () => {
+  test.use({ javaScriptEnabled: false });
+  test("shared fallback includes the scenic image before hydration", async ({ page }, testInfo) => {
+    await page.goto("/dashboard/readiness");
+    const splash = page.getByRole("status", { name: "Loading Race Predictor" });
+    await expect(splash).toBeVisible();
+    await expect(splash).toHaveText("");
+    await expect(splash.locator("img")).toHaveJSProperty("src", new URL("/road-to-comrades-v2.webp", page.url()).href);
+    await expect.poll(() => splash.locator("img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("startup-route-fallback.png") });
+  });
+});
+
+test("scenic startup does not wait for a cold image download", async ({ page }) => {
+  const releaseOverview = await holdStartup(page);
+  let releasePhoto!: () => void;
+  const photoReady = new Promise<void>((resolve) => { releasePhoto = resolve; });
+  await page.route("**/road-to-comrades-v2.webp", async (route) => {
+    await photoReady;
+    await route.continue();
+  });
+  try {
+    await page.goto("/dashboard/readiness", { waitUntil: "domcontentloaded" });
+    const splash = page.getByRole("status", { name: "Loading Race Predictor" });
+    await expect(splash).toBeVisible();
+    await expect(splash).toHaveCSS("background-color", "rgb(7, 23, 37)");
+    expect(await splash.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(0);
+    releaseOverview();
+    await expect(splash).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
+  } finally {
+    releasePhoto();
+    releaseOverview();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
+test("scenic startup falls back without blocking readiness when the image fails", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const releaseOverview = await holdStartup(page);
+  await page.route("**/road-to-comrades-v2.webp", (route) => route.abort());
+  try {
+    await page.goto("/dashboard/readiness");
+    const splash = page.getByRole("status", { name: "Loading Race Predictor" });
+    await expect(splash).toBeVisible();
+    await expect(splash).toHaveCSS("background-color", "rgb(7, 23, 37)");
+    await expect(splash).toHaveText("");
+    expect(await splash.locator("img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth === 0)).toBe(true);
+    await expect(splash.locator("img")).toBeHidden();
+    await page.screenshot({ path: testInfo.outputPath("startup-image-failed.png"), style: "nextjs-portal { display: none; }" });
   } finally {
     releaseOverview();
   }

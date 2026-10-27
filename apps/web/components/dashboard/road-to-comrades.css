@@ -13,7 +13,7 @@
 .road-hero { position: relative; display: grid; align-content: start; min-height: 350px; gap: 0; }
 .road-hero-header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; width: 100%; padding: 24px 32px 0; }
 .road-hero-greeting { min-width: 0; }
-.road-hero-greeting h2 { margin: 0; color: #f6f9fc; font-size: clamp(28px, 2.5vw, 36px); font-weight: 700; letter-spacing: -.025em; line-height: 1.08; }
+.road-hero-greeting h1 { margin: 0; color: #f6f9fc; font-size: clamp(28px, 2.5vw, 36px); font-weight: 700; letter-spacing: -.025em; line-height: 1.08; }
 .road-hero-greeting p { margin: 4px 0 0; color: #e1eaf2; font-size: 14px; }
 .road-hero-content { position: relative; z-index: 1; width: 100%; padding: 40px 32px 32px; }
 .road-hero-content .eyebrow { margin: 0 0 8px; color: #c6e6fa; font-size: 13px; font-weight: 400; letter-spacing: .30em; line-height: 1.4; text-transform: uppercase; }
@@ -130,7 +130,7 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 .road-dialog .daily-check-in-form h3 { margin: 0; font-size: 18px; }
 @media (min-width: 1100px) {
   /* Keep the lower cards at their existing maximum width while the photo spans the page. */
-  .road-layout { --road-content-gutter: max(32px, calc((100vw - var(--app-rail-width, 64px) - 1280px) / 2 + 32px)); }
+  .road-layout { --road-content-gutter: max(32px, calc((100vw - 180px - 1280px) / 2 + 32px)); }
   .road-home-scene { --road-hero-min-height: min(calc(115px + 29.8445cqw), calc(100svh - 260px)); }
   .road-hero { min-height: max(350px, var(--road-hero-min-height)); }
   .road-hero-header { padding-top: 16px; }
@@ -181,13 +181,15 @@ a.road-stop-title:hover { color: var(--road-cyan); text-decoration: underline; }
 @media (max-width: 767px) {
   .road-layout { --road-content-gutter: 12px; --road-node-size: 26px; --road-now-size: 36px; padding-top: 0; }
   .road-layout .dashboard-content.home-content { padding: 0 var(--road-content-gutter) 24px; gap: 14px; }
+  .road-layout .dashboard-nav { position: absolute; height: calc(64px + env(safe-area-inset-top)); padding-top: calc(6px + env(safe-area-inset-top)); border-bottom: 0; background: transparent; color: #f4f7fa; }
+  .road-layout .dashboard-nav-secondary a { color: #f4f7fa; }
   .road-home-scene { padding-bottom: 12px; }
   .road-hero { min-height: 330px; }
   .road-hero.road-hero--with-orbit { min-height: 370px; }
   .road-hero-image { object-position: 67% 30%; }
   .road-hero-shade { background: linear-gradient(180deg, #04101c34 0%, transparent 30%, #04101c24 65%, #061524b8 100%), linear-gradient(90deg, #04101cbf 0%, #04101c75 48%, #04101c18 100%); }
   .road-hero-header { align-items: center; gap: 4px 8px; padding: calc(78px + env(safe-area-inset-top)) 16px 0; }
-  .road-hero-greeting h2 { font-size: 27px; }
+  .road-hero-greeting h1 { font-size: 27px; }
   .road-hero-greeting p { font-size: 12px; }
   .road-hero-content { padding: 30px 17px 36px; }
   .road-hero--with-orbit .road-hero-content { padding-right: 122px; }

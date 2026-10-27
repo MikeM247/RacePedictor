@@ -74,7 +74,7 @@
 
 .button {
   width: 100%;
-  min-height: 44px;
+  min-height: 2.65rem;
   padding: .7rem 1rem;
   border: 1px solid var(--rp-cyan);
   border-radius: var(--rp-radius-sm);

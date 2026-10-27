@@ -431,7 +431,7 @@ test("logo-only nav and mobile month reflow at required widths and 200 percent",
   for (const width of [320, 390, 768, 1024, 1440, 720]) {
     await page.setViewportSize({ width, height: width === 720 ? 450 : 900 });
     await page.goto(`/dashboard/calendar?date=${date}`);
-    const brand = page.getByRole("link", { name: width < 768 ? "Home" : "Race Predictor Home", exact: true });
+    const brand = page.getByRole("link", { name: "Race Predictor Home", exact: true });
     await expect(brand).toHaveText("");
     await expect(brand.locator("img")).toBeVisible();
     await expect(page.locator(".calendar-month-region")).toBeVisible();

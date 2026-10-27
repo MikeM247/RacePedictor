@@ -1,21 +1,6 @@
 # SDLC Progress
 
-Last updated: 2026-10-27
-
-## 2026-10-27 Consistent responsive redesign
-
-**Objective:** apply the approved mobile drawer, remembered desktop rail, light content surfaces and conversation-first Orbit layout across the dashboard.
-
-**Current stage:** Implementation and local validation complete on `codex/responsive-redesign`, based on `origin/main` at `7e26aa7`. Hosted-preview review and physical mobile-browser validation remain before production promotion. Existing work in the original checkout is preserved.
-
-| Stage | Status | Evidence / next action |
-|---|---|---|
-| Product and UX | Approved | [Responsive screen and interaction contract](../plans/RESPONSIVE_REDESIGN.md) |
-| Architecture | Implemented | [Persistent shell, navigation modes and scroll ownership](../adr/0012-responsive-application-shell.md) |
-| Engineering | Complete | Shared shell, mobile drawer, desktop preference, light surfaces, Coach hierarchy and contextual recovery |
-| Local validation | Complete | [Acceptance mapping, test results and resolved defects](responsive-redesign-validation.md) |
-| Preview and device review | Needs Review | Authenticated hosted preview; real iOS Safari/Android Chrome keyboards, safe areas, orientation and browser chrome |
-| Production release | Pending | No deployment or data migration performed; prior frontend remains the rollback path |
+Last updated: 2026-10-21
 
 ## 2026-10-21 Milestone management
 

@@ -17,7 +17,7 @@ export default function SignInPage() {
             height={1254}
             priority
           />
-          <p className={styles.eyebrow}><span>Owner access</span></p>
+          <p className={styles.eyebrow}><span>Night Ops · Owner access</span></p>
         </div>
         <h1 id="sign-in-heading">Your training dashboard, online</h1>
         <p className={styles.intro}>

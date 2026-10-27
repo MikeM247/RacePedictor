@@ -1,11 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const widths = [320, 360, 390, 767, 768, 1199, 1200, 1440];
+const widths = [320, 375, 390, 414, 767, 768, 1024, 1199, 1200, 1440];
 const routes = [
   ["/dashboard", "Home"],
   ["/dashboard/activities", "Training"],
-  ["/dashboard/coach", "Coach"],
-  ["/dashboard/readiness", "Readiness"],
   ["/dashboard/plan", "Plan"],
   ["/dashboard/calendar", "Calendar"],
   ["/dashboard/data-quality", "Data Quality"],
@@ -44,8 +42,8 @@ test("F05 keeps every redesigned route within the contract widths", async ({ pag
     for (const [href, heading] of routes) {
       await page.goto(href);
       const pageHeading = href === "/dashboard"
-        ? page.getByRole("heading", { level: 1, name: "Home", exact: true })
-        : page.getByRole("heading", { level: 1, name: heading === "Coach" ? /Coach/ : heading, exact: true });
+        ? page.locator("main#dashboard-main-content h1")
+        : page.getByRole("heading", { level: 1, name: heading, exact: true });
       await expect(pageHeading).toBeVisible();
       await expect(page.locator("main#dashboard-main-content")).toBeVisible();
       await expectNoPageOverflow(page, width);
@@ -85,8 +83,8 @@ test("F05 keeps readable Calendar navigation and optional totals accessible at c
     await expectNoPageOverflow(page, viewport.width);
     await page.evaluate(() => window.scrollTo(0, 0));
     const today = await page.getByRole("button", { name: "Today", exact: true }).boundingBox();
-    expect(today!.y).toBeGreaterThanOrEqual(viewport.width < 768 ? 56 : 0);
-    expect(today!.y + today!.height).toBeLessThanOrEqual(viewport.height);
+    expect(today!.y).toBeGreaterThanOrEqual(viewport.width < 768 ? 64 : 0);
+    expect(today!.y + today!.height).toBeLessThanOrEqual(viewport.height - (viewport.width < 768 ? 80 : 0));
   }
 });
 
@@ -95,73 +93,26 @@ test("F05 keeps Calendar on the shared sidebar and uses compact navigation below
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/dashboard/calendar?date=2026-10-08");
 
-  const desktopNav = page.locator(".app-rail .dashboard-nav");
+  const desktopNav = page.locator(".dashboard-nav");
   const desktopMain = page.locator(".dashboard-main");
   const desktopNavBox = await desktopNav.boundingBox();
   const desktopMainBox = await desktopMain.boundingBox();
   expect(desktopNavBox).not.toBeNull();
   expect(desktopMainBox).not.toBeNull();
   expect(desktopNavBox?.x).toBe(0);
-  expect(desktopNavBox?.width).toBe(64);
+  expect(desktopNavBox?.width).toBe(180);
   expect(desktopMainBox?.x).toBeCloseTo(desktopNavBox?.width ?? 0, 0);
   await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   await expect(page.locator(".calendar-month-region")).toBeVisible();
 
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.reload();
-  const compactNavBox = await page.locator(".app-rail .dashboard-nav").boundingBox();
+  const compactNavBox = await page.locator(".dashboard-nav").boundingBox();
   expect(compactNavBox).not.toBeNull();
   expect(compactNavBox?.x).toBe(0);
-  expect(compactNavBox?.width).toBe(64);
-  await expect(page.locator(".app-rail .dashboard-nav-secondary")).toBeVisible();
+  expect(compactNavBox?.width).toBe(160);
+  await expect(page.locator(".dashboard-nav-secondary")).toBeVisible();
   await expect(page.getByRole("region", { name: /training calendar/ })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("link", { name: "Data quality and recovery" })).toBeVisible();
-});
-
-test("mobile drawer exposes every available destination without bottom navigation", async ({ page }) => {
-  await mockSharedReads(page);
-  await page.setViewportSize({ width: 360, height: 640 });
-  for (const [href] of routes) {
-    await page.goto(href);
-    await expect(page.locator("main#dashboard-main-content")).toHaveCount(1);
-    expect((await page.locator(".app-header").boundingBox())!.height).toBe(56);
-    await expect(page.locator(".app-rail")).toBeHidden();
-    const trigger = page.getByRole("button", { name: "Open navigation" });
-    await trigger.click();
-    const drawer = page.getByRole("dialog", { name: "Menu", exact: true });
-    await expect(drawer).toBeVisible();
-    expect((await drawer.boundingBox())!.width).toBe(280);
-    for (const label of ["Home", "Coach", "Calendar", "Readiness", "Settings"]) await expect(drawer.getByRole("link", { name: label, exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(drawer).not.toBeVisible();
-    await expect(trigger).toBeFocused();
-    await expectNoPageOverflow(page, 360);
-  }
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("dialog", { name: "Menu", exact: true }).getByRole("link", { name: "Calendar", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard\/calendar$/);
-  await expect(page.getByRole("heading", { name: "Calendar", exact: true, level: 1 })).toBeFocused();
-  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
-});
-
-test("desktop rail defaults to icons and remembers expansion across routes and breakpoints", async ({ page }) => {
-  await mockSharedReads(page);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/dashboard/calendar");
-  const rail = page.locator(".app-rail");
-  expect((await rail.boundingBox())!.width).toBe(64);
-  await page.getByRole("button", { name: "Expand navigation" }).click();
-  expect((await rail.boundingBox())!.width).toBe(180);
-  await page.reload();
-  await expect(page.getByRole("button", { name: "Collapse navigation" })).toBeVisible();
-  await page.getByRole("link", { name: "Readiness", exact: true }).click();
-  expect((await rail.boundingBox())!.width).toBe(180);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.setViewportSize({ width: 768, height: 900 });
-  await expect(page.getByRole("dialog", { name: "Menu", exact: true })).not.toBeVisible();
-  expect((await rail.boundingBox())!.width).toBe(180);
-  await page.getByRole("button", { name: "Collapse navigation" }).click();
-  expect((await rail.boundingBox())!.width).toBe(64);
 });

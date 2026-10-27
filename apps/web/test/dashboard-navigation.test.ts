@@ -1,19 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isDashboardPageCurrent } from "../components/dashboard/dashboard-navigation-state.ts";
-import { destinationForPath, readMenuMode, dashboardDestinations } from "../components/dashboard/dashboard-destinations.ts";
-
-test("shared destinations distinguish nested routes and fall back to Home", () => {
-  assert.equal(destinationForPath("/dashboard/coach/history").page, "coach");
-  assert.equal(destinationForPath("/dashboard/activities/123").page, "training");
-  assert.equal(destinationForPath("/dashboard/calendar-extra").page, "home");
-  assert.deepEqual(dashboardDestinations.filter(item => item.primary).map(item => item.label), ["Home", "Coach", "Calendar", "Readiness", "Settings"]);
-});
-test("invalid or unavailable menu preferences retain the icon default", () => {
-  assert.equal(readMenuMode(null), "icons");
-  assert.equal(readMenuMode("invalid"), "icons");
-  assert.equal(readMenuMode("expanded"), "expanded");
-});
 
 test("Home and Coach are independent destinations; supporting URLs stay valid", () => {
   assert.equal(isDashboardPageCurrent("home", "/dashboard"), true);

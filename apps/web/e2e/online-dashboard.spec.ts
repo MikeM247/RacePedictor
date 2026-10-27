@@ -522,17 +522,16 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
   await expect(page.getByText("Strava disconnected. Existing workouts and raw history were preserved.")).toBeVisible();
   await expect(stravaPanel.locator(".coach-panel-heading > .status-chip")).toHaveText("Disconnected");
 
-  const sectionIndex = page.getByRole("navigation", { name: "Settings sections" });
-  await sectionIndex.getByRole("link", { name: "Paired computer", exact: true }).click();
+  await page.getByText("Paired computer", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Pair and manage a computer" })).toBeVisible();
   await expect(page.getByText("Stale · computer has not synced recently")).toBeVisible();
-  await sectionIndex.getByRole("link", { name: "Privacy", exact: true }).click();
+  await page.getByText("Privacy", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Only selected structured context leaves your computer" })).toBeVisible();
-  await sectionIndex.getByRole("link", { name: "Operations", exact: true }).click();
+  await page.getByText("Operations", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Operations guardrails" })).toBeVisible();
   await expect(page.getByText("Review usage before enabling additional work.")).toBeVisible();
 
-  await sectionIndex.getByRole("link", { name: "Paired computer", exact: true }).click();
+  await page.getByText("Paired computer", { exact: true }).click();
   await page.getByLabel("Computer name").fill("Race workstation");
   await page.getByRole("button", { name: "Replace paired computer" }).click();
   await expect(page.getByRole("heading", { name: "Save the device credential" })).toBeVisible();
@@ -546,7 +545,7 @@ test("online Settings connects and disconnects Strava, pairs once, reports statu
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await page.locator("summary").filter({ hasText: /^Paired computer$/u }).click();
+  await page.getByText("Paired computer", { exact: true }).click();
   await expect(page.getByText("Revoked", { exact: true })).toBeVisible();
   await expect(page.getByLabel("One-time device credential")).toHaveCount(0);
 });

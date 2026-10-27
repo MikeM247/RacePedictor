@@ -367,7 +367,7 @@
   padding: 6px 30px 6px 10px;
   border: 1px solid var(--rp-border-strong);
   border-radius: var(--rp-radius-sm);
-  background: var(--rp-surface);
+  background: var(--rp-nav);
   color: var(--rp-text);
 }
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { DashboardViewModel } from "../../lib/dashboard-view-model";
 import { predictionDistanceLabel, toSummaryKpis } from "../../lib/dashboard-view-model";
 import { goalContextApiResponseSchema } from "../../../../packages/core/src/contracts/coaching.ts";
+import { DashboardNavigation } from "./dashboard-navigation";
 import type { OnlineStatus } from "../../../../packages/core/src/contracts/sync.ts";
 import { OnlineStatusPanel } from "./online-status-panel";
 import { createRecoveryContext, dataQualityHref, readRecoveryContext, restoreRecoveryFocus } from "../../lib/recovery-context";
@@ -84,8 +85,9 @@ export function ReadinessShell({
   }, [predictionOptions, analyticsLoading]);
 
   return <div className="dashboard-layout home-layout readiness-layout">
-    <div className="dashboard-main">
-      <header className="dashboard-toolbar"><div className="dashboard-toolbar-title"><p>Current fitness and the evidence behind it</p></div><Link className="text-link" href={homeLabel === "Coach" ? "/dashboard/coach" : "/dashboard"}>Back to {homeLabel}</Link></header>
+      <DashboardNavigation activePage="readiness" />
+    <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="dashboard-page-title">
+      <header className="dashboard-toolbar"><div className="dashboard-toolbar-title"><h1 id="dashboard-page-title">Readiness</h1><p>Current fitness and the evidence behind it</p></div><Link className="text-link" href={homeLabel === "Coach" ? "/dashboard/coach" : "/dashboard"}>Back to {homeLabel}</Link></header>
       <section className="dashboard-content readiness-content" aria-label="Readiness details">
         <section className="home-evidence" aria-labelledby="readiness-heading">
           <div className="home-evidence-heading"><div><p className="eyebrow">Training evidence</p><h2 id="readiness-heading">Current-fitness estimate</h2></div></div>
@@ -98,7 +100,8 @@ export function ReadinessShell({
             {uiState.showStaleState ? <p className="home-inline-status state-panel--stale" role="status">Showing the last available estimate. {staleInfo.staleReason ?? "Live updates are delayed."}{staleInfo.staleAtIso ? ` Last update: ${formatDate(staleInfo.staleAtIso, timezone, true)}.` : ""}</p> : null}
             <div className="home-outlook-main"><div><strong className="home-outlook-value">{selectedKpis[0]?.value}</strong><span className="home-outlook-label">current-fitness estimate · {selectedKpis[1]?.value}</span></div><div className="home-outlook-copy"><p><strong>Training signal:</strong> {outlookReason.text}</p><p><strong>Estimate range:</strong> {selectedKpis[2]?.value}. This is the model&apos;s low-to-high estimate span, not a probability or race-day forecast.</p></div></div>
             <p className="home-evidence-caveat">Race-day progress cannot yet be assessed from this current-fitness estimate.</p>
-
+            <DriverEvidence drivers={driverContributions} />
+            <div className="home-evidence-actions"><RecoveryDataQualityLink label="Review data coverage" issue="Current-fitness details are limited by the available imported history." selectedDistanceM={selectedDistanceM} /><Link className="text-link" href="/dashboard/activities">Review training history</Link></div>
           </> : null}
           <WeeklyTrainingChart
             key={weeklyTraining?.windowStart ?? "legacy"}
@@ -109,17 +112,13 @@ export function ReadinessShell({
             generatedAt={weeklyTraining?.generatedAt}
             onRetry={weeklyTrainingError || weeklyTraining?.status === "unavailable" || uiState.showErrorState ? onAnalyticsRetry ?? (() => window.location.reload()) : undefined}
           />
-          {!analyticsLoading && uiState.showContent ? <>
-            <DriverEvidence drivers={driverContributions} />
-            <div className="home-evidence-actions"><RecoveryDataQualityLink label="Review data coverage" issue="Current-fitness details are limited by the available imported history." selectedDistanceM={selectedDistanceM} /><Link className="text-link" href="/dashboard/activities">Review training history</Link></div>
-          </> : null}
           {!analyticsLoading && trendSeries.length > 0 ? <TrendEvidence series={trendSeries} /> : null}
           {onlineStatus ? <details className="home-freshness"><summary>Data freshness</summary><OnlineStatusPanel status={onlineStatus} /></details> : null}
           {onlineStatusLoading ? <p className="quiet-copy" role="status">Checking data freshness…</p> : null}
           {onlineStatusError ? <p className="quiet-copy" role="status">Freshness details are unavailable. Goal and coaching reads are independent.</p> : null}
         </section>
       </section>
-    </div>
+    </main>
   </div>;
 }
 

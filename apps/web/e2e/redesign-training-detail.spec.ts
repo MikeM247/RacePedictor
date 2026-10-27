@@ -103,20 +103,3 @@ test("F04 exposes safe direct-entry error states and contextual Home and Calenda
   await expect(page.getByText(/could not be read safely/)).toBeVisible();
   await expect(page.getByRole("button", { name: "← Back to Training" })).toBeVisible();
 });
-
-test("Training restores document scroll after closing an activity in a long history", async ({ page }) => {
-  await fixtureTraining(page);
-  const records = Array.from({ length: 40 }, (_, index) => ({ ...first, id: `long-${index}`, title: `History run ${index}` }));
-  await page.route("**/api/v1/activities?**", route => route.fulfill({ json: { data: { items: records } } }));
-  await page.route("**/api/v1/activities/long-39", route => route.fulfill({ json: details(records[39]) }));
-  await page.goto("/dashboard/activities");
-  const row = page.getByRole("button", { name: /History run 39/ });
-  await row.scrollIntoViewIfNeeded();
-  const before = await page.evaluate(() => window.scrollY);
-  expect(before).toBeGreaterThan(500);
-  await row.click();
-  await expect(page.getByRole("dialog", { name: "History run 39" })).toBeVisible();
-  await page.getByRole("button", { name: "← Back to Training" }).click();
-  await expect(row).toBeFocused();
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(before, 0);
-});

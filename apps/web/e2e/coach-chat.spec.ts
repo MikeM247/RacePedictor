@@ -40,55 +40,6 @@ async function mockSession(page: Page) {
   await page.route("**/api/v1/auth/session", (route) => route.fulfill({ json: { data: { authenticated: true, actor: { userId: "owner_test", activeAthleteId: "athlete_test", credentialKind: "session" }, reason: null } } }));
 }
 
-async function openActions(page: Page) {
-  await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
-}
-async function clearChat(page: Page) {
-  await openActions(page);
-  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-  await page.getByRole("button", { name: "Save and start new", exact: true }).click();
-}
-async function openHistory(page: Page) {
-  await openActions(page);
-  await page.getByRole("button", { name: "Previous chats", exact: true }).click();
-}
-async function openContext(page: Page) { await page.locator("#coach-context-button").click(); }
-async function closeContext(page: Page) { await page.getByRole("button", { name: "Close conversation context" }).click(); }
-
-test("mobile chat uses the recovered viewport and cancelling Clear chat does not archive", async ({ page }, testInfo) => {
-  await mockSession(page);
-  await page.route("**/api/v1/coaching/chat/context**", route => route.fulfill({ json: { data: context("reflect") } }));
-  await page.route("**/api/v1/coaching/chat/conversation", route => route.fulfill({ json: { data: conversation([message("kept", 1, "user", "Keep this discussion", "completed")]) } }));
-  let archives = 0;
-  await page.route("**/api/v1/coaching/chat/conversation/archive", route => { archives++; return route.fulfill({ status: 500 }); });
-  for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }]) {
-    await page.setViewportSize(viewport);
-    await page.goto("/dashboard/coach");
-    await expect(page.getByText("Ready", { exact: true })).toBeVisible();
-    await expect(page.getByRole("textbox", { name: "Message ORBIT" })).not.toBeFocused();
-    expect((await page.locator(".coach-transcript").boundingBox())!.height).toBeGreaterThanOrEqual(viewport.height - 165);
-    await page.getByRole("textbox", { name: "Message ORBIT" }).fill("An unsent draft");
-    await page.getByRole("button", { name: "Open navigation" }).click();
-    await page.screenshot({ path: testInfo.outputPath(`drawer-${viewport.width}.png`) });
-    await page.keyboard.press("Escape");
-    await openActions(page);
-    await page.getByRole("button", { name: "Clear chat", exact: true }).click();
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
-    expect(archives).toBe(0);
-    await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("An unsent draft");
-    await expect(page.getByText("Keep this discussion", { exact: true })).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath(`coach-${viewport.width}.png`) });
-  }
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("button", { name: "Expand navigation" }).click();
-  await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("An unsent draft");
-  await page.setViewportSize({ width: 390, height: 220 });
-  await page.getByRole("textbox", { name: "Message ORBIT" }).fill("A long draft\n".repeat(12));
-  await page.getByRole("button", { name: "Send message" }).scrollIntoViewIfNeeded();
-  await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
-});
-
 test("complete Coach panel fits desktop viewports and bounds long drafts", async ({ page }) => {
   await mockSession(page);
   await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("reflect") } }));
@@ -99,7 +50,7 @@ test("complete Coach panel fits desktop viewports and bounds long drafts", async
     await expect(page.getByText("Ready", { exact: true })).toBeVisible();
     await page.getByRole("textbox", { name: "Message ORBIT" }).fill("Draft line\n".repeat(150));
     await expect.poll(() => page.locator(".coach-chat-panel").evaluate((node) => node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(viewport.height);
-    for (const selector of [".coach-composer textarea", ".coach-send-button", ".coach-conversation-toolbar"]) {
+    for (const selector of [".coach-composer textarea", ".coach-send-button", ".coach-action-row", ".coach-chat-boundary"]) {
       const rect = await page.locator(selector).boundingBox();
       expect(rect!.y).toBeGreaterThanOrEqual(0);
       expect(rect!.y + rect!.height).toBeLessThanOrEqual(viewport.height);
@@ -126,23 +77,21 @@ test("Clear chat archives a pending discussion, keeps the draft and opens read-o
   await page.goto("/dashboard/coach");
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("Keep this unsent question.");
-  await clearChat(page);
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
   await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
   await expect(composer).toHaveValue("Keep this unsent question.");
   await expect(composer).toBeFocused();
-  await openContext(page);
   await expect(page.getByRole("button", { name: "Ask ORBIT", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await closeContext(page);
   await expect(page.getByText("ORBIT is thinking…")).toHaveCount(0);
   await expect(page.getByRole("list", { name: "Conversation messages" }).getByText(original.text)).toHaveCount(0);
-  await openHistory(page);
+  await page.getByRole("button", { name: "Previous chats", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Previous chats" });
   await dialog.getByRole("button", { name: new RegExp(original.text.replace("?", "\\?")) }).click();
   await expect(dialog.getByRole("list", { name: "Saved conversation messages" }).getByText(original.text)).toBeVisible();
   await expect(dialog.getByText(/Read only/)).toBeVisible();
   await expect(dialog.getByRole("textbox")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Close previous chats" }).click();
-  await expect(page.getByRole("button", { name: "Conversation actions", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Previous chats", exact: true })).toBeFocused();
   await expect(composer).toHaveValue("Keep this unsent question.");
   await page.reload();
   await expect(composer).toHaveValue("Keep this unsent question.");
@@ -163,7 +112,7 @@ test("failed archive retains transcript and draft and retries the same request i
   });
   await page.goto("/dashboard/coach");
   await page.getByRole("textbox", { name: "Message ORBIT" }).fill("Do not lose this draft");
-  await clearChat(page);
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
   await expect(page.getByRole("main", { name: "Coach" }).getByRole("alert")).toContainText("Your messages and draft are kept here");
   await expect(page.getByText("A discussion to retain", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Do not lose this draft");
@@ -185,7 +134,7 @@ test("archiving synchronizes tabs without discarding either draft", async ({ pag
   await second.goto("/dashboard/coach");
   await page.getByRole("textbox", { name: "Message ORBIT" }).fill("First tab draft");
   await second.getByRole("textbox", { name: "Message ORBIT" }).fill("Second tab draft");
-  await clearChat(page);
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
   await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
   await expect(second.getByRole("list", { name: "Conversation messages" }).getByText("A shared discussion", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("First tab draft");
@@ -209,7 +158,7 @@ test("a late retry response cannot replace the new discussion or its draft", asy
   await page.goto("/dashboard/coach");
   await page.getByRole("button", { name: "Retry reply" }).click();
   await expect.poll(() => retryStarted).toBe(true);
-  await clearChat(page);
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
   await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
   await page.getByRole("textbox", { name: "Message ORBIT" }).fill("My new draft");
   const completed = page.waitForResponse("**/api/v1/coaching/chat/turns/late_turn/retry");
@@ -232,7 +181,7 @@ test("Previous chats loads earlier saved messages and retries a failed history r
     return route.fulfill({ json: { data: { archive, messages, hasOlder: !older, oldestSequence: older ? 1 : 21 } } });
   });
   await page.goto("/dashboard/coach");
-  await openHistory(page);
+  await page.getByRole("button", { name: "Previous chats", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Previous chats" });
   await expect(dialog.getByRole("alert")).toContainText("Saved chats could not be loaded");
   await dialog.getByRole("button", { name: "Retry", exact: true }).click();
@@ -286,12 +235,11 @@ test("online Coach reflects on a real activity, completes a reply, restores a ta
   await expect(page.getByText("How did your 8 km run feel?")).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include(".coach-v2-layout").analyze();
   expect(accessibility.violations.map(({ id, impact }) => `${id}:${impact}`)).toEqual([]);
-  await expect(page.locator("#coach-context-button")).toContainText("Morning 8 km run");
+  await expect(page.getByText("Morning 8 km run", { exact: true })).toBeVisible();
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("The last hill felt harder than expected.");
   await composer.press("Enter");
   await expect(page.getByText("Did the effort rise gradually, or did something change on the hill?")).toBeVisible();
-  await openContext(page);
   const activityLink = page.getByRole("link", { name: /View last activity/ });
   await expect(activityLink).toHaveAttribute("href", /activityId=activity_latest_01/u);
   await activityLink.click();
@@ -363,12 +311,10 @@ test("Coach topic, selected record, unsent draft and transcript position survive
 
   await page.goto("/dashboard/coach");
   await expect(page.getByText("Ready", { exact: true })).toBeVisible();
-  await openContext(page);
-  const prepare = page.getByRole("button", { name: "Prepare for next training", exact: true });
+  const prepare = page.getByRole("button", { name: "Prepare for next training" });
   await prepare.click();
   await expect(prepare).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Easy run", { exact: true })).toBeVisible();
-  await closeContext(page);
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("Keep this question while I revisit my goal.");
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.athlete_test.draft"))).toBe("Keep this question while I revisit my goal.");
@@ -383,10 +329,8 @@ test("Coach topic, selected record, unsent draft and transcript position survive
   await expect(page.getByRole("heading", { name: "Build toward Comrades", level: 2 })).toBeVisible();
   await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Coach", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard\/coach$/u);
-  await openContext(page);
-  await expect(page.getByRole("button", { name: "Prepare for next training", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Prepare for next training" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Easy run", { exact: true })).toBeVisible();
-  await closeContext(page);
   await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Keep this question while I revisit my goal.");
   await expect.poll(() => page.getByRole("list", { name: "Conversation messages" }).evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
 });

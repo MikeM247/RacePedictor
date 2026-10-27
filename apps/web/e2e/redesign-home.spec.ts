@@ -32,7 +32,7 @@ async function mockHome(page: Page, options: HomeOptions = {}) {
   await page.route("**/api/v1/dashboard/appearance", (route) => route.fulfill({ json: { data: { heroImageUrl: options.background ?? "/road-to-comrades-v2.webp" } } }));
 }
 
-test("Home contains only the goal, full milestone journey and optional Orbit entry", async ({ page }, testInfo) => {
+test("Home contains only the goal, full milestone journey and optional Orbit entry", async ({ page }) => {
   const requests: string[] = [];
   page.on("request", (request) => { if (request.url().includes("/api/v1/")) requests.push(new URL(request.url()).pathname); });
   await mockHome(page);
@@ -62,7 +62,6 @@ test("Home contains only the goal, full milestone journey and optional Orbit ent
   expect(requests).toContain("/api/v1/dashboard/appearance");
   expect(requests.some((url) => /chat|wellbeing-check-ins|coaching\/today|activities/u.test(url))).toBe(false);
   await expectAxeClean(page, "minimal Home");
-  await page.screenshot({ path: testInfo.outputPath("home-desktop.png"), fullPage: true });
 });
 
 test("Home displays the complete maximum milestone projection without action links", async ({ page }) => {
@@ -118,7 +117,7 @@ test("Home fails closed when the shared milestone view is unavailable and provid
   await expect(page.getByText("No completed milestones yet.")).toBeVisible();
 });
 
-test("Home reflows without clipping at required viewport widths", async ({ page }, testInfo) => {
+test("Home reflows without clipping at required viewport widths", async ({ page }) => {
   await mockHome(page);
   await page.goto("/dashboard");
   for (const viewport of [
@@ -128,19 +127,18 @@ test("Home reflows without clipping at required viewport widths", async ({ page 
     await page.setViewportSize(viewport);
     await expect(page.locator(".road-hero-content h2")).toBeVisible();
     await expect(page.locator(".road-journey")).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath(`home-${viewport.width}.png`), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Horizontal overflow at ${viewport.width}px`).toBe(true);
     if (viewport.width >= 1100) {
       await expect(page.locator(".road-journey")).toBeInViewport();
       const sceneBottom = await page.locator(".road-journey").evaluate((element) => element.getBoundingClientRect().bottom);
       expect(sceneBottom).toBeLessThanOrEqual(viewport.height + 1);
     }
-    const orbitLink = page.getByRole("link", { name: "Talk to Orbit" });
-    if (await orbitLink.count()) {
+    const navCoach = page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Coach", exact: true });
+    if (await navCoach.count()) {
       const orbitImage = page.locator(".road-orbit-image");
       await expect(orbitImage).toBeVisible();
       const box = await orbitImage.boundingBox();
-      expect(box?.height).toBe(viewport.width < 768 ? 123 : 186);
+      expect(box?.height).toBe(viewport.width < 1100 ? 164 : 248);
       const launcher = await page.getByRole("link", { name: "Talk to Orbit" }).boundingBox();
       const journey = await page.locator(".road-journey").boundingBox();
       expect(launcher!.y + launcher!.height).toBeLessThanOrEqual(journey!.y);

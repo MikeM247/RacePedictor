@@ -45,6 +45,14 @@ export function ActivityDetailDialog({ open, title, parentLabel, onClose, return
   }, [open, inline]);
 
   useEffect(() => {
+    if (!open || inline || !portal) return;
+    const background = Array.from(document.body.children).filter(element => element !== portal) as HTMLElement[];
+    const previous = background.map(element => element.inert);
+    background.forEach(element => { element.inert = true; });
+    return () => background.forEach((element, index) => { element.inert = previous[index]; });
+  }, [open, inline, portal]);
+
+  useEffect(() => {
     if (!open || !inline) return;
     const frame = window.requestAnimationFrame(() => inlineBackButton.current?.focus({ preventScroll: true }));
     return () => window.cancelAnimationFrame(frame);

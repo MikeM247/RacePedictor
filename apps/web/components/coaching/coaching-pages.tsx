@@ -1,5 +1,4 @@
 "use client";
-import { SettingsSectionIndex } from "../dashboard/settings-section-index";
 
 import Link from "next/link";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useRef, useState } from "react";
@@ -8,6 +7,7 @@ import { readActivityDetailResponse } from "../../lib/activities-api-client";
 import { ActivityRecordContent } from "../activities/activities-shell";
 import { ActivityDetailDialog } from "../activities/activity-detail-dialog";
 import { TrainingTools } from "../dashboard/training-tools";
+import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import {
   canAmendFutureSession,
   canRecordPastSessionSkip,
@@ -134,14 +134,15 @@ function CoachShell({ page, title, subtitle, meta, children }: {
   const titleId = `${page}-page-title`;
   return (
     <div className={`dashboard-layout coaching-layout coaching-layout--${page}`}>
-      <div className="dashboard-main">
+      <DashboardNavigation activePage={page} />
+      <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby={titleId}>
         <header className="dashboard-toolbar coaching-toolbar">
-          <div><p>{subtitle}</p></div>
+          <div><p className="eyebrow">Training workspace</p><h1 id={titleId}>{title}</h1><p>{subtitle}</p></div>
           {meta ? <span className="toolbar-context">{meta}</span> : null}
         </header>
         <CoachReturnBanner />
-        <section className={`coaching-content coaching-content--${page}`}>{page === "settings" ? <SettingsSectionIndex /> : null}{children}</section>
-      </div>
+        <section className={`coaching-content coaching-content--${page}`}>{children}</section>
+      </main>
     </div>
   );
 }
@@ -401,6 +402,16 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
     ? activePlanHeadingRef.current ?? historyHeadingRef.current
     : workflowHeadingRef.current ?? activePlanHeadingRef.current);
 
+  useEffect(() => {
+    const open = Boolean(confirmation);
+    const content = document.querySelector<HTMLElement>(".coaching-content--plan");
+    const nav = document.querySelector<HTMLElement>(".dashboard-nav");
+    if (!open || !content) return;
+    const background = Array.from(content.children).filter((element) => !element.classList.contains("coach-dialog-backdrop")) as HTMLElement[];
+    background.forEach((element) => { element.inert = true; });
+    if (nav) nav.inert = true;
+    return () => { background.forEach((element) => { element.inert = false; }); if (nav) nav.inert = false; };
+  }, [confirmation]);
 
   useEffect(() => {
     void loadPlanPage();
@@ -1070,6 +1081,8 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
 
   useEffect(() => {
     if (!selectedDetail) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     // A successful retry can remove the focused control. Escape must still close
     // the active details when focus temporarily falls back to the document.
     const escape = (event: KeyboardEvent) => {
@@ -1079,9 +1092,22 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       }
     };
     window.addEventListener("keydown", escape);
-    return () => { window.removeEventListener("keydown", escape); };
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", escape); };
   }, [selectedDetail]);
 
+  useEffect(() => {
+    const open = Boolean(selectedDetail || pending || amendDraft);
+    const content = document.querySelector<HTMLElement>(".coaching-content--calendar");
+    const nav = document.querySelector<HTMLElement>(".dashboard-nav");
+    if (!open || !content) return;
+    const background = Array.from(content.children).filter((element) => !element.classList.contains("coach-dialog-backdrop")) as HTMLElement[];
+    background.forEach((element) => { element.inert = true; });
+    if (nav) nav.inert = true;
+    return () => {
+      background.forEach((element) => { element.inert = false; });
+      if (nav) nav.inert = false;
+    };
+  }, [selectedDetail, pending, amendDraft]);
 
   useEffect(() => {
     if (state !== "success" || !focusSessionId) return;

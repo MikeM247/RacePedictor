@@ -1,5 +1,9 @@
 # UI_UX_SPEC
 
+## Scenic startup (27 October 2026)
+
+The shared route/Readiness startup splash uses the default Home road-and-sunrise photograph edge to edge, with proportional responsive cropping and no visible text, logo, spinner, or controls. Existing ready/error transitions and section loading states remain unchanged. See [Scenic loading screen](design/SCENIC_LOADING_SCREEN.md) for framing, accessibility, failure behavior, and local validation.
+
 ## Coach panel and saved chats (25 October 2026)
 
 Coach fits its complete panel to the visual viewport at normal desktop sizes, with transcript-only scrolling and a bounded composer. Small heights and enlarged text retain page scrolling. Clear chat saves the discussion, preserves the unsent draft, and resets to Ask ORBIT. Previous chats opens an accessible read-only dialog, returning focus on close. Settings explicitly confirms permanent deletion of current and previous discussions. See [Coach chat history](plans/COACH_CHAT_HISTORY.md).

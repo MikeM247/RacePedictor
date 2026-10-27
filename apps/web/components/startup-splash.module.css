@@ -1,0 +1,18 @@
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: hidden;
+  background: #071725;
+}
+
+.image {
+  object-fit: cover;
+  object-position: 67% 30%;
+}
+
+@media (min-width: 1100px) {
+  .image {
+    object-position: 50% 30%;
+  }
+}

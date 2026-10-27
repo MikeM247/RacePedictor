@@ -157,7 +157,11 @@ export function restoreRecoveryFocus(context: RecoveryContext | null) {
     if (!key || !/^[A-Za-z][A-Za-z0-9_-]{0,95}$/u.test(key)) return;
     // Detail panels may deliberately announce their heading on load. Restore the
     // originating control after that announcement rather than leaving focus there.
-    window.requestAnimationFrame(() => document.getElementById(key)?.focus());
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(key);
+      if (target?.getClientRects().length) target.focus({ preventScroll: true });
+      else if (target?.closest(".app-rail")) document.getElementById("app-menu-button")?.focus({ preventScroll: true });
+    });
   });
 }
 

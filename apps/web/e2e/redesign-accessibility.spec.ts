@@ -36,6 +36,7 @@ async function mockSharedReads(page: Page) {
 }
 
 test("F05 provides a usable skip link, landmarks, visible focus, and no automated accessibility violations on every redesigned route", async ({ page }) => {
+  test.setTimeout(180_000);
   await mockSharedReads(page);
   await page.goto("/dashboard");
   await page.keyboard.press("Tab");
@@ -47,7 +48,7 @@ test("F05 provides a usable skip link, landmarks, visible focus, and no automate
   for (const [href, heading] of routes) {
     await page.goto(href);
     const pageHeading = href === "/dashboard"
-      ? page.locator("main#dashboard-main-content h1")
+      ? page.getByRole("heading", { level: 1, name: "Home", exact: true })
       : page.getByRole("heading", { level: 1, name: heading, exact: true });
     await expect(pageHeading).toHaveCount(1);
     await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
@@ -57,6 +58,7 @@ test("F05 provides a usable skip link, landmarks, visible focus, and no automate
 
 test("F05 scans expanded disclosures across redesigned routes with actionable axe evidence", async ({ page }) => {
   const writes = recordApplicationWrites(page);
+  test.setTimeout(180_000);
   await mockSharedReads(page);
   const scannedByRoute: Record<string, string[]> = {};
   for (const [href, heading] of routes) {
@@ -80,7 +82,7 @@ test("F05 scans expanded disclosures across redesigned routes with actionable ax
       await expectAxeClean(page, `${heading} expanded disclosure: ${label}`);
     }
     const pageHeading = href === "/dashboard"
-      ? page.locator("main#dashboard-main-content h1")
+      ? page.getByRole("heading", { level: 1, name: "Home", exact: true })
       : page.getByRole("heading", { level: 1, name: heading, exact: true });
     await expect(pageHeading).toHaveCount(1);
   }

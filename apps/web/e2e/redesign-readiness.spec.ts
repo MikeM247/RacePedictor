@@ -23,7 +23,7 @@ async function selectFiveKilometres(page: Page) {
   await expect(page.getByText("24:00", { exact: true })).toBeVisible();
 }
 
-test("Readiness retains evidence and distance selection as its own navigation destination", async ({ page }) => {
+test("Readiness retains evidence and distance selection as its own navigation destination", async ({ page }, testInfo) => {
   await mockReadiness(page);
   const writes = recordApplicationWrites(page);
   const todayReads: string[] = [];
@@ -40,7 +40,11 @@ test("Readiness retains evidence and distance selection as its own navigation de
   await expect(page.locator("[data-week-bar]")).toHaveCount(12);
   await selectFiveKilometres(page);
   expect(todayReads).toEqual([]);
-  await page.getByRole("link", { name: "Back to Home" }).click();
+  await page.screenshot({ path: testInfo.outputPath("readiness-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("readiness-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
   await page.goBack();

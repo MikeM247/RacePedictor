@@ -15,7 +15,8 @@ import {
 } from "../../../../packages/core/src/contracts/coach-chat";
 import { createRecoveryContext, readRecoveryContext, recoveryReturnHref } from "../../lib/recovery-context";
 import { DailyWellbeingCheckIn } from "./daily-wellbeing-check-in";
-import { DashboardNavigation } from "../dashboard/dashboard-navigation";
+import { useShellStatus } from "../dashboard/application-shell";
+import { NativeModal } from "./native-modal";
 import { CoachChatHistory } from "./coach-chat-history";
 import "../dashboard/dashboard.css";
 import "./coach-chat.css";
@@ -101,6 +102,9 @@ export function CoachChatShell() {
   const [orbitAvailable, setOrbitAvailable] = useState(true);
   const [recoveryReturn, setRecoveryReturn] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLOListElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const followLatest = useRef(true);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
   const loadedRef = useRef(false);
   const panelRef = useRef<HTMLElement | null>(null);
   const epochRef = useRef(0);
@@ -113,6 +117,21 @@ export function CoachChatShell() {
   const [archiveError, setArchiveError] = useState("");
   const [archiveStatus, setArchiveStatus] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [chatOverlay, setChatOverlay] = useState<"context" | "actions" | "clear" | null>(null);
+  useShellStatus(loadState === "error" ? "Unavailable" : context?.canSend ? "Ready" : context ? "Replies paused" : "Loading");
+
+  useEffect(() => {
+    const input = composerRef.current;
+    if (!input) return;
+    input.style.height = "44px";
+    input.style.height = `${Math.min(120, input.scrollHeight)}px`;
+  }, [draft]);
+  useEffect(() => {
+    const list = transcriptRef.current;
+    if (!list || !loadedRef.current) return;
+    if (followLatest.current) list.scrollTop = list.scrollHeight;
+    else setHasNewMessages(true);
+  }, [conversation.sequence]);
 
   function acceptConversation(latest: CoachConversationState) {
     if (latest.generation < generationRef.current) return false;
@@ -126,23 +145,24 @@ export function CoachChatShell() {
     if (!panel) return;
     const fit = () => {
       const viewport = window.visualViewport;
-      const top = panel.getBoundingClientRect().top + window.scrollY;
-      const mobileNav = document.querySelector<HTMLElement>(".dashboard-nav-primary");
-      const bottomInset = window.innerWidth < 768 ? (mobileNav?.getBoundingClientRect().height ?? 84) + 12 : 16;
-      const available = (viewport?.height ?? window.innerHeight) + (viewport?.offsetTop ?? 0) - top - bottomInset;
-      const controls = Array.from(panel.children).filter((child) => !child.classList.contains("coach-transcript"))
+      const header = document.querySelector<HTMLElement>(".app-header");
+      const available = (viewport?.height ?? window.innerHeight) - (header?.getBoundingClientRect().height ?? 56);
+      const controls = Array.from(panel.children).filter(child => !child.classList.contains("coach-transcript"))
         .reduce((height, child) => height + child.getBoundingClientRect().height + parseFloat(getComputedStyle(child).marginTop || "0") + parseFloat(getComputedStyle(child).marginBottom || "0"), 0);
-      panel.style.height = `${Math.max(available, controls + 82)}px`;
+      const minimum = controls + 64;
+      panel.closest(".app-shell")?.toggleAttribute("data-coach-scroll", available < minimum);
+      panel.style.height = `${Math.max(minimum, available)}px`;
     };
     const observer = new ResizeObserver(fit);
-    observer.observe(panel.parentElement!);
-    Array.from(panel.children).forEach((child) => observer.observe(child));
+    const header = document.querySelector<HTMLElement>(".app-header");
+    if (header) observer.observe(header);
+    Array.from(panel.children).filter(child => !child.classList.contains("coach-transcript")).forEach(child => observer.observe(child));
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("scroll", fit);
     fit();
     return () => { observer.disconnect(); window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit); };
-  }, [loadState, failure, archiveError, archiveStatus, context]);
+  }, [loadState, failure, archiveError, archiveStatus, leaseMayHaveExpired, hasNewMessages, context?.canSend]);
 
   const readConversation = useCallback(async (before?: number) => {
     const suffix = before ? `?before=${before}` : "";
@@ -264,7 +284,9 @@ export function CoachChatShell() {
       if (transcriptScrollTop !== undefined || recovery?.kind === "coach") requestAnimationFrame(() => {
         if (transcriptScrollTop !== undefined && transcriptRef.current) transcriptRef.current.scrollTop = transcriptScrollTop;
         if (recovery?.kind === "coach" && recovery.focusKey && /^[A-Za-z][A-Za-z0-9_-]{0,95}$/u.test(recovery.focusKey)) {
-          document.getElementById(recovery.focusKey)?.focus();
+          const target = document.getElementById(recovery.focusKey);
+          if (target?.getClientRects().length) target.focus({ preventScroll: true });
+          else document.getElementById("coach-context-button")?.focus({ preventScroll: true });
         }
       });
       setLoadState("ready"); setLoadError("");
@@ -496,22 +518,39 @@ export function CoachChatShell() {
   const retryable = Boolean((conversation.currentTurn?.retryable || (conversation.currentTurn?.state === "processing" && leaseMayHaveExpired)) && currentSavedUser?.turnState !== "abandoned");
 
   return <div className="dashboard-layout coach-v2-layout">
-    <DashboardNavigation activePage="coach" />
-    <main id="dashboard-main-content" className="dashboard-main coach-v2-main" tabIndex={-1} aria-labelledby="coach-page-title">
-      <header className="coach-v2-toolbar"><div><p className="coach-v2-eyebrow">Your training companion</p><h1 id="coach-page-title">Coach</h1></div><Link id="coach-plan-header-link" className="coach-plan-link" href="/dashboard/plan" onClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)} onAuxClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)}>View race plan <span aria-hidden="true">↗</span></Link></header>
-      <section className="coach-v2-goal-strip" aria-label="Training goal">
-        <span className="coach-goal-mark" aria-hidden="true">↗</span>
-        <div><span className="coach-v2-overline">CURRENT FOCUS</span><strong>{context?.goal?.title ?? "Your training plan"}</strong><span>{context?.nextSession ? `Next · ${context.nextSession.title} · ${context.nextSession.date}` : context?.todaySchedule.message ?? "Your current training context"}</span></div>
-        <Link id="coach-plan-strip-link" href="/dashboard/plan" onClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)} onAuxClick={(event) => navigateWithCoachContext(event, "/dashboard/plan", null)}>View race plan</Link>
-      </section>
-      {recoveryReturn ? <div className="coach-v2-return-note"><span>You’re back from a training record.</span><button type="button" onClick={() => setRecoveryReturn(null)} aria-label="Dismiss return message">×</button></div> : null}
+    <div className="dashboard-main coach-v2-main">
       <section className="coach-chat-panel" ref={panelRef} aria-label="Conversation with ORBIT">
-        <header className="coach-chat-heading">
-          <div className="orbit-portrait-wrap">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={48} height={48} onError={() => setOrbitAvailable(false)} /> : <span aria-hidden="true">O</span>}</div>
-          <div><h2>ORBIT <span>AI COACH</span></h2><p>{context ? `Here with you · ${context.localDate}` : "Your training companion"}</p></div>
-          <span className="orbit-presence"><i aria-hidden="true" />{context?.canSend ? " Ready" : context ? " Replies paused" : " Loading"}</span>
-          <div className="coach-history-actions"><button type="button" onClick={() => setHistoryOpen(true)} disabled={archiving}>Previous chats</button><button type="button" title="Save this discussion and start a new one" disabled={archiving || loadState !== "ready"} onClick={() => void archiveChat()}>{archiving ? "Saving…" : "Clear chat"}</button></div>
-        </header>
+        <div className="coach-conversation-toolbar">
+          <button id="coach-context-button" className="coach-context-launch" type="button" aria-label={`Change conversation context: ${topicLabels[topic]}${context ? ` · ${recordLabel(context, selectedRecord)}` : ""}`} aria-haspopup="dialog" aria-expanded={chatOverlay === "context"} onClick={() => setChatOverlay("context")}><span>{topic === "reflect" ? "Reflect" : topic === "prepare" ? "Prepare" : "Ask ORBIT"}{context && topic !== "general" ? ` · ${recordLabel(context, selectedRecord)}` : ""}</span><span aria-hidden="true">⌄</span></button>
+          <button id="coach-actions-button" className="shell-icon-button" type="button" aria-label="Conversation actions" aria-haspopup="dialog" aria-expanded={chatOverlay === "actions"} onClick={() => setChatOverlay("actions")}>⋯</button>
+        </div>
+        {loadState === "loading" ? <p className="coach-v2-state" role="status" aria-busy="true">Loading your training context…</p> : null}
+        {archiveStatus ? <p className="coach-v2-state" role="status">{archiveStatus}</p> : null}
+        {archiveError ? <div className="coach-v2-error" role="alert"><p>{archiveError}</p><button type="button" disabled={archiving} onClick={() => void archiveChat()}>Retry saving</button></div> : null}
+        {loadState === "error" ? <div className="coach-v2-error" role="alert"><p>{loadError}</p><button type="button" onClick={() => void loadAll(true)}>Retry</button><Link href="/dashboard/calendar">Open Calendar</Link></div> : null}
+        {failure && !messages.length ? <div className="coach-v2-error" role="alert"><p>{failure.message}</p></div> : null}
+        <ol className="coach-transcript" tabIndex={0} ref={transcriptRef} onScroll={(event) => { const list = event.currentTarget; followLatest.current = list.scrollHeight - list.scrollTop - list.clientHeight < 64; if (followLatest.current) setHasNewMessages(false); if (actorId) { try { sessionStorage.setItem(`${prefix}${actorId}.scrollTop`, String(list.scrollTop)); } catch { /* session storage is optional */ } } }} aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
+          {conversation.hasOlder ? <li className="coach-older-control"><button type="button" disabled={archiving || olderLoading} onClick={() => void loadOlder()}>{olderLoading ? "Loading…" : "Load earlier messages"}</button></li> : null}
+          {messages.length === 0 && context ? <li className="coach-opening-message"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant"><p>{context.opening.text}</p><time>{context.localDate}</time></div></li> : null}
+          {messages.map((message) => <li className={`coach-message coach-message--${message.role}`} key={message.id}>
+            {message.role === "assistant" ? <div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div> : null}
+            <div className={`coach-bubble coach-bubble--${message.role}`}><p>{message.text}</p><time>{messageTime(message.createdAt)}</time></div>
+          </li>)}
+          {sending || pending ? <li className="coach-message coach-message--assistant"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant coach-generating" role="status" aria-live="polite"><span className="coach-dot-pulse" aria-hidden="true"><i /><i /><i /></span><span>ORBIT is thinking…</span></div></li> : null}
+        </ol>
+        {hasNewMessages ? <button className="coach-latest-message" type="button" onClick={() => { const list = transcriptRef.current; if (list) list.scrollTop = list.scrollHeight; followLatest.current = true; setHasNewMessages(false); }}>Latest message ↓</button> : null}
+        {pending && leaseMayHaveExpired ? <div className="coach-v2-error coach-turn-error" role="status"><p>The reply may have stopped before it was saved. You can safely recover this message.</p><button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Recovering…" : "Recover reply"}</button></div> : null}
+        {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
+        <form className="coach-composer" onSubmit={(event) => void submitMessage(event)}>
+          <label className="sr-only" htmlFor="coach-message-input">Message ORBIT</label>
+          <textarea ref={composerRef} id="coach-message-input" value={draft} maxLength={4_000} rows={1} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />
+          <div className="coach-composer-footer"><span className="sr-only">Enter to send · Shift + Enter for a new line · {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={archiving || Boolean(archiveError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}><span className="sr-only">{sending ? "Sending…" : "Send message"}</span><span aria-hidden="true">↑</span></button></div>
+        </form>
+        {context && !context.canSend ? <p className="coach-chat-paused" role="status">Chat replies are paused. Your conversation remains available, and your training plan is unchanged.</p> : null}
+
+      </section>
+      <NativeModal open={chatOverlay === "context"} titleId="coach-context-title" onClose={() => setChatOverlay(null)} className="coach-context-dialog" returnFocusId="coach-context-button">
+        <div className="sheet-heading"><h2 id="coach-context-title">Conversation context</h2><button className="shell-icon-button" aria-label="Close conversation context" onClick={() => setChatOverlay(null)}>×</button></div>
         <div className="coach-topic-picker" role="group" aria-label="Choose what to talk about">
           {(["reflect", "prepare", "general"] as const).map((value) => <button type="button" key={value} disabled={archiving} aria-pressed={topic === value} onClick={() => void chooseTopic(value)}>{topicLabels[value]}</button>)}
         </div>
@@ -522,38 +561,33 @@ export function CoachChatShell() {
           {context.latestActivity && topic !== "reflect" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "activity", id: context.latestActivity!.id })}>Last activity · {context.latestActivity.title}</button> : null}
           {context.nextSession && topic !== "prepare" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "session", id: context.nextSession!.id })}>Next session · {context.nextSession.title}</button> : null}
         </div> : null}
-        {loadState === "loading" ? <p className="coach-v2-state" role="status" aria-busy="true">Loading your training context…</p> : null}
-        {archiveStatus ? <p className="coach-v2-state" role="status">{archiveStatus}</p> : null}
-        {archiveError ? <div className="coach-v2-error" role="alert"><p>{archiveError}</p><button type="button" disabled={archiving} onClick={() => void archiveChat()}>Retry saving</button></div> : null}
-        {loadState === "error" ? <div className="coach-v2-error" role="alert"><p>{loadError}</p><button type="button" onClick={() => void loadAll(true)}>Retry</button><Link href="/dashboard/calendar">Open Calendar</Link></div> : null}
-        {failure && !messages.length ? <div className="coach-v2-error" role="alert"><p>{failure.message}</p></div> : null}
-        <ol className="coach-transcript" tabIndex={0} ref={transcriptRef} onScroll={(event) => { if (actorId) { try { sessionStorage.setItem(`${prefix}${actorId}.scrollTop`, String(event.currentTarget.scrollTop)); } catch { /* session storage is optional */ } } }} aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
-          {conversation.hasOlder ? <li className="coach-older-control"><button type="button" disabled={archiving || olderLoading} onClick={() => void loadOlder()}>{olderLoading ? "Loading…" : "Load earlier messages"}</button></li> : null}
-          {messages.length === 0 && context ? <li className="coach-opening-message"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant"><p>{context.opening.text}</p><time>{context.localDate}</time></div></li> : null}
-          {messages.map((message) => <li className={`coach-message coach-message--${message.role}`} key={message.id}>
-            {message.role === "assistant" ? <div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div> : null}
-            <div className={`coach-bubble coach-bubble--${message.role}`}><p>{message.text}</p><time>{messageTime(message.createdAt)}</time></div>
-          </li>)}
-          {sending || pending ? <li className="coach-message coach-message--assistant"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant coach-generating" role="status" aria-live="polite"><span className="coach-dot-pulse" aria-hidden="true"><i /><i /><i /></span><span>ORBIT is thinking…</span></div></li> : null}
-        </ol>
-        {pending && leaseMayHaveExpired ? <div className="coach-v2-error coach-turn-error" role="status"><p>The reply may have stopped before it was saved. You can safely recover this message.</p><button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Recovering…" : "Recover reply"}</button></div> : null}
-        {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
         {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
-        <form className="coach-composer" onSubmit={(event) => void submitMessage(event)}>
-          <label className="sr-only" htmlFor="coach-message-input">Message ORBIT</label>
-          <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={3} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />
-          <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={archiving || Boolean(archiveError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>
-        </form>
-        {context && !context.canSend ? <p className="coach-chat-paused" role="status">Chat replies are paused. Your conversation remains available, and your training plan is unchanged.</p> : null}
+
         <p className="coach-chat-boundary">ORBIT offers training guidance. Your plan only changes when you approve an update.</p>
-      </section>
+      </NativeModal>
+      <NativeModal open={chatOverlay === "actions"} titleId="coach-actions-title" onClose={() => setChatOverlay(null)} className="coach-actions-dialog" returnFocusId="coach-actions-button">
+        <div className="sheet-heading"><h2 id="coach-actions-title">Conversation actions</h2><button className="shell-icon-button" aria-label="Close conversation actions" onClick={() => setChatOverlay(null)}>×</button></div>
+        <div className="coach-sheet-actions">
+          <button type="button" disabled={archiving} onClick={() => { setChatOverlay(null); setHistoryOpen(true); }}>Previous chats</button>
+          <button type="button" disabled={archiving || loadState !== "ready"} onClick={() => setChatOverlay("clear")}>Clear chat</button>
+          <button type="button" onClick={() => { setChatOverlay(null); setWellbeingOpen(true); }}>{context?.wellbeing?.status === "saved" ? "Review check-in" : "Add check-in"}</button>
+        </div>
+      </NativeModal>
+      <NativeModal open={chatOverlay === "clear"} titleId="coach-clear-title" onClose={() => setChatOverlay(null)} busy={archiving} returnFocusId="coach-actions-button" initialFocusId="coach-clear-cancel">
+        <h2 id="coach-clear-title">Save this discussion and start a new one?</h2>
+        <p>The discussion will remain available in Previous chats as read-only history. Your unsent draft is kept.</p>
+        <div className="coach-sheet-actions"><button id="coach-clear-cancel" type="button" disabled={archiving} onClick={() => setChatOverlay(null)}>Cancel</button><button type="button" disabled={archiving} onClick={() => { setChatOverlay(null); void archiveChat(); }}>Save and start new</button></div>
+      </NativeModal>
       <CoachChatHistory open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <NativeModal open={wellbeingOpen} titleId="coach-wellbeing-heading" onClose={() => setWellbeingOpen(false)} returnFocusId="coach-actions-button">
+        <button className="shell-icon-button" type="button" aria-label="Close check-in" onClick={() => setWellbeingOpen(false)}>×</button>
       <section id="wellbeing" className="coach-wellbeing-entry" aria-labelledby="coach-wellbeing-heading">
         <div><p className="coach-v2-overline">RECOVERY CONTEXT</p><h2 id="coach-wellbeing-heading">How are you feeling today?</h2><p>A wellbeing check-in is optional and only saved if you choose to submit it.</p></div>
-        <button type="button" aria-expanded={wellbeingOpen} aria-controls="coach-wellbeing-form" onClick={() => setWellbeingOpen((open) => !open)}>{wellbeingOpen ? "Close check-in" : context?.wellbeing?.status === "saved" ? "Review check-in" : "Add check-in"}</button>
+
         {wellbeingOpen && context ? <div id="coach-wellbeing-form" className="coach-wellbeing-form"><DailyWellbeingCheckIn key={`${context.timezone}-${context.localDate}`} timezone={context.timezone} date={context.localDate} compact={false} dailyModal={false} onSaved={() => { void refreshContext(); }} /></div> : null}
       </section>
+      </NativeModal>
       {recoveryReturn ? <div className="coach-v2-return-link"><Link href={recoveryReturn}>Return to your previous conversation position</Link></div> : null}
-    </main>
+    </div>
   </div>;
 }

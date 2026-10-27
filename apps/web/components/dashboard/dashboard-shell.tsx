@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DashboardNavigation } from "./dashboard-navigation";
 import { HomeGoalContext } from "./home-goal-context";
 import "./dashboard.css";
 import "./road-to-comrades.css";
@@ -12,7 +11,7 @@ function HomeDate({ timezone, now }: { timezone: string; now: Date }) {
   const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 12);
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const date = new Intl.DateTimeFormat("en-ZA", { timeZone: timezone, weekday: "long", day: "numeric", month: "long" }).format(now);
-  return <><h1 id="dashboard-page-title">{greeting}</h1><p>{date}</p></>;
+  return <><h2 id="home-greeting">{greeting}</h2><p>{date}</p></>;
 }
 
 function HomeHeroHeader({ timezone, now }: {
@@ -55,14 +54,13 @@ export function DashboardShell({ initialNow }: { initialNow: string }) {
   }, []);
   return <div className="dashboard-layout home-layout road-layout">
     <LegacyReadinessRedirect />
-    <DashboardNavigation activePage="home" />
-    <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="dashboard-page-title">
+    <div className="dashboard-main">
       <section className="dashboard-content home-content" aria-label="Home">
         <section className="content-group home-group home-goal" aria-labelledby="goal-and-milestone-heading">
           <h2 id="goal-and-milestone-heading" className="road-screen-reader-only">Your goal</h2>
           <div className="home-goal-panel"><HomeGoalContext now={now} onTimezone={setPlanTimezone} refreshKey={refreshKey} heroHeader={<HomeHeroHeader timezone={timezone} now={now} />} /></div>
         </section>
       </section>
-    </main>
+    </div>
   </div>;
 }

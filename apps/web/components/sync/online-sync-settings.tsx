@@ -7,7 +7,7 @@ import { CoachHistorySettings } from "../coaching/coach-history-settings";
 
 import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { DashboardNavigation } from "../dashboard/dashboard-navigation.tsx";
+import { SettingsSectionIndex } from "../dashboard/settings-section-index";
 import { TrainingTools } from "../dashboard/training-tools";
 import "../dashboard/dashboard.css";
 import "../coaching/coaching-ui.css";
@@ -309,14 +309,14 @@ export function OnlineSyncSettings() {
 
   return (
     <div className="dashboard-layout coaching-layout coaching-layout--settings">
-      <DashboardNavigation activePage="settings" />
-      <main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="settings-page-title">
+      <div className="dashboard-main">
         <header className="dashboard-toolbar coaching-toolbar">
-          <div><p className="eyebrow">Training workspace</p><h1 id="settings-page-title">Settings</h1><p>Secure local sync and selected Second Brain context</p></div>
+          <div><p>Secure local sync and selected Second Brain context</p></div>
           <span className="toolbar-context">Online</span>
         </header>
         {returnTo !== "/dashboard/settings" ? <div className="coach-actions"><Link className="button button-secondary" href={returnTo}>Return to import recovery</Link></div> : null}
         <section className="coaching-content coaching-content--settings">
+          <SettingsSectionIndex />
           <TrainingTools />
           <SettingsGroup name="coach" title="AI coach" open={settingsGroup === "coach"} onToggle={setSettingsGroup}>
             <CoachAiSettings />
@@ -402,7 +402,7 @@ export function OnlineSyncSettings() {
           </section>
           </SettingsGroup>
         </section>
-      </main>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,12 @@
 # ROADMAP
 
+## 26 October 2026 responsive redesign amendment
+
+The owner-approved redesign uses one persistent dashboard shell: below 768px, a 56px navy header and left hamburger drawer replace bottom navigation; at 768px and above, a 64px icon rail expands explicitly to 180px and remembers the browser preference. Home, conditional Coach, Calendar, Readiness and Settings share the same destination registry. Supporting Plan, Training and Data Quality remain reachable through Settings and contextual links.
+
+Light content, forms, charts and dialogs share semantic tokens. Home retains its scenic goal/Orbit/milestone composition. Coach uses a compact context toolbar and transcript/composer layout at every size; context, record links, history and optional check-in move into accessible sheets. Clear chat confirms archive-and-start-new while preserving drafts; history remains read-only. Ordinary pages retain document scrolling, Coach owns transcript scrolling, and Calendar retains its 1200px detail breakpoint. No API, database, authentication or training-authority changes are introduced. This amendment supersedes older navigation, dark-content and repeated Coach-header requirements. See [implementation and validation](plans/RESPONSIVE_REDESIGN.md) and [ADR 0012](adr/0012-responsive-application-shell.md).
+
+
 ## 25 October 2026: Coach panel and saved discussion history
 
 - [x] 26 October: applied the archive migration to the isolated work Preview and deployed the feature to the stable staging URL. [Release and rollback evidence](deployment/coach-chat-history-staging-2026-10-26.md).

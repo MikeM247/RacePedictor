@@ -171,7 +171,7 @@ export function HomeGoalContext({ now, onTimezone, refreshKey = 0, heroHeader }:
       <div className={`road-hero${coachAvailable ? " road-hero--with-orbit" : ""}`}>
         <div className="road-hero-photo" aria-hidden="true">
           <div className="road-hero-image-frame" data-background-source={heroImage === defaultHeroImage ? "default" : "custom"}>
-            {heroImage ? <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage((current) => current === defaultHeroImage ? legacyHeroImage : current === legacyHeroImage ? "" : defaultHeroImage)} alt="" fill sizes={heroImage === defaultHeroImage ? "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc((100vw - 180px) * 0.9)" : "(max-width: 767px) 100vw, (max-width: 1099px) calc(100vw - 160px), calc(100vw - 180px)"} priority /> : null}
+            {heroImage ? <Image className="road-hero-image" src={heroImage} unoptimized={heroImage.startsWith("/api/")} onError={() => setHeroImage((current) => current === defaultHeroImage ? legacyHeroImage : current === legacyHeroImage ? "" : defaultHeroImage)} alt="" fill sizes={heroImage === defaultHeroImage ? "(max-width: 767px) 100vw, calc(100vw - 64px)" : "(max-width: 767px) 100vw, calc(100vw - 64px)"} priority /> : null}
           </div>
           <div className="road-hero-shade" />
         </div>

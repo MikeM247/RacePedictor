@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { isolateModal, lockModalScroll } from "./modal-ownership";
 
 const selector = ["button:not([disabled])", "input:not([disabled])", "textarea:not([disabled])", "select:not([disabled])", "summary", "a[href]", "[contenteditable='true']", "[tabindex]:not([tabindex='-1'])"].join(",");
 
@@ -22,14 +23,16 @@ export function useModalKeyboard<T extends HTMLElement>(open: boolean, close: ()
     if (!open) return;
     requestedCloseFocus.current = null;
     const returnTarget = returnFocusRef?.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockScroll = lockModalScroll();
+    let restoreBackground: (() => void) | undefined;
     const frame = window.requestAnimationFrame(() => {
+      if (dialogRef.current) restoreBackground = isolateModal(dialogRef.current);
       const target = dialogRef.current?.querySelector<HTMLElement>("[autofocus]") ?? focusableElements(dialogRef.current)[0] ?? dialogRef.current;
       target?.focus();
     });
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockScroll();
+      restoreBackground?.();
       window.cancelAnimationFrame(frame);
       window.requestAnimationFrame(() => {
         // A restored list may replace the row node while the dialog is open.

@@ -1,5 +1,12 @@
 # UI_GUIDELINES.md
 
+## 26 October 2026 responsive redesign amendment
+
+The owner-approved redesign uses one persistent dashboard shell: below 768px, a 56px navy header and left hamburger drawer replace bottom navigation; at 768px and above, a 64px icon rail expands explicitly to 180px and remembers the browser preference. Home, conditional Coach, Calendar, Readiness and Settings share the same destination registry. Supporting Plan, Training and Data Quality remain reachable through Settings and contextual links.
+
+Light content, forms, charts and dialogs share semantic tokens. Home retains its scenic goal/Orbit/milestone composition. Coach uses a compact context toolbar and transcript/composer layout at every size; context, record links, history and optional check-in move into accessible sheets. Clear chat confirms archive-and-start-new while preserving drafts; history remains read-only. Ordinary pages retain document scrolling, Coach owns transcript scrolling, and Calendar retains its 1200px detail breakpoint. No API, database, authentication or training-authority changes are introduced. This amendment supersedes older navigation, dark-content and repeated Coach-header requirements. See [implementation and validation](plans/RESPONSIVE_REDESIGN.md) and [ADR 0012](adr/0012-responsive-application-shell.md).
+
+
 ## Coach viewport and history controls (25 October 2026)
 
 Keep the Coach composer, send action, training links and approval-boundary footer outside transcript scrolling. Bound textarea growth and keep scroll regions keyboard-focusable with visible focus. Respect visual viewport changes and mobile navigation/safe areas; allow page scrolling at small heights and enlarged text. Clear chat means save-and-start-fresh; permanent deletion must use distinct wording and confirmation. See [behavior and acceptance details](plans/COACH_CHAT_HISTORY.md).

@@ -6,7 +6,6 @@ import type { ActivitiesListResponse, ActivityDetail, ActivitySummary } from "..
 import { formatActivityDate, formatDistance, formatDuration, formatNumber, formatPace, sportLabel } from "../../lib/activity-formatters";
 import { ActivityApiError, readActivitiesListResponse, readActivityDetailResponse } from "../../lib/activities-api-client.ts";
 import { createRecoveryContext, dataQualityHref, readRecoveryContext, recoveryReturnHref, restoreRecoveryFocus, safeRecoveryPath, type RecoveryContext } from "../../lib/recovery-context";
-import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import { ActivityCoachReview } from "./activity-coach-review";
 import { ActivityReflection } from "./activity-reflection";
 import { ActivitySplits } from "./activity-split-comparison";
@@ -80,7 +79,6 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
   const requestGeneration = useRef(0);
   const inFlightCursor = useRef<string | null>(null);
   const selectedRowRef = useRef<HTMLButtonElement | null>(null);
-  const listPanelRef = useRef<HTMLElement | null>(null);
   const focusAfterLoad = useRef(false);
   const recoveryFocusApplied = useRef(false);
   const restoring = useRef(false);
@@ -89,7 +87,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
   const selectedOutsideList = Boolean(selectedId && !activities.some((activity) => activity.id === selectedId));
 
   function captureHistoryState(overrides: Partial<TrainingHistoryState> = {}): TrainingHistoryState {
-    return { ...(window.history.state && typeof window.history.state === "object" ? window.history.state : {}), racePredictorTraining: true, selectedId: selectedId ?? undefined, detailOpen: isDetailOpen, filters: activeFilters, draftFilters, loadedCursors, filtersOpen, focusKey: selectedId ? `activity-row-${selectedId}` : "activities-page-title", scrollY: listPanelRef.current?.scrollTop ?? window.scrollY, disclosure: disclosures, ...overrides };
+    return { ...(window.history.state && typeof window.history.state === "object" ? window.history.state : {}), racePredictorTraining: true, selectedId: selectedId ?? undefined, detailOpen: isDetailOpen, filters: activeFilters, draftFilters, loadedCursors, filtersOpen, focusKey: selectedId ? `activity-row-${selectedId}` : "activities-page-title", scrollY: window.scrollY, disclosure: disclosures, ...overrides };
   }
   function replaceCurrentHistory(overrides: Partial<TrainingHistoryState> = {}) { window.history.replaceState(captureHistoryState(overrides), "", `${window.location.pathname}${window.location.search}${window.location.hash}`); }
 
@@ -170,7 +168,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
     if (!restoring.current) return;
     if (activityId) await selectActivity(activityId, false, false, safeDisclosures(state?.disclosure)); else closeDetail(false);
     setRecoveryReady(true); const scrollY = typeof state?.scrollY === "number" ? state.scrollY : 0;
-    requestAnimationFrame(() => listPanelRef.current?.scrollTo({ top: scrollY, behavior: "auto" }));
+    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: "auto" }));
     requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(state?.focusKey ?? "activities-page-title")?.focus({ preventScroll: true })));
     restoring.current = false;
   }
@@ -198,11 +196,11 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
 
   function submitFilters(event: FormEvent<HTMLFormElement>) { event.preventDefault(); restoring.current = false; setActiveFilters(draftFilters); void loadList(draftFilters); }
   function clearFilters() { restoring.current = false; setDraftFilters(initialFilters); setActiveFilters(initialFilters); void loadList(initialFilters); }
-  const beginAddTraining = () => dataQualityHref(createRecoveryContext({ kind: "training", path: `${window.location.pathname}${window.location.search}${window.location.hash}`, activityId: selectedId ?? undefined, filters: activeFilters, draftFilters, loadedDepth, loadedCursors, disclosure: filtersOpen ? "filters" : undefined, detailOpen: isDetailOpen, optionalDisclosures: disclosures, scrollY: listPanelRef.current?.scrollTop ?? window.scrollY, focusKey: selectedId ? `activity-row-${selectedId}` : "activities-page-title", issue: "training history needs correction or import" }));
+  const beginAddTraining = () => dataQualityHref(createRecoveryContext({ kind: "training", path: `${window.location.pathname}${window.location.search}${window.location.hash}`, activityId: selectedId ?? undefined, filters: activeFilters, draftFilters, loadedDepth, loadedCursors, disclosure: filtersOpen ? "filters" : undefined, detailOpen: isDetailOpen, optionalDisclosures: disclosures, scrollY: window.scrollY, focusKey: selectedId ? `activity-row-${selectedId}` : "activities-page-title", issue: "training history needs correction or import" }));
   const changeDisclosure = (name: keyof DisclosureState, open: boolean) => { const next = { ...disclosures, [name]: open }; setDisclosures(next); replaceCurrentHistory({ disclosure: next }); };
 
-  return <div className="dashboard-layout activities-layout"><DashboardNavigation activePage="training" /><main id="dashboard-main-content" className="dashboard-main" tabIndex={-1} aria-labelledby="activities-page-title">
-    <header className="dashboard-toolbar activities-toolbar"><div><p className="eyebrow">Training workspace</p><h1 id="activities-page-title" tabIndex={-1}>Training</h1><p>{onlineMode ? "Your cloud-synced running history" : "Your manually imported running history"}</p></div><div className="activity-count"><div aria-live="polite"><strong>{activities.length}</strong> <span>{nextCursor ? "activities shown" : "activities"}</span></div><Link className="button button-primary" href="/dashboard/data-quality" onClick={(event) => { event.preventDefault(); window.location.assign(beginAddTraining()); }}>Add training</Link></div></header>
+  return <div className="dashboard-layout activities-layout"><div className="dashboard-main">
+    <header className="dashboard-toolbar activities-toolbar"><div><p>{onlineMode ? "Your cloud-synced running history" : "Your manually imported running history"}</p></div><div className="activity-count"><div aria-live="polite"><strong>{activities.length}</strong> <span>{nextCursor ? "activities shown" : "activities"}</span></div><Link className="button button-primary" href="/dashboard/data-quality" onClick={(event) => { event.preventDefault(); window.location.assign(beginAddTraining()); }}>Add training</Link></div></header>
     <section className="activities-content" aria-label="Activities browser">
       {onlineMode ? <StravaImportQueueNotice onRefreshTraining={() => void loadList(activeFilters)} /> : null}
       <details className="activity-filter-disclosure" open={filtersOpen} onToggle={(event) => setFiltersOpen(event.currentTarget.open)}><summary>Filters{hasActiveFilters ? " applied" : ""}</summary><form className="activity-filters" onSubmit={submitFilters}>
@@ -210,7 +208,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
       </form></details>
       {hasActiveFilters ? <p className="activity-filter-summary" role="status">Showing {activities.length} matching activit{activities.length === 1 ? "y" : "ies"}: {activeFilterLabels(displayedFilters).join(" · ")}. <button className="text-button" type="button" onClick={clearFilters}>Clear filters</button></p> : null}
       <div className="activity-browser">
-        <section className="activity-list-panel" aria-labelledby="activity-list-heading" ref={listPanelRef}><div className="panel-heading"><div><p className="eyebrow">Training history</p><h2 id="activity-list-heading" tabIndex={-1}>Recent activities</h2></div>{listStatus === "loading" ? <span className="loading-label">Loading…</span> : null}</div>
+        <section className="activity-list-panel" aria-labelledby="activity-list-heading"><div className="panel-heading"><div><p className="eyebrow">Training history</p><h2 id="activity-list-heading" tabIndex={-1}>Recent activities</h2></div>{listStatus === "loading" ? <span className="loading-label">Loading…</span> : null}</div>
           {listStatus === "error" ? <section className="activity-list-error" role="alert"><p>{activities.length ? "Could not refresh the activity list. Your loaded history is still available." : "Could not load training history."}</p><button className="button button-secondary" type="button" onClick={() => void loadList(activeFilters, retryCursor)}>Try again</button></section> : null}
           {listStatus === "loading" && activities.length === 0 ? <div className="activity-list-skeleton" aria-live="polite" aria-label="Loading activities"><span /><span /><span /><span /></div> : null}
           {activities.length > 0 ? <ol className="activity-list">{activities.map((activity) => <li key={activity.id}><button type="button" className={selectedId === activity.id ? "activity-row selected" : "activity-row"} id={`activity-row-${activity.id}`} aria-current={selectedId === activity.id ? "true" : undefined} aria-label={`${activity.title || sportLabel(activity.sport)}, ${formatActivityDate(activity.localOccurredAt, activity.occurredAt)}, ${formatDistance(activity.distanceM)}, ${formatDuration(activity.elapsedTimeS)}, ${formatPace(activity.avgPaceSecPerKm)}${selectedId === activity.id ? ", selected" : ""}`} ref={selectedId === activity.id ? (node) => { selectedRowRef.current = node; } : undefined} onClick={() => { restoring.current = false; void selectActivity(activity.id); }}><span className="activity-row-main"><span className="activity-title">{activity.title || sportLabel(activity.sport)}</span><span className="activity-date">{formatActivityDate(activity.localOccurredAt, activity.occurredAt)}</span></span><span className="activity-row-metrics" aria-hidden="true"><strong>{formatDistance(activity.distanceM)}</strong><span>{formatDuration(activity.elapsedTimeS)}</span><span>{formatPace(activity.avgPaceSecPerKm)}</span></span></button></li>)}</ol> : listStatus !== "loading" ? <section className="activity-state" role="status"><h2>{hasActiveFilters ? "No matching activities" : "No activities yet"}</h2><p>{hasActiveFilters ? "Try widening the date range or clearing a filter." : onlineMode ? "Your activities will appear after Strava sends a completed workout." : "Your activities will appear after a manual CSV or GPX import."}</p>{hasActiveFilters ? <button className="button button-secondary" type="button" onClick={clearFilters}>Clear filters</button> : null}</section> : null}
@@ -222,7 +220,7 @@ export function ActivitiesShell({ initialData, initialError, onlineMode = false 
         </ActivityDetailDialog> : null}
       </div>
     </section>
-  </main></div>;
+  </div></div>;
 }
 
 export function ActivityRecordContent({ activity, onlineMode = false, onClose, parentLabel = "Back to Training", headingId = "activity-detail-heading", disclosures, onDisclosureChange, headingLevel = 2, landmarkContextId, showTitle = true }: { activity: ActivityDetail; onlineMode?: boolean; onClose?: () => void; parentLabel?: string; headingId?: string; disclosures?: DisclosureState; onDisclosureChange?: (name: keyof DisclosureState, open: boolean) => void; headingLevel?: 1 | 2 | 3; landmarkContextId?: string; showTitle?: boolean }) {

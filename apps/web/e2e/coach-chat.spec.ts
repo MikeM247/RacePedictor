@@ -28,7 +28,7 @@ function context(topic: "reflect" | "prepare" | "general" = "reflect") {
 }
 
 function message(id: string, sequence: number, role: "user" | "assistant", text: string, turnState: "processing" | "completed" | "failed" | "abandoned" | "expired", selectedRecord: CoachRecordReference | null = activityRef, topic: CoachTopic | null = "reflect"): CoachConversationMessage {
-  return { id, sequence, generation: 1, role, text, createdAt: now, topic, selectedRecord, turnState };
+  return { id, sequence, generation: 1, role, text, createdAt: now, topic, selectedRecord, turnState, eventType: null, activityReflectionRevision: null, eventPayload: null };
 }
 
 function conversation(messages: CoachConversationMessage[] = [], currentTurn: CoachConversationState["currentTurn"] = null): CoachConversationState {
@@ -371,6 +371,63 @@ test("online Coach reflects on a real activity, completes a reply, restores a ta
   await page.setViewportSize({ width: 640, height: 800 });
   const zoomWidths = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth }));
   expect(zoomWidths.document).toBeLessThanOrEqual(zoomWidths.viewport);
+});
+
+test("post-run review saves explicit RPE before offering a feedback-aware Coach response", async ({ page }) => {
+  await mockSession(page);
+  let savedReflection: any = null;
+  let chat = conversation();
+  const savedState = { activityId: activityRef.id, completedAt: now, completedReflectionRevision: 1, suppressedAt: now, reopenedAt: null, revision: 1 };
+  const makeReflection = () => savedReflection ? {
+    revision: savedReflection.revision, questionnaireVersion: "activity-reflection.v2", rpeAnswer: "rated", overallRpe: 7,
+    expectation: null, legacyPain: null, discomfort: "none", symptoms: null, energy: null, fuel: null, fuelNote: null,
+    note: null, raceNotes: null, sections: [],
+  } : null;
+  await page.route("**/api/v1/coaching/run-review/offers", (route) => route.fulfill({ json: { data: { status: "reserved", offer: { id: "offer_post_run", activityId: activityRef.id, token: "token_post_run", tabId: "tab_post_run" } } } }));
+  await page.route("**/api/v1/coaching/run-review/offers/offer_post_run/present", (route) => route.fulfill({ json: { data: { canPresent: true, activity: { id: activityRef.id, title: "Morning 8 km run", sport: "run", occurredAt: now, distanceM: 8000, elapsedTimeS: 2880, avgPaceSecPerKm: 360, elevationGainM: 50, revision: 2 } } } }));
+  await page.route("**/api/v1/coaching/run-review/offers/offer_post_run/outcome", (route) => route.fulfill({ json: { data: { id: "offer_post_run", outcome: "shown" } } }));
+  await page.route("**/api/v1/coaching/chat/context**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const selected = params.get("recordId") === activityRef.id;
+    const value = context("reflect") as any;
+    value.selectedRecord = selected ? activityRef : null;
+    value.selectedActivity = selected ? { ...value.latestActivity, reflection: makeReflection() } : null;
+    await route.fulfill({ json: { data: value } });
+  });
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: chat } }));
+  await page.route(`**/api/v1/activities/${activityRef.id}/reflection/run-review`, (route) => route.fulfill({ json: { data: { state: savedReflection ? savedState : null, reflection: savedReflection, activityRevision: 2 } } }));
+  await page.route(`**/api/v1/activities/${activityRef.id}/reflection`, async (route) => {
+    expect(route.request().method()).toBe("PUT");
+    const request = route.request().postDataJSON();
+    expect(request.answers.overallRpe).toBe(7);
+    expect(request.answers.postRun.rpeAnswer).toBe("rated");
+    expect(request.answers.postRun.discomfort).toBe("none");
+    savedReflection = { id: "reflection_post_run", athleteId: "athlete_test", activityId: activityRef.id, revision: 1, activityRevision: 2, type: null,
+      answers: request.answers, sections: [], questionnaireVersion: "activity-reflection.v2", createdAt: now, updatedAt: now };
+    await route.fulfill({ json: { data: { reflection: savedReflection, state: savedState, activityRevision: 2, replayed: false } } });
+  });
+  await page.route("**/api/v1/coaching/chat/run-review-followups", async (route) => {
+    const request = route.request().postDataJSON();
+    expect(request.activityId).toBe(activityRef.id);
+    expect(request.reflectionRevision).toBe(1);
+    const receipt: NonNullable<CoachConversationMessage["eventPayload"]> = { activityId: activityRef.id, activityTitle: "Morning 8 km run", occurredAt: now, reflectionRevision: 1, rpeAnswer: "rated", overallRpe: 7,
+      expectation: null, discomfort: "none", symptoms: null, energy: null, fuel: null, fuelNote: null, note: null, raceNotes: null };
+    const user = { ...message("feedback_event", 1, "user", "Run feedback saved", "completed"), eventType: "activity_reflection" as const, activityReflectionRevision: 1, eventPayload: receipt };
+    const assistant = message("feedback_reply", 2, "assistant", "You reported a hard RPE 7 effort with no discomfort. I’ll factor that into future guidance.", "completed", activityRef, "reflect");
+    chat = conversation([user, assistant], { id: "feedback_turn", state: "completed", attempt: 1, safeErrorCode: null, messageSaved: true, retryable: false });
+    await route.fulfill({ json: { data: { turn: { id: "feedback_turn", state: "completed", attempt: 1, safeErrorCode: null, messageSaved: true, retryable: false }, userMessage: user, assistantMessage: assistant, failure: null } } });
+  });
+
+  await page.goto("/dashboard/coach");
+  await expect(page.getByRole("heading", { name: "Morning 8 km run" })).toBeVisible();
+  await page.getByRole("button", { name: "Tell ORBIT how it felt" }).click();
+  await page.locator(`input[name="run-rpe-${activityRef.id}"][value="7"]`).check();
+  await page.locator(`#run-discomfort-${activityRef.id}`).selectOption("none");
+  await page.getByRole("button", { name: "Save feedback" }).click();
+  await expect(page.getByText("RPE: 7/10 · Discomfort: none")).toBeVisible();
+  await expect(page.getByText("Saved run feedback", { exact: true })).toBeVisible();
+  await expect(page.getByText("Structured from your saved review; this is not a message you typed.")).toBeVisible();
+  await expect(page.getByText(/factor that into future guidance/u)).toBeVisible();
 });
 
 test("Home and Coach are separate destinations and Orbit opens chat without sending a message", async ({ page }) => {

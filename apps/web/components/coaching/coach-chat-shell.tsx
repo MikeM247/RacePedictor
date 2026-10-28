@@ -18,6 +18,7 @@ import { DailyWellbeingCheckIn } from "./daily-wellbeing-check-in";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
 import { CoachChatHistory } from "./coach-chat-history";
 import { NativeModal } from "./native-modal";
+import { PostRunReflection } from "../activities/activity-reflection";
 import "../dashboard/dashboard.css";
 import "./coach-chat.css";
 
@@ -65,15 +66,39 @@ function messageTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
+function formatRunDuration(value: number) {
+  const whole = Math.max(0, Math.floor(value));
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const seconds = whole % 60;
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}` : `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatPace(value: number) {
+  const seconds = Math.max(0, Math.round(value));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function assessmentAvailabilityCopy(status: NonNullable<CoachContext["selectedActivity"]>["reviewStatus"]) {
+  if (status === "queued" || status === "processing" || status === "retry_wait") return "Your run is synced. ORBIT’s assessment is being prepared.";
+  if (status === "not_requested") return "An AI assessment is not available yet.";
+  if (status === "ready") return "The saved assessment is not available right now.";
+  return "ORBIT’s assessment could not be loaded right now.";
+}
+
 function recordLabel(context: CoachContext, reference: CoachRecordReference | null) {
   if (!reference) return "No training record selected";
   if (reference.type === "activity" && context.latestActivity?.id === reference.id) return context.latestActivity.title;
+  if (reference.type === "activity" && context.selectedActivity?.id === reference.id) return context.selectedActivity.title;
   if (reference.type === "session") {
     const session = [context.nextSession, ...context.ambiguousSessions].find((candidate) => candidate?.id === reference.id);
     return session?.title ?? "Selected training session";
   }
   return "Selected training record";
 }
+
+type RunReviewOffer = { id: string; activityId: string; token: string; tabId: string; activity: { id: string; title: string; sport: string; occurredAt: string; distanceM: number; elapsedTimeS: number; avgPaceSecPerKm: number | null; elevationGainM: number; revision: number } };
+const runSports = new Set(["run", "trail_run", "treadmill_run"]);
 
 function clearCoachSessionStorage() {
   try {
@@ -127,6 +152,12 @@ export function CoachChatShell() {
   const [archiveError, setArchiveError] = useState("");
   const [archiveStatus, setArchiveStatus] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [runReviewOffer, setRunReviewOffer] = useState<RunReviewOffer | null>(null);
+  const [runReviewChoiceOpen, setRunReviewChoiceOpen] = useState(false);
+  const [runReviewActive, setRunReviewActive] = useState(false);
+  const [runReviewFollowup, setRunReviewFollowup] = useState<{ activityId: string; revision: number; status: "ready" | "sending" | "waiting" | "complete" | "failed"; message: string } | null>(null);
+  const followupRequestRef = useRef<{ key: string; requestId: string } | null>(null);
+  const runReviewAttemptedFor = useRef<string | null>(null);
 
   function acceptConversation(latest: CoachConversationState) {
     if (latest.generation < generationRef.current) return false;
@@ -348,6 +379,58 @@ export function CoachChatShell() {
   }, []);
 
   useEffect(() => {
+    if (loadState !== "ready" || !actorId || !context || !tabIdRef.current || runReviewAttemptedFor.current === actorId) return;
+    runReviewAttemptedFor.current = actorId;
+    const tabId = tabIdRef.current;
+    void (async () => {
+      try {
+        const reservation = await requestJson("/api/v1/coaching/run-review/offers", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tabId }),
+        });
+        if (reservation.status !== "reserved" || !reservation.offer) return;
+        const offer = reservation.offer as { id: string; activityId: string; token: string; tabId: string };
+        const presentation = await requestJson(`/api/v1/coaching/run-review/offers/${encodeURIComponent(offer.id)}/present`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: offer.token, tabId }),
+        });
+        if (presentation.canPresent !== true || !presentation.activity) return;
+        const pendingOffer: RunReviewOffer = { ...offer, activity: presentation.activity as RunReviewOffer["activity"] };
+        setRunReviewOffer(pendingOffer);
+        if (conversation.messages.length > 0) {
+          setRunReviewChoiceOpen(true);
+          await requestJson(`/api/v1/coaching/run-review/offers/${encodeURIComponent(offer.id)}/outcome`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token: offer.token, tabId, outcome: "shown" }),
+          }).catch(() => undefined);
+          return;
+        }
+        setRunReviewActive(false);
+        setTopic("reflect");
+        const reference = { type: "activity" as const, id: pendingOffer.activityId };
+        await refreshContext("reflect", reference);
+        setSelectedRecord(reference);
+        setRunReviewActive(true);
+        await requestJson(`/api/v1/coaching/run-review/offers/${encodeURIComponent(offer.id)}/outcome`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: offer.token, tabId, outcome: "shown" }),
+        }).catch(() => undefined);
+      } catch { /* A failed or unauthorised offer lookup leaves ordinary Coach available. */ }
+    })();
+  }, [actorId, conversation.messages.length, context, loadState, refreshContext]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("racepredictor.run-review");
+    const changed = (event: MessageEvent) => {
+      if (event.data?.type !== "run-review-changed" || event.data.activityId !== selectedRecord?.id) return;
+      void refreshContext(topic, selectedRecord).catch(() => undefined);
+    };
+    channel.addEventListener("message", changed);
+    return () => { channel.removeEventListener("message", changed); channel.close(); };
+  }, [refreshContext, selectedRecord, topic]);
+
+  useEffect(() => {
     // Do not persist the initial React defaults while the asynchronous session/context
     // load is still deciding which topic and record to restore.
     if (!actorId || loadState !== "ready" || !loadedRef.current) return;
@@ -376,10 +459,16 @@ export function CoachChatShell() {
   }, [pending, conversation.currentTurn?.attempt]);
 
   useEffect(() => {
+    if (runReviewFollowup?.status === "waiting" && !pending) {
+      setRunReviewFollowup((current) => current?.status === "waiting" ? { ...current, status: "ready", message: "The current reply finished. ORBIT is ready to discuss your saved feedback." } : current);
+    }
+  }, [pending, runReviewFollowup?.status]);
+
+  useEffect(() => {
     if (!context || !loadedRef.current) return;
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refreshContext().catch(() => undefined); }, 60_000);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refreshContext().catch(() => undefined); }, runReviewActive ? 30_000 : 60_000);
     return () => window.clearInterval(timer);
-  }, [context, refreshContext]);
+  }, [context, refreshContext, runReviewActive]);
 
   async function chooseTopic(nextTopic: CoachTopic) {
     if (archivingRef.current) return;
@@ -393,6 +482,13 @@ export function CoachChatShell() {
     setSelectedRecord(reference); setFailure(null);
     try { await refreshContext(topic, reference); }
     catch (error) { setLoadError(error instanceof Error ? error.message : "That training record is no longer available."); }
+  }
+
+  async function selectRunForReview(activityId: string) {
+    const reference = { type: "activity" as const, id: activityId };
+    setRunReviewActive(false); setTopic("reflect"); setSelectedRecord(reference); setFailure(null);
+    try { await refreshContext("reflect", reference); setRunReviewActive(true); }
+    catch (error) { setLoadError(error instanceof Error ? error.message : "This run could not be loaded."); }
   }
 
   async function submitMessage(event?: FormEvent) {
@@ -472,7 +568,76 @@ export function CoachChatShell() {
     finally { if (epoch === epochRef.current && !archivingRef.current) setOlderLoading(false); }
   }
 
-  async function archiveChat() {
+  async function recordRunReviewOutcome(outcome: "shown" | "deferred" | "accepted") {
+    if (!runReviewOffer) return;
+    await requestJson(`/api/v1/coaching/run-review/offers/${encodeURIComponent(runReviewOffer.id)}/outcome`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: runReviewOffer.token, tabId: runReviewOffer.tabId, outcome }),
+    }).catch(() => undefined);
+  }
+
+  async function activateRunReview() {
+    if (!runReviewOffer) return;
+    const reference = { type: "activity" as const, id: runReviewOffer.activityId };
+    setRunReviewChoiceOpen(false); setRunReviewActive(false); setTopic("reflect"); setSelectedRecord(reference);
+    try { await refreshContext("reflect", reference); setRunReviewActive(true); }
+    catch (error) { setLoadError(error instanceof Error ? error.message : "This run could not be loaded."); }
+    setSelectedRecord(reference);
+    await recordRunReviewOutcome("accepted");
+  }
+
+  async function deferRunReview() {
+    setRunReviewChoiceOpen(false); setRunReviewActive(false);
+    await recordRunReviewOutcome("deferred");
+    setRunReviewOffer(null);
+  }
+
+  async function askOrbitAboutSavedFeedback(activityId: string, reflectionRevision: number) {
+    if (archivingRef.current || sending) return;
+    const key = `${activityId}:${reflectionRevision}`;
+    const requestId = followupRequestRef.current?.key === key ? followupRequestRef.current.requestId : crypto.randomUUID();
+    followupRequestRef.current = { key, requestId };
+    setRunReviewFollowup({ activityId, revision: reflectionRevision, status: "sending", message: "Preparing ORBIT’s response from your saved feedback…" });
+    setFailure(null);
+    try {
+      const current = await readConversation();
+      acceptConversation(current);
+      if (current.currentTurn?.state === "processing") {
+        setRunReviewFollowup({ activityId, revision: reflectionRevision, status: "waiting", message: "Your feedback is saved. ORBIT will be ready after the current reply finishes." });
+        return;
+      }
+      const result = await requestJson("/api/v1/coaching/chat/run-review-followups", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ requestId, expectedGeneration: current.generation, expectedSequence: current.sequence, activityId, reflectionRevision }),
+      });
+      if (result.status === "waiting") {
+        setRunReviewFollowup({ activityId, revision: reflectionRevision, status: "waiting", message: typeof result.message === "string" ? result.message : "Your feedback is saved. ORBIT will respond after the current reply finishes." });
+        return;
+      }
+      const failurePayload = result.failure && typeof result.failure === "object" ? result.failure as Record<string, unknown> : null;
+      if (failurePayload) {
+        setFailure({ code: String(failurePayload.code ?? "PROVIDER_UNAVAILABLE"), message: String(failurePayload.message ?? "Your feedback is saved. ORBIT’s response can be retried.") });
+        setRunReviewFollowup({ activityId, revision: reflectionRevision, status: "failed", message: "Your feedback is saved. ORBIT could not respond yet." });
+      } else {
+        const latest = await readConversation();
+        acceptConversation(latest);
+        if (latest.currentTurn?.state === "processing") {
+          setPending(true);
+          setRunReviewFollowup({ activityId, revision: reflectionRevision, status: "waiting", message: "Your feedback is saved. ORBIT is preparing a response." });
+        } else {
+          setRunReviewFollowup({ activityId, revision: reflectionRevision, status: "complete", message: "ORBIT’s response is in the conversation." });
+          followupRequestRef.current = null;
+        }
+      }
+      await refreshConversation().catch(() => undefined);
+    } catch (error) {
+      setRunReviewFollowup({ activityId, revision: reflectionRevision, status: "failed", message: error instanceof Error ? error.message : "Your feedback is saved. ORBIT’s response could not be started." });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function archiveChat(startRunReviewActivityId?: string) {
     if (archivingRef.current || loadState !== "ready") return;
     archivingRef.current = true; setArchiving(true); setArchiveError(""); setArchiveStatus("");
     const epoch = ++epochRef.current;
@@ -496,7 +661,14 @@ export function CoachChatShell() {
       setArchiveStatus(result.archive ? "Chat saved. New discussion started." : "New discussion ready.");
       if (transcriptRef.current) transcriptRef.current.scrollTop = 0;
       archivingRef.current = false;
-      await refreshContext("general", null).catch(() => { setContext(null); setLoadState("error"); setLoadError("Training context could not be refreshed. Reload before sending."); });
+      if (startRunReviewActivityId) {
+        const reference = { type: "activity" as const, id: startRunReviewActivityId };
+        setRunReviewChoiceOpen(false); setRunReviewActive(false); setTopic("reflect"); setSelectedRecord(reference);
+        try { await refreshContext("reflect", reference); setRunReviewActive(true); }
+        catch { setContext(null); setLoadState("error"); setLoadError("The saved chat is ready, but this run could not be loaded. Retry from its activity page."); }
+        setSelectedRecord(reference);
+        await recordRunReviewOutcome("accepted");
+      } else await refreshContext("general", null).catch(() => { setContext(null); setLoadState("error"); setLoadError("Training context could not be refreshed. Reload before sending."); });
       requestAnimationFrame(() => document.getElementById("coach-message-input")?.focus({ preventScroll: true }));
     } catch (error) {
       if (epoch !== epochRef.current) return;
@@ -539,6 +711,11 @@ export function CoachChatShell() {
 
   const messages = conversation.messages;
   const currentSavedUser = messages.filter((message) => message.role === "user").at(-1);
+  const currentRunFeedbackTurn = currentSavedUser?.eventType === "activity_reflection";
+  const selectedFeedback = context?.selectedActivity?.reflection;
+  const selectedFeedbackId = context?.selectedActivity?.id;
+  const selectedFeedbackWasSent = Boolean(selectedFeedback && selectedFeedbackId && messages.some((message) => message.eventType === "activity_reflection" && message.eventPayload?.activityId === selectedFeedbackId && message.eventPayload.reflectionRevision === selectedFeedback.revision));
+  const currentFollowup = runReviewFollowup && runReviewFollowup.activityId === selectedFeedbackId && runReviewFollowup.revision === selectedFeedback?.revision ? runReviewFollowup : null;
   const retryable = Boolean((conversation.currentTurn?.retryable || (conversation.currentTurn?.state === "processing" && leaseMayHaveExpired)) && currentSavedUser?.turnState !== "abandoned");
 
   const orbitStatus = context?.canSend ? "Ready" : context ? "Replies paused" : loadState === "error" ? "Unavailable" : "Loading";
@@ -593,8 +770,23 @@ export function CoachChatShell() {
           {context.ambiguousSessions.length > 1 && topic === "prepare" && !selectedRecord ? <div className="coach-record-choices" role="group" aria-label="Choose a session to prepare for">{context.ambiguousSessions.map((session) => <button key={session.id} type="button" onClick={() => void selectRecord({ type: "session", id: session.id })}>{session.title} · {session.date}</button>)}</div> : <strong>{recordLabel(context, selectedRecord)}</strong>}
           {selectedRecord ? <button className="coach-change-context" type="button" onClick={() => { setSelectedRecord(null); void refreshContext(topic, null); }}>Change</button> : null}
           {context.latestActivity && topic !== "reflect" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "activity", id: context.latestActivity!.id })}>Last activity · {context.latestActivity.title}</button> : null}
+          {topic === "reflect" && context.recentActivities.some((activity) => runSports.has(activity.sport)) ? <div className="coach-run-choices" role="group" aria-label="Choose a run to review">{context.recentActivities.filter((activity) => runSports.has(activity.sport)).map((activity) => <button className="coach-context-chip" type="button" key={activity.id} aria-pressed={selectedRecord?.type === "activity" && selectedRecord.id === activity.id} onClick={() => void selectRunForReview(activity.id)}>{activity.title} · {new Date(activity.occurredAt).toLocaleDateString()}</button>)}</div> : null}
           {context.nextSession && topic !== "prepare" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "session", id: context.nextSession!.id })}>Next session · {context.nextSession.title}</button> : null}
         </div> : null}
+        {runReviewActive && context?.selectedActivity && runSports.has(context.selectedActivity.sport) ? <section className="coach-run-review" aria-labelledby="coach-run-review-title">
+          <div className="coach-run-review-heading"><div><p className="coach-v2-overline">POST-RUN REVIEW</p><h3 id="coach-run-review-title">{context.selectedActivity.title}</h3><p>{new Date(context.selectedActivity.occurredAt).toLocaleString()}</p></div><button type="button" className="coach-change-context" onClick={() => setRunReviewActive(false)}>Close review</button></div>
+          <dl className="coach-run-review-facts"><div><dt>Distance</dt><dd>{(context.selectedActivity.distanceM / 1000).toFixed(1)} km</dd></div><div><dt>Duration</dt><dd>{formatRunDuration(context.selectedActivity.movingTimeS ?? context.selectedActivity.elapsedTimeS)} {context.selectedActivity.movingTimeS === null || context.selectedActivity.movingTimeS === undefined ? "elapsed" : "moving"}</dd></div><div><dt>Average pace</dt><dd>{context.selectedActivity.avgPaceSecPerKm === null ? "Unavailable" : `${formatPace(context.selectedActivity.avgPaceSecPerKm)}/km`}</dd></div><div><dt>Elevation gain</dt><dd>{Math.round(context.selectedActivity.elevationGainM)} m</dd></div></dl>
+          {context.selectedActivity.review ? <div className="coach-run-review-assessment"><h4>{context.selectedActivity.review.headline}</h4><p>{context.selectedActivity.review.assessment}</p>{context.selectedActivity.review.nextStep ? <p><strong>Next step:</strong> {context.selectedActivity.review.nextStep}</p> : null}{context.selectedActivity.review.limitations.length ? <p className="form-help">{context.selectedActivity.review.limitations.join(" ")}</p> : null}</div> : <p className="coach-v2-state" role="status">{assessmentAvailabilityCopy(context.selectedActivity.reviewStatus)} Feedback remains available.</p>}
+          <PostRunReflection key={context.selectedActivity.id} activityId={context.selectedActivity.id} movingTimeS={context.selectedActivity.movingTimeS ?? undefined} headingLevel={4} compact promptLabel="Tell ORBIT how it felt" onSaved={(revision) => {
+            const activityId = context.selectedActivity!.id;
+            setRunReviewFollowup({ activityId, revision, status: "ready", message: "Feedback saved." });
+            void refreshContext("reflect", { type: "activity", id: activityId }).then(() => askOrbitAboutSavedFeedback(activityId, revision)).catch(() => setRunReviewFollowup({ activityId, revision, status: "failed", message: "Feedback is saved. Refresh the review before asking ORBIT to respond." }));
+          }} />
+          {context.selectedActivity.reflection?.questionnaireVersion === "activity-reflection.v2" ? <div className="coach-run-review-followup">
+            {currentFollowup ? <p role="status">{currentFollowup.message}</p> : null}
+            {!selectedFeedbackWasSent && currentFollowup?.status !== "complete" ? <button className="button button-secondary" type="button" disabled={!context.canSend || sending || pending || archiving || currentFollowup?.status === "waiting"} onClick={() => void askOrbitAboutSavedFeedback(context.selectedActivity!.id, context.selectedActivity!.reflection!.revision)}>{currentFollowup?.status === "sending" ? "Preparing response…" : currentFollowup?.status === "waiting" ? "Waiting for current reply…" : currentFollowup?.status === "failed" ? "Retry response" : "Ask ORBIT about my feedback"}</button> : null}
+          </div> : null}
+        </section> : null}
         {loadState === "loading" ? <p className="coach-v2-state" role="status" aria-busy="true">Loading your training context…</p> : null}
         {archiveStatus ? <p className="coach-v2-state" role="status">{archiveStatus}</p> : null}
         {archiveError ? <div className="coach-v2-error" role="alert"><p>{archiveError}</p><button type="button" disabled={archiving} onClick={() => void archiveChat()}>Retry saving</button></div> : null}
@@ -603,17 +795,17 @@ export function CoachChatShell() {
         <div className="coach-transcript-wrap">
         <ol className="coach-transcript" tabIndex={0} ref={transcriptRef} onScroll={(event) => { const transcript = event.currentTarget; const nearLatest = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight <= 48; followLatestRef.current = nearLatest; if (nearLatest) { unreadLatestRef.current = false; setShowLatestMessage(false); } else if (unreadLatestRef.current) setShowLatestMessage(true); if (actorId) { try { sessionStorage.setItem(`${prefix}${actorId}.scrollTop`, String(transcript.scrollTop)); } catch { /* session storage is optional */ } } }} aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text">
           {conversation.hasOlder ? <li className="coach-older-control"><button type="button" disabled={archiving || olderLoading} onClick={() => void loadOlder()}>{olderLoading ? "Loading…" : "Load earlier messages"}</button></li> : null}
-          {messages.length === 0 && context ? <li className="coach-opening-message"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant"><p>{context.opening.text}</p><time>{context.localDate}</time></div></li> : null}
+          {messages.length === 0 && context && !runReviewActive ? <li className="coach-opening-message"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant"><p>{context.opening.text}</p><time>{context.localDate}</time></div></li> : null}
           {messages.map((message) => <li className={`coach-message coach-message--${message.role}`} key={message.id}>
             {message.role === "assistant" ? <div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div> : null}
-            <div className={`coach-bubble coach-bubble--${message.role}`}><p>{message.text}</p><time>{messageTime(message.createdAt)}</time></div>
+            <div className={`coach-bubble coach-bubble--${message.role}`}>{message.eventType === "activity_reflection" && message.eventPayload ? <div className="coach-feedback-receipt"><strong>Saved run feedback</strong><p>{message.eventPayload.rpeAnswer === "unable" ? "RPE: unable to rate" : `RPE: ${message.eventPayload.overallRpe ?? "not recorded"}/10`} · Discomfort: {message.eventPayload.discomfort}</p><p className="form-help">Structured from your saved review; this is not a message you typed.</p></div> : <p>{message.text}</p>}<time>{messageTime(message.createdAt)}</time></div>
           </li>)}
           {sending || pending ? <li className="coach-message coach-message--assistant"><div className="coach-message-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={36} height={36} onError={() => setOrbitAvailable(false)} /> : "O"}</div><div className="coach-bubble coach-bubble--assistant coach-generating" role="status" aria-live="polite"><span className="coach-dot-pulse" aria-hidden="true"><i /><i /><i /></span><span>ORBIT is thinking…</span></div></li> : null}
         </ol>
         {showLatestMessage ? <button className="coach-latest-message" type="button" onClick={() => { const transcript = transcriptRef.current; if (!transcript) return; followLatestRef.current = true; unreadLatestRef.current = false; setShowLatestMessage(false); transcript.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" }); }}>Latest message <span aria-hidden="true">↓</span></button> : null}
         </div>
         {pending && leaseMayHaveExpired ? <div className="coach-v2-error coach-turn-error" role="status"><p>The reply may have stopped before it was saved. You can safely recover this message.</p><button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Recovering…" : "Recover reply"}</button></div> : null}
-        {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
+        {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : currentRunFeedbackTurn ? "Retry response" : "Retry reply"}</button> : null}</div> : null}
         {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link className={`coach-action-link coach-action-link--${action.kind}`} id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
         <form className="coach-composer" onSubmit={(event) => void submitMessage(event)}>
           <label className="coach-composer-label" htmlFor="coach-message-input">Message ORBIT</label>
@@ -624,6 +816,10 @@ export function CoachChatShell() {
         <p className="coach-chat-boundary">ORBIT offers training guidance. Your plan only changes when you approve an update.</p>
       </section>
       <CoachChatHistory open={historyOpen} onClose={() => setHistoryOpen(false)} returnFocusRef={historyReturnFocusRef} />
+      <NativeModal open={runReviewChoiceOpen} titleId="coach-run-review-choice-title" onClose={() => void deferRunReview()} busy={archiving} className="coach-overlay coach-run-review-choice-dialog">
+        <p className="coach-v2-overline">NEW RUN READY</p><h2 id="coach-run-review-choice-title">Review {runReviewOffer?.activity.title ?? "your latest run"}?</h2><p>This run is ready for your feedback. Its assessment may still be preparing. Choose how to continue with the current discussion.</p>
+        <div className="coach-run-review-choice-actions"><button className="button button-primary" type="button" disabled={archiving} onClick={() => void archiveChat(runReviewOffer?.activityId)}>{archiving ? "Saving chat…" : "Save chat & start review"}</button><button className="button button-secondary" type="button" onClick={() => void activateRunReview()}>Review in this chat</button><button className="button button-secondary" type="button" onClick={() => void deferRunReview()}>Not now</button></div>
+      </NativeModal>
       <NativeModal open={conversationActionsOpen} titleId="coach-mobile-actions-title" onClose={() => setConversationActionsOpen(false)} returnFocusRef={mobileActionsTriggerRef} className="coach-mobile-actions-dialog">
         <header className="coach-overlay-heading"><h2 id="coach-mobile-actions-title">Conversation actions</h2><button type="button" aria-label="Close conversation actions" onClick={() => setConversationActionsOpen(false)}>×</button></header>
         <div className="coach-mobile-action-list">

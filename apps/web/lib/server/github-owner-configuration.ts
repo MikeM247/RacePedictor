@@ -49,13 +49,16 @@ export function updateOwnerAuthToken<T extends { authSubject?: string }>(
 
 export function projectOwnerSession<T extends { user?: unknown }>(
   session: T,
-  token: Readonly<{ authSubject?: string }>,
+  token: Readonly<{ authSubject?: string; runReviewLoginId?: string }>,
   source: OwnerAuthEnvironmentSource = process.env,
 ): T {
   const user = session.user as { id?: string } | null | undefined;
   if (user) {
     const expected = readOwnerAuthConfiguration(source)?.authSubject;
     user.id = token.authSubject === expected ? expected : "";
+    if (token.authSubject === expected && token.runReviewLoginId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(token.runReviewLoginId)) {
+      Object.assign(session, { runReviewLoginId: token.runReviewLoginId });
+    }
   }
   return session;
 }

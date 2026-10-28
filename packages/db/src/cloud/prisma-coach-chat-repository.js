@@ -108,7 +108,7 @@ export class PrismaCoachChatRepository {
       orderBy: { sequence: "desc" },
       take: Math.min(Math.max(Number(limit) || 20, 1), 20),
     });
-    return rows.reverse().map((row) => ({ role: row.role, text: row.text, topic: row.topic }));
+    return rows.reverse().map((row) => ({ role: row.role, text: row.eventType === "activity_reflection" ? feedbackReceiptPrompt(row.eventPayload) : row.text, topic: row.topic }));
   }
 
   async getTurn(scope, turnId) {
@@ -141,7 +141,9 @@ export class PrismaCoachChatRepository {
       if (!conversation || conversation.generation !== input.expectedGeneration) return null;
       const turn = await tx.coachTurn.findFirst({ where: {
         athleteId, conversationId: conversation.id, generation: input.expectedGeneration,
-        ...(input.clientTurnId ? { clientTurnId: input.clientTurnId } : { id: input.turnId, lastRetryId: input.retryId }),
+        ...(input.clientTurnId ? { clientTurnId: input.clientTurnId }
+          : input.activityReflectionRef ? { reviewActivityId: input.activityReflectionRef.activityId, reviewReflectionRevision: input.activityReflectionRef.revision }
+            : { id: input.turnId, lastRetryId: input.retryId }),
       } });
       if (!turn) return null;
       const userMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: turn.id, role: "user" } });
@@ -171,6 +173,20 @@ export class PrismaCoachChatRepository {
         const assistantMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: existing.id, role: "assistant" } });
         return { kind: "replay", turn: existing, userMessage, assistantMessage };
       }
+      if (input.activityReflectionRef) {
+        const prior = await tx.coachTurn.findFirst({ where: {
+          athleteId,
+          conversationId: conversation.id,
+          generation: input.expectedGeneration,
+          reviewActivityId: input.activityReflectionRef.activityId,
+          reviewReflectionRevision: input.activityReflectionRef.revision,
+        } });
+        if (prior) {
+          const userMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: prior.id, role: "user" } });
+          const assistantMessage = await tx.coachMessage.findFirst({ where: { athleteId, turnId: prior.id, role: "assistant" } });
+          return { kind: "replay", turn: prior, userMessage, assistantMessage };
+        }
+      }
       assertExpectedState(conversation, input.expectedGeneration, input.expectedSequence);
       await expireOrRejectProcessingTurn(tx, athleteId, conversation, now);
       const latestFailed = await tx.coachTurn.findFirst({
@@ -194,6 +210,8 @@ export class PrismaCoachChatRepository {
         leaseToken,
         leaseExpiresAt: new Date(now.valueOf() + LEASE_MS),
         model: input.model ?? null,
+        reviewActivityId: input.activityReflectionRef?.activityId ?? null,
+        reviewReflectionRevision: input.activityReflectionRef?.revision ?? null,
       } });
       const userMessage = await tx.coachMessage.create({ data: {
         athleteId,
@@ -206,6 +224,9 @@ export class PrismaCoachChatRepository {
         topic: input.topic,
         selectedRecordType: input.selectedRecord?.type ?? null,
         selectedRecordId: input.selectedRecord?.id ?? null,
+        eventType: input.eventType ?? null,
+        activityReflectionRevision: input.activityReflectionRef?.revision ?? null,
+        eventPayload: input.eventPayload ?? undefined,
       } });
       await tx.coachConversation.update({
         where: { id: conversation.id },
@@ -486,7 +507,15 @@ function messageDto(row) {
       ? { type: row.selectedRecordType, id: row.selectedRecordId }
       : null,
     turnState: row.turn?.state ?? null,
+    eventType: row.eventType ?? null,
+    activityReflectionRevision: row.activityReflectionRevision ?? null,
+    eventPayload: row.eventPayload ?? null,
   };
+}
+
+function feedbackReceiptPrompt(receipt) {
+  if (!receipt || typeof receipt !== "object") return "Structured athlete run feedback was saved.";
+  return `Structured athlete run feedback (saved from the athlete's form; this is not a message they typed):\n${JSON.stringify(receipt)}`;
 }
 
 function turnStateDto(turn, messageSaved) {

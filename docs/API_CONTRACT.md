@@ -1,5 +1,21 @@
 # API_CONTRACT
 
+## ORBIT post-run review (28 October 2026)
+
+These additive owner-session endpoints require same-origin validation, bounded/strict JSON mutations and private/no-store responses. Athlete and login identity come only from trusted authentication state.
+
+- `GET /api/v1/coaching/run-review`: current eligibility and manual-resume metadata; never consumes the login offer. `?activityId=:id` explicitly loads the selected run's record, reflection state and published assessment.
+- `POST /api/v1/coaching/run-review/offers`: atomically reserves the candidate for the current login/tab. A reservation alone must not render an invitation.
+- `POST /api/v1/coaching/run-review/offers/:offerId/present`: rechecks eligibility and consumes the reservation before authorizing display.
+- `POST /api/v1/coaching/run-review/offers/:offerId/outcome`: idempotently records shown/deferred/accepted outcome; no outcome restores the current login's allowance.
+- Existing `GET/PUT /api/v1/activities/:activityId/reflection`: supports readable v1 and strict v2. V2 saves require a request UUID plus expected activity/reflection revisions and preserve existing journal answers and section reflections.
+- `GET /api/v1/activities/:activityId/reflection/operations/:requestId`: reconciles a mutation receipt with authoritative current state.
+- `DELETE /api/v1/activities/:activityId/reflection` and `POST .../reflection/reopen`: explicit revision-checked delete/reopen; deletion retains suppression, reopening is explicit.
+- `POST /api/v1/coaching/chat/run-review-followups`: creates one feedback-aware Coach turn per saved reflection revision. Provider failure never undoes feedback; retries reuse the stored operation.
+- `GET /api/v1/activities/:activityId/reflection/run-review`: returns the saved reflection/completion state, activity revision and published assessment for the shared Coach/activity-detail form.
+
+Contracts live in `packages/core/src/contracts/athlete-journal.ts` and `coach-chat.ts`. Structured conflicts distinguish stale activity/reflection, changed conversation, and reused request identity. See [implementation details and release limitations](plans/ORBIT_POST_RUN_REVIEW_IMPLEMENTATION.md).
+
 ## Coach saved discussions (25 October 2026)
 
 The additive archive command and paginated history reads are specified in [Coach chat history](plans/COACH_CHAT_HISTORY.md#interfaces). All require an authenticated owner session and athlete scope; mutations require same origin. Existing permanent-history deletion now includes archived generations. Responses remain private/no-store.

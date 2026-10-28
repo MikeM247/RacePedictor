@@ -9,6 +9,31 @@ export const coachRecordReferenceSchema = z.object({
   id: stableId,
 }).strict();
 
+export const coachRunReviewFeedbackReceiptSchema = z.object({
+  activityId: stableId,
+  activityTitle: z.string().min(1).max(160),
+  occurredAt: z.string().datetime(),
+  reflectionRevision: z.number().int().nonnegative(),
+  rpeAnswer: z.enum(["rated", "unable"]),
+  overallRpe: z.number().int().min(1).max(10).nullable(),
+  expectation: z.enum(["easier", "as_expected", "harder", "unsure"]).nullable(),
+  discomfort: z.enum(["none", "discomfort", "pain", "prefer_not_to_say"]),
+  symptoms: z.object({ bodyArea: z.string().max(100).nullable(), severity: z.number().int().min(0).max(10).nullable(), affectedRunning: z.enum(["yes", "no", "unsure"]).nullable() }).strict().nullable(),
+  energy: z.enum(["fresh", "okay", "drained", "skip"]).nullable(),
+  fuel: z.enum(["no_issues", "not_enough", "stomach_issues", "unsure"]).nullable(),
+  fuelNote: z.string().max(1000).nullable(),
+  note: z.string().max(1000).nullable(),
+  raceNotes: z.object({ workedWell: z.string().max(1000).nullable(), changeNextTime: z.string().max(1000).nullable() }).strict().nullable(),
+}).strict();
+
+export const coachRunReviewFollowupRequestSchema = z.object({
+  requestId: z.string().uuid(),
+  expectedGeneration: z.number().int().positive(),
+  expectedSequence: z.number().int().nonnegative(),
+  activityId: stableId,
+  reflectionRevision: z.number().int().nonnegative(),
+}).strict();
+
 export const coachTurnRequestSchema = z.object({
   clientTurnId: z.string().uuid(),
   expectedGeneration: z.number().int().positive(),
@@ -41,6 +66,9 @@ export const coachConversationMessageSchema = z.object({
   topic: coachTopicSchema.nullable(),
   selectedRecord: coachRecordReferenceSchema.nullable(),
   turnState: z.enum(["processing", "completed", "failed", "abandoned", "expired"]).nullable(),
+  eventType: z.enum(["activity_reflection"]).nullable().default(null),
+  activityReflectionRevision: z.number().int().nonnegative().nullable().default(null),
+  eventPayload: coachRunReviewFeedbackReceiptSchema.nullable().default(null),
 }).strict();
 
 export const coachConversationStateSchema = z.object({
@@ -74,9 +102,11 @@ export const coachActivityContextSchema = z.object({
   localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   distanceM: z.number().nonnegative(),
   elapsedTimeS: z.number().int().nonnegative(),
+  movingTimeS: z.number().int().nonnegative().nullable().optional(),
   avgPaceSecPerKm: z.number().nonnegative().nullable(),
   elevationGainM: z.number().nonnegative(),
   revision: z.number().int().nonnegative(),
+  reviewStatus: z.enum(["not_requested", "queued", "processing", "ready", "retry_wait", "attention", "unavailable"]).default("unavailable"),
   review: z.object({
     headline: z.string().max(600),
     assessment: z.string().max(4_000),
@@ -84,6 +114,22 @@ export const coachActivityContextSchema = z.object({
     provenance: z.string().max(80),
     limitations: z.array(z.string().max(500)).max(20),
   }).strict().nullable(),
+  reflection: z.object({
+    revision: z.number().int().nonnegative(),
+    questionnaireVersion: z.enum(["activity-reflection.v1", "activity-reflection.v2"]),
+    rpeAnswer: z.enum(["rated", "unable"]).nullable(),
+    overallRpe: z.number().int().min(1).max(10).nullable(),
+    expectation: z.enum(["easier", "as_expected", "harder", "unsure"]).nullable(),
+    legacyPain: z.object({ present: z.enum(["yes", "no", "unsure"]), location: z.string().max(160).nullable(), onset: z.string().max(160).nullable(), severity: z.number().int().min(0).max(10).nullable(), changedStride: z.boolean().nullable() }).strict().nullable(),
+    discomfort: z.enum(["none", "discomfort", "pain", "prefer_not_to_say"]).nullable(),
+    symptoms: z.object({ bodyArea: z.string().max(100).nullable(), severity: z.number().int().min(0).max(10).nullable(), affectedRunning: z.enum(["yes", "no", "unsure"]).nullable() }).strict().nullable(),
+    energy: z.enum(["fresh", "okay", "drained", "skip"]).nullable(),
+    fuel: z.enum(["no_issues", "not_enough", "stomach_issues", "unsure"]).nullable(),
+    fuelNote: z.string().max(1000).nullable(),
+    note: z.string().max(1000).nullable(),
+    raceNotes: z.object({ workedWell: z.string().max(1000).nullable(), changeNextTime: z.string().max(1000).nullable() }).strict().nullable(),
+    sections: z.array(z.object({ id: z.string().max(128), kind: z.enum(["opening", "middle", "closing", "repetition", "turning_point"]), location: z.string().max(160).nullable(), rpe: z.number().int().min(1).max(10).nullable(), notes: z.string().max(2000).nullable() }).strict()).max(20),
+  }).strict().nullable().default(null),
 }).strict();
 
 export const coachSessionContextSchema = z.object({
@@ -121,6 +167,8 @@ export const coachContextSchema = z.object({
   plan: z.object({ id: stableId, version: z.number().int().positive(), approvalHash: z.string().max(160) }).strict().nullable(),
   todaySchedule: z.object({ kind: z.enum(["session", "rest", "skipped", "unscheduled", "unavailable"]), message: z.string().max(400) }).strict(),
   latestActivity: coachActivityContextSchema.nullable(),
+  /** Explicit record focus. latestActivity continues to mean the newest activity. */
+  selectedActivity: coachActivityContextSchema.nullable().default(null),
   nextSession: coachSessionContextSchema.nullable(),
   recentActivities: z.array(z.object({
     id: stableId,

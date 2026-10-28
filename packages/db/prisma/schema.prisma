@@ -158,6 +158,9 @@ model Activity {
   activityReviews         ActivityCoachReview[]
   athleteFeedback         ActivityAthleteFeedback[]
   activityReflections     ActivityReflection[]
+  runReviewState          ActivityRunReviewState?
+  runReviewOffers         CoachRunReviewOffer[]
+  reflectionMutations     ActivityReflectionMutation[]
   paceComparisons         ActivityPaceComparison[]
 
   @@unique([id, athleteId])
@@ -347,6 +350,10 @@ model Athlete {
   updatedAt               DateTime                   @updatedAt @db.Timestamptz(3)
   accesses                AthleteAccess[]
   activities              Activity[]
+  runReviewActivation     CoachRunReviewActivation?
+  runReviewStates         ActivityRunReviewState[]
+  runReviewOffers         CoachRunReviewOffer[]
+  reflectionMutations     ActivityReflectionMutation[]
   imports                 Import[]
   rawFiles                RawFile[]
   stagingActivities       StagingActivity[]
@@ -699,6 +706,7 @@ model ActivityReviewRequest {
   athleteId       String
   activityId      String
   activityRevision Int?
+  reflectionRevision Int?
   inputFingerprint String?
   planComparison  Json?
   status          ActivityReviewRequestStatus @default(queued)
@@ -807,6 +815,72 @@ model ActivityReflection {
   @@unique([id, athleteId])
   @@index([athleteId, updatedAt(sort: Desc)])
   @@map("activity_reflections")
+}
+
+model CoachRunReviewActivation {
+  athleteId  String   @id
+  activatedAt DateTime @default(now()) @db.Timestamptz(3)
+  athlete    Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@map("coach_run_review_activations")
+}
+
+model ActivityRunReviewState {
+  id                          String    @id @default(cuid())
+  athleteId                   String
+  activityId                  String
+  completedAt                 DateTime? @db.Timestamptz(3)
+  completedReflectionRevision Int?
+  suppressedAt                DateTime? @db.Timestamptz(3)
+  reopenedAt                  DateTime? @db.Timestamptz(3)
+  revision                    Int       @default(0)
+  athlete                     Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity                    Activity  @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, activityId])
+  @@unique([activityId, athleteId])
+  @@unique([id, athleteId])
+  @@index([athleteId, completedAt])
+  @@map("activity_run_review_states")
+}
+
+model CoachRunReviewOffer {
+  id          String    @id @default(cuid())
+  athleteId   String
+  loginId     String
+  activityId  String
+  tabId       String
+  token       String
+  expiresAt   DateTime  @db.Timestamptz(3)
+  consumedAt  DateTime? @db.Timestamptz(3)
+  outcome     String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  athlete     Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity    Activity  @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, loginId])
+  @@unique([athleteId, token])
+  @@index([athleteId, activityId])
+  @@index([expiresAt])
+  @@map("coach_run_review_offers")
+}
+
+model ActivityReflectionMutation {
+  id                  String   @id @default(cuid())
+  athleteId           String
+  requestId           String
+  activityId          String
+  requestHash         String
+  operation           String
+  appliedRevision     Int
+  appliedStateRevision Int
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  athlete             Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  activity            Activity @relation(fields: [activityId, athleteId], references: [id, athleteId], onDelete: Cascade)
+
+  @@unique([athleteId, requestId])
+  @@index([athleteId, activityId, createdAt])
+  @@map("activity_reflection_mutations")
 }
 
 model DailyWellbeingCheckIn {
@@ -1005,6 +1079,8 @@ model CoachTurn {
   retryRequestHash      String?
   safeErrorCode         String?
   model                 String?
+  reviewActivityId      String?
+  reviewReflectionRevision Int?
   providerRequestId     String?
   providerInputTokens   Int?
   providerOutputTokens  Int?
@@ -1017,6 +1093,7 @@ model CoachTurn {
   messages              CoachMessage[]
 
   @@unique([conversationId, generation, clientTurnId])
+  @@unique([conversationId, generation, reviewActivityId, reviewReflectionRevision], map: "coach_turns_conversation_generation_review_revision_key")
   @@unique([id, athleteId, conversationId, generation])
   @@index([athleteId, conversationId, generation, state, createdAt(sort: Desc)])
   @@map("coach_turns")
@@ -1034,6 +1111,9 @@ model CoachMessage {
   topic              String?
   selectedRecordType String?
   selectedRecordId   String?
+  eventType          String?
+  activityReflectionRevision Int?
+  eventPayload       Json?
   createdAt          DateTime          @default(now()) @db.Timestamptz(3)
   athlete            Athlete           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   conversation       CoachConversation @relation(fields: [conversationId, athleteId], references: [id, athleteId], onDelete: Cascade)

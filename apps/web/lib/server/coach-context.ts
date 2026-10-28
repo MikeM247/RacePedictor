@@ -115,10 +115,14 @@ export async function resolveCoachContext(
     ? await safeRevision(composition, scope, latestSummary.id)
     : 0;
   let latestReview: NonNullable<CoachContext["latestActivity"]>["review"] = null;
+  let latestReviewStatus: NonNullable<CoachContext["latestActivity"]>["reviewStatus"] = "unavailable";
+  let latestReviewPromptVersion = "";
   if (latestSummary) {
     try {
       const reviewResult = await composition.activityReviews.get(scope, latestSummary.id);
+      latestReviewStatus = reviewResult.status;
       const review = reviewResult.status === "ready" ? reviewResult.review : null;
+      latestReviewPromptVersion = review?.promptVersion ?? "";
       if (review) latestReview = {
         headline: review.headline,
         assessment: review.assessment,
@@ -128,19 +132,17 @@ export async function resolveCoachContext(
       };
     } catch { /* saved activity facts remain available without the separate review pipeline */ }
   }
-  const latestActivity: CoachContext["latestActivity"] = latestSummary ? {
-    id: latestSummary.id,
-    title: latestSummary.title || `${latestSummary.sport.replaceAll("_", " ")} session`,
-    sport: latestSummary.sport,
-    occurredAt: latestSummary.occurredAt,
-    localDate: dateInTimezone(new Date(latestSummary.occurredAt), timezone),
-    distanceM: Number(latestSummary.distanceM),
-    elapsedTimeS: Number(latestSummary.elapsedTimeS),
-    avgPaceSecPerKm: latestSummary.avgPaceSecPerKm === null ? null : Number(latestSummary.avgPaceSecPerKm),
-    elevationGainM: Number(latestSummary.elevationGainM ?? 0),
-    revision: latestRevision,
-    review: latestReview,
-  } : null;
+  let latestReflection = null;
+  if (latestSummary) {
+    try { latestReflection = await composition.journal.getReflection(scope, latestSummary.id); }
+    catch { /* activity facts remain available if the journal is unavailable */ }
+  }
+  if (latestReview && latestReflection && latestReviewPromptVersion !== "activity-coach-review.reflection.v2") {
+    latestReview = { ...latestReview, limitations: [...new Set([...latestReview.limitations, "This saved assessment predates athlete reflection inputs."])].slice(0, 20) };
+  }
+  const latestActivity: CoachContext["latestActivity"] = latestSummary
+    ? toCoachActivityContext(latestSummary, latestRevision, timezone, latestReview, latestReflection, latestReviewStatus)
+    : null;
 
   const recentCutoff = now.valueOf() - 28 * DAY_MS;
   const recentSummaries = activityItems
@@ -174,8 +176,28 @@ export async function resolveCoachContext(
   let selectedTopic: CoachTopic = input.topic ?? suggestedTopic;
   if (selectedTopic === "reflect" && !latestActivity) selectedTopic = "general";
 
+  let explicitlySelectedActivity: NonNullable<CoachContext["selectedActivity"]> | null = null;
   if (input.selectedRecord) {
-    if (input.selectedRecord.type === "activity" && latestActivity?.id !== input.selectedRecord.id) throw new CoachContextRecordNotFoundError();
+    if (input.selectedRecord.type === "activity") {
+      if (latestActivity?.id === input.selectedRecord.id) explicitlySelectedActivity = latestActivity;
+      else {
+        const summary = await composition.activities.findById(scope, input.selectedRecord.id);
+        if (!summary) throw new CoachContextRecordNotFoundError();
+        const [revision, reviewResult, reflection] = await Promise.all([
+          safeRevision(composition, scope, summary.id),
+          composition.activityReviews.get(scope, summary.id).catch(() => null),
+          composition.journal.getReflection(scope, summary.id).catch(() => null),
+        ]);
+        const review = reviewResult?.status === "ready" && reviewResult.review ? {
+          headline: reviewResult.review.headline, assessment: reviewResult.review.assessment,
+          nextStep: reviewResult.review.nextStep, provenance: reviewResult.review.provenance ?? "legacy_combined",
+          limitations: reflection && reviewResult.review.promptVersion !== "activity-coach-review.reflection.v2"
+            ? [...new Set([...reviewResult.review.limitations, "This saved assessment predates athlete reflection inputs."])].slice(0, 20)
+            : reviewResult.review.limitations,
+        } : null;
+        explicitlySelectedActivity = toCoachActivityContext(summary, revision, timezone, review, reflection, reviewResult?.status ?? "unavailable");
+      }
+    }
     if (input.selectedRecord.type === "session") {
       const candidate = sessions.find((session) => session.id === input.selectedRecord!.id) ?? (apiNextSession?.id === input.selectedRecord.id ? apiNextSession : null);
       if (!candidate || (!ambiguousSessions.some((session) => session.id === candidate.id) && candidate.id !== selectedNext?.id)) throw new CoachContextRecordNotFoundError();
@@ -190,7 +212,10 @@ export async function resolveCoachContext(
   let selectedRecord: CoachRecordReference | null = input.selectedRecord ?? null;
   if (!selectedRecord && selectedTopic === "reflect" && latestActivity) selectedRecord = { type: "activity", id: latestActivity.id };
   if (!selectedRecord && selectedTopic === "prepare" && selectedNext) selectedRecord = { type: "session", id: selectedNext.id };
-  const opening = buildOpening({ selectedTopic, latestActivity, nextSession: selectedNext, todaySchedule, isAmbiguous: isAmbiguous && !input.selectedRecord, hasPlan: planState === "available" });
+  const selectedActivity = selectedRecord?.type === "activity"
+    ? explicitlySelectedActivity ?? (latestActivity?.id === selectedRecord.id ? latestActivity : null)
+    : null;
+  const opening = buildOpening({ selectedTopic, latestActivity, selectedActivity, nextSession: selectedNext, todaySchedule, isAmbiguous: isAmbiguous && !input.selectedRecord, hasPlan: planState === "available" });
   const goalTitle = goalContext?.goal?.title ?? (plan ? plan.goalId : null);
   const goalTarget = goalContext?.goal?.target ? describeGoalTarget(goalContext.goal.target) : null;
   const sources: CoachContext["sources"] = {
@@ -210,6 +235,7 @@ export async function resolveCoachContext(
     plan: plan ? { id: plan.id, version: plan.version, approvalHash: plan.approval.contentHash } : null,
     todaySchedule,
     latestActivity,
+    selectedActivity,
     nextSession: selectedNext,
     recentActivities,
     wellbeing,
@@ -234,6 +260,7 @@ export async function resolveCoachContext(
     plan: plan ? { id: plan.id, version: plan.version, approvalHash: plan.approval.contentHash } : null,
     todaySchedule,
     latestActivity,
+    selectedActivity,
     nextSession: selectedNext,
     recentActivities,
     wellbeing,
@@ -261,6 +288,7 @@ export function buildCoachInstructions(context: CoachContext) {
       plan: context.plan,
       todaySchedule: context.todaySchedule,
       selectedRecord: context.selectedRecord,
+      selectedActivity: context.selectedActivity,
       latestActivity: context.latestActivity,
       nextSession: context.nextSession,
       recentActivities: context.recentActivities,
@@ -284,6 +312,7 @@ export function boundCoachPrompt(instructions: string, history: readonly { role:
 function buildOpening(input: {
   selectedTopic: CoachTopic;
   latestActivity: CoachContext["latestActivity"];
+  selectedActivity: CoachContext["selectedActivity"];
   nextSession: CoachContext["nextSession"];
   todaySchedule: CoachContext["todaySchedule"];
   isAmbiguous: boolean;
@@ -293,9 +322,10 @@ function buildOpening(input: {
     kind: "choose",
     text: "More than one session could be next today. Choose the session you mean or open Calendar; I’ll wait before making a session-specific recommendation.",
   };
-  if (input.selectedTopic === "reflect" && input.latestActivity) return {
+  const reflectionActivity = input.selectedActivity ?? input.latestActivity;
+  if (input.selectedTopic === "reflect" && reflectionActivity) return {
     kind: "reflect",
-    text: `How did ${input.latestActivity.title} feel? We can look at the recorded details${input.latestActivity.review ? " and its saved coach review" : ""} together.`,
+    text: `How did ${reflectionActivity.title} feel? We can look at the recorded details${reflectionActivity.review ? " and its saved coach review" : ""} together.`,
   };
   if (input.selectedTopic === "prepare" && input.todaySchedule.kind === "rest") return {
     kind: "recovery",
@@ -320,6 +350,47 @@ function buildOpening(input: {
   return {
     kind: "general",
     text: "What would be most useful today? We can reflect on your latest training, prepare for an upcoming session, or talk through a training question.",
+  };
+}
+
+function toCoachActivityContext(activity: any, revision: number, timezone: string, review: NonNullable<CoachContext["latestActivity"]>["review"], reflection: any, reviewStatus: NonNullable<CoachContext["latestActivity"]>["reviewStatus"] = "unavailable"): NonNullable<CoachContext["latestActivity"]> {
+  const answers = reflection?.answers && typeof reflection.answers === "object" ? reflection.answers as Record<string, any> : {};
+  const postRun = answers.postRun && typeof answers.postRun === "object" ? answers.postRun as Record<string, any> : {};
+  const pain = answers.pain && typeof answers.pain === "object" ? answers.pain as Record<string, any> : null;
+  const sections = Array.isArray(reflection?.sections) ? reflection.sections.map((section: any) => ({
+    id: String(section.id), kind: section.kind, location: section.location ?? null,
+    rpe: section.rpe ?? null, notes: section.notes ?? null,
+  })) : [];
+  return {
+    id: String(activity.id),
+    title: activity.title || `${String(activity.sport).replaceAll("_", " ")} session`,
+    sport: String(activity.sport),
+    occurredAt: String(activity.occurredAt),
+    localDate: dateInTimezone(new Date(activity.occurredAt), timezone),
+    distanceM: Number(activity.distanceM),
+    elapsedTimeS: Number(activity.elapsedTimeS),
+    movingTimeS: activity.movingTimeS === null || activity.movingTimeS === undefined ? null : Number(activity.movingTimeS),
+    avgPaceSecPerKm: activity.avgPaceSecPerKm === null || activity.avgPaceSecPerKm === undefined ? null : Number(activity.avgPaceSecPerKm),
+    elevationGainM: Number(activity.elevationGainM ?? 0),
+    revision,
+    review,
+    reviewStatus,
+    reflection: reflection ? {
+      revision: Number(reflection.revision),
+      questionnaireVersion: reflection.questionnaireVersion,
+      rpeAnswer: postRun.rpeAnswer ?? null,
+      overallRpe: typeof answers.overallRpe === "number" ? answers.overallRpe : null,
+      expectation: answers.expectation ?? null,
+      legacyPain: pain ? { present: pain.present, location: pain.location ?? null, onset: pain.onset ?? null, severity: pain.severity ?? null, changedStride: pain.changedStride ?? null } : null,
+      discomfort: postRun.discomfort ?? null,
+      symptoms: postRun.symptoms ? { bodyArea: postRun.symptoms.bodyArea ?? null, severity: postRun.symptoms.severity ?? null, affectedRunning: postRun.symptoms.affectedRunning ?? null } : null,
+      energy: postRun.energy ?? null,
+      fuel: postRun.fuel ?? null,
+      fuelNote: postRun.fuelNote ?? null,
+      note: postRun.note ?? null,
+      raceNotes: postRun.raceNotes ? { workedWell: postRun.raceNotes.workedWell ?? null, changeNextTime: postRun.raceNotes.changeNextTime ?? null } : null,
+      sections,
+    } : null,
   };
 }
 

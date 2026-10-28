@@ -1,5 +1,9 @@
 # UI_GUIDELINES.md
 
+## ORBIT post-run review
+
+Use the existing graphite Coach shell and glacier conversation surface; do not copy Strava branding or orange styling. Lead with run identity, factual metrics, the conclusion-first published review, and a nearby evidence caveat. Use explicit measurement labels/units. Native labelled radio groups offer RPE 1–10 plus “I can't rate it” and discomfort plus “Prefer not to say”; neither is preselected and inability is never stored as zero. Show symptom details only after discomfort/pain and fuel/fluid questions only for races or runs with ≥75 minutes of recorded moving time. Show inline validation and a visible character count for 1,000-character notes. After commit, show a concise server-authoritative saved summary. Preserve composer, transcript scrolling, focus, return navigation and answers through recoverable errors. Hide private review content and clear private drafts after authentication loss. Controls remain keyboard operable with visible focus and ≥44px targets. Verify 1440×900, 390×844, 320px, and 200% zoom; see [UX specification](design/POST_RUN_REVIEW_UX.md).
+
 ## Coach viewport and history controls (25 October 2026)
 
 Keep the Coach composer, send action, training links and approval-boundary footer outside transcript scrolling. Bound textarea growth and keep scroll regions keyboard-focusable with visible focus. Respect visual viewport changes and mobile navigation/safe areas; allow page scrolling at small heights and enlarged text. Clear chat means save-and-start-fresh; permanent deletion must use distinct wording and confirmation. See [behavior and acceptance details](plans/COACH_CHAT_HISTORY.md).

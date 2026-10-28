@@ -1,5 +1,15 @@
 # ROADMAP
 
+## 28 October 2026: ORBIT post-run review
+
+- [x] Product-owner BRD, UX spec, prototype and implementation handoff committed on `codex/orbit-post-run-review`.
+- [x] Versioned reflection contract, additive migration, atomic save/completion, receipts, offer state, owner-session login identity, Coach UI, manual activity review, feedback-aware follow-up and assessment publication fencing implemented on the feature branch.
+- [~] Local core, web, migration, and repository verification; resolve the unrelated existing pace-comparison CLI test failure before marking the DB suite green.
+- [ ] Verify PostgreSQL concurrency and all AC-01–AC-18 browser/accessibility scenarios on an isolated Neon/Vercel Preview using synthetic fixtures.
+- [ ] Product-owner preview acceptance, then draft-PR review and merge. Merge and production release are outside this implementation task.
+
+Detailed status, documentation checklist and blocked release gates: [ORBIT post-run review implementation](plans/ORBIT_POST_RUN_REVIEW_IMPLEMENTATION.md).
+
 ## 25 October 2026: Coach panel and saved discussion history
 
 - [x] 26 October: applied the archive migration to the isolated work Preview and deployed the feature to the stable staging URL. [Release and rollback evidence](deployment/coach-chat-history-staging-2026-10-26.md).

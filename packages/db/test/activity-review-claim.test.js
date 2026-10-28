@@ -95,6 +95,32 @@ test("regeneration rejects a stale published review revision", async () => {
   await assert.rejects(repository.queue(scope, "activity-target", { regenerate: true, expectedReviewRevision: 4 }), /changed/u);
 });
 
+test("review publication is fenced by the athlete reflection revision captured before generation", async () => {
+  let reviewPublished = false;
+  let requestSettled = false;
+  const tx = {
+    $queryRaw: async () => [{ id: "activity-target" }],
+    activityReviewRequest: {
+      async findUnique() { return { id: "request-1", activityRevision: 3, reflectionRevision: 2, status: "processing", lockedBy: "cloud-coach-worker", leaseToken: "lease-1", executionTarget: "cloud" }; },
+      async update() { requestSettled = true; },
+    },
+    activityRevision: { async findFirst() { return { revisionNumber: 3 }; } },
+    activityReflection: { async findUnique() { return { revision: 3 }; } },
+    activityCoachReview: {
+      async findFirst() { return null; },
+      async upsert() { reviewPublished = true; return sampleArtifact(); },
+    },
+  };
+  const repository = new PrismaActivityReviewRepository({ prisma: {
+    $transaction: async (callback, options) => { assert.equal(options.isolationLevel, "Serializable"); return callback(tx); },
+    activityReviewRequest: {}, activityCoachReview: {},
+  } });
+  const scope = athleteScopeFor(buildActorContext({ userId: "owner-a", permittedAthleteIds: ["athlete-a"], activeAthleteId: "athlete-a", requestId: "request-test", credentialKind: "session" }));
+  await assert.rejects(repository.publish(scope, sampleArtifact({ expectedActivityRevision: 3, expectedReflectionRevision: 2 }), "cloud-coach-worker"), /reflection is stale/u);
+  assert.equal(reviewPublished, false);
+  assert.equal(requestSettled, false);
+});
+
 test("local sync client requests only the selected activity review", async () => {
   let requestedUrl;
   const client = new RacePredictorSyncClient({
@@ -150,7 +176,7 @@ test("repository publishes the full artifact under the matching device lease", a
   assert.equal(settled, "ready");
 });
 
-function sampleArtifact() {
+function sampleArtifact(overrides = {}) {
   return {
     id: "review-1", athleteId: "athlete-a", activityId: "activity-target", revision: 1,
     inputFingerprint: "a".repeat(64), headline: "A good easy run", assessment: "Matched the plan.", nextStep: "Rest tomorrow.",
@@ -164,5 +190,7 @@ function sampleArtifact() {
     generatedAt: "2026-09-27T12:00:00.000Z", publishedAt: "2026-09-27T12:00:00.000Z",
     model: "manual review", promptVersion: "v1", requestId: "request-1", leaseToken: "lease-1",
     expectedActivityRevision: 1,
+    expectedReflectionRevision: 0,
+    ...overrides,
   };
 }

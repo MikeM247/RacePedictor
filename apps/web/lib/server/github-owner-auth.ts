@@ -10,7 +10,7 @@ import { assertServerRuntime } from "./server-runtime.ts";
 
 assertServerRuntime("github-owner-auth");
 
-export type OwnerAuthSession = Readonly<{ user?: Readonly<{ id?: string | null }> | null }> | null;
+export type OwnerAuthSession = Readonly<{ user?: Readonly<{ id?: string | null }> | null; runReviewLoginId?: string | null }> | null;
 
 export function createOwnerActorResolver(input: {
   identities: IdentityRepository;
@@ -35,6 +35,7 @@ export function createOwnerActorResolver(input: {
       activeAthleteId,
       requestId: requestId(),
       credentialKind: "session",
+      ...(session.runReviewLoginId ? { runReviewLoginId: session.runReviewLoginId } : {}),
     });
   };
 }

@@ -154,14 +154,28 @@ export class PrismaAthleteFeedbackRepository {
   publish(scope: AthleteScope, artifact: import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedbackArtifact): Promise<import("../../../core/src/contracts/activity-review.ts").ActivityAthleteFeedback | null>;
 }
 
-export class AthleteJournalConflictError extends Error {}
+export class AthleteJournalConflictError extends Error { readonly code: string; }
 export class AthleteJournalDateError extends Error {}
 export class PrismaAthleteJournalRepository {
   constructor(input: { prisma: unknown });
   getReflection(scope: AthleteScope, activityId: string): Promise<import("../../../core/src/contracts/athlete-journal.ts").ActivityReflection | null>;
   saveReflection(scope: AthleteScope, activityId: string, input: import("../../../core/src/contracts/athlete-journal.ts").SaveActivityReflectionRequest): Promise<import("../../../core/src/contracts/athlete-journal.ts").ActivityReflection | null>;
+  savePostRunReflection(scope: AthleteScope, activityId: string, input: import("../../../core/src/contracts/athlete-journal.ts").SavePostRunReflectionRequest): Promise<any>;
+  getReflectionMutation(scope: AthleteScope, activityId: string, requestId: string): Promise<any>;
+  getRunReviewState(scope: AthleteScope, activityId: string): Promise<any>;
+  deletePostRunReflection(scope: AthleteScope, activityId: string, input: import("../../../core/src/contracts/athlete-journal.ts").PostRunReflectionStateChange): Promise<any>;
+  reopenPostRunReflection(scope: AthleteScope, activityId: string, input: import("../../../core/src/contracts/athlete-journal.ts").PostRunReflectionStateChange): Promise<any>;
   listWellbeing(scope: AthleteScope, from: string, to: string): Promise<import("../../../core/src/contracts/athlete-journal.ts").DailyWellbeingCheckIn[]>;
   saveWellbeing(scope: AthleteScope, localDate: string, input: import("../../../core/src/contracts/athlete-journal.ts").SaveDailyWellbeingRequest): Promise<import("../../../core/src/contracts/athlete-journal.ts").DailyWellbeingCheckIn>;
+}
+
+export class PrismaCoachRunReviewRepository {
+  constructor(input: { prisma: unknown; now?: () => Date });
+  getCandidate(scope: AthleteScope): Promise<any>;
+  getOffer(scope: AthleteScope, loginId: string): Promise<any>;
+  reserve(scope: AthleteScope, input: { tabId: string }): Promise<any>;
+  consume(scope: AthleteScope, input: { offerId: string; token: string; tabId: string }): Promise<any>;
+  recordOutcome(scope: AthleteScope, input: { offerId: string; token: string; tabId: string; outcome: "shown" | "deferred" | "accepted" }): Promise<any>;
 }
 
 export class PrismaCloudDashboardRepository {
@@ -326,7 +340,7 @@ export class PrismaCoachChatRepository {
   getConversationMarker(scope: AthleteScope): Promise<{ id: string | null; generation: number; sequence: number; lastReflectedActivityId: string | null; lastReflectedActivityAt: string | null }>;
   getCompletedHistory(scope: AthleteScope, limit?: number): Promise<Array<{ role: string; text: string; topic: string | null }>>;
   getTurn(scope: AthleteScope, turnId: string): Promise<any>;
-  getTurnReplay(scope: AthleteScope, input: { expectedGeneration: number; clientTurnId?: string; turnId?: string; retryId?: string }): Promise<any>;
+  getTurnReplay(scope: AthleteScope, input: { expectedGeneration: number; clientTurnId?: string; turnId?: string; retryId?: string; activityReflectionRef?: { activityId: string; revision: number } }): Promise<any>;
   beginTurn(scope: AthleteScope, input: any): Promise<any>;
   retryTurn(scope: AthleteScope, input: any): Promise<any>;
   completeTurn(scope: AthleteScope, input: any): Promise<any>;

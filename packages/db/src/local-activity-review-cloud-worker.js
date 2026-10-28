@@ -69,6 +69,7 @@ export async function runCloudActivityReviewBatch({
         requestId: item.requestId,
         leaseToken: item.leaseToken,
         expectedActivityRevision: 1,
+        expectedReflectionRevision: 0,
       });
       results.push({ status: "ready", activityId: item.activityId });
     } catch (error) {

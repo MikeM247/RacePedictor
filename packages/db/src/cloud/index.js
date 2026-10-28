@@ -38,6 +38,7 @@ export { PrismaActivityReviewRepository } from "./prisma-activity-review-reposit
 export { CoachAiConfigurationConflictError, PrismaCoachAiConfigurationRepository, OPENAI_COACH_MODELS } from "./prisma-coach-ai-configuration-repository.js";
 export { AthleteFeedbackConflictError, PrismaAthleteFeedbackRepository } from "./prisma-athlete-feedback-repository.js";
 export { AthleteJournalConflictError, AthleteJournalDateError, PrismaAthleteJournalRepository } from "./prisma-athlete-journal-repository.js";
+export { PrismaCoachRunReviewRepository } from "./prisma-coach-run-review-repository.js";
 export { PrismaReconciliationScopeRepository } from "./prisma-reconciliation-scope-repository.js";
 export { PrismaIdentityRepository } from "./prisma-identity-repository.js";
 export { PrismaActivityPaceComparisonRepository } from "./prisma-activity-pace-comparison-repository.js";

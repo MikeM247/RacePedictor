@@ -40,10 +40,15 @@ test("only the configured GitHub account survives sign-in, token, and session pr
     RACEPREDICTOR_OWNER_AUTH_SUBJECT: "github:999",
   }), {});
 
-  const session = projectOwnerSession({ user: { name: "Owner" } }, { authSubject: "github:59341274" }, configuredEnvironment);
+  const loginId = "457a2115-166f-4b2c-a0a4-21a8faffd4d3";
+  const loginToken = { ...ownerToken, runReviewLoginId: loginId };
+  assert.equal(updateOwnerAuthToken(loginToken, null, configuredEnvironment).runReviewLoginId, loginId);
+  const session = projectOwnerSession({ user: { name: "Owner" } }, { ...loginToken, authSubject: "github:59341274" }, configuredEnvironment);
   assert.equal((session.user as { id?: string }).id, "github:59341274");
+  assert.equal((session as { runReviewLoginId?: string }).runReviewLoginId, loginId);
   const rejectedSession = projectOwnerSession({ user: {} }, { authSubject: "github:999" }, configuredEnvironment);
   assert.equal((rejectedSession.user as { id?: string }).id, "");
+  assert.equal((rejectedSession as { runReviewLoginId?: string }).runReviewLoginId, undefined);
 });
 
 test("owner sessions resolve through persisted athlete access and carry every permitted scope", async () => {
@@ -56,7 +61,7 @@ test("owner sessions resolve through persisted athlete access and carry every pe
         return { userId: "user_owner", permittedAthleteIds: ["athlete_001", "athlete_002"] };
       },
     },
-    readSession: async () => ({ user: { id: "github:59341274" } }),
+    readSession: async () => ({ user: { id: "github:59341274" }, runReviewLoginId: "457a2115-166f-4b2c-a0a4-21a8faffd4d3" }),
     readConfiguration: () => ({ authSubject: "github:59341274" }),
     requestId: () => "request_owner_auth",
   });
@@ -67,6 +72,7 @@ test("owner sessions resolve through persisted athlete access and carry every pe
     permittedAthleteIds: ["athlete_001", "athlete_002"],
     activeAthleteId: "athlete_001",
     requestId: "request_owner_auth",
+    runReviewLoginId: "457a2115-166f-4b2c-a0a4-21a8faffd4d3",
     credentialKind: "session",
   });
   assert.equal(lookupCount, 1);

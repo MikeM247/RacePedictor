@@ -1,11 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 import { readPreviewDatabaseOverride } from "./preview-database-configuration.js";
+import { readOrbitFeaturePreviewDatabaseOverride } from "./orbit-feature-preview-database-configuration.js";
 
 const clientKey = "__racePredictorCloudPrismaClient";
 
 export function getCloudPrismaClient() {
   if (!globalThis[clientKey]) {
-    const preview = readPreviewDatabaseOverride();
+    const preview = readOrbitFeaturePreviewDatabaseOverride() ?? readPreviewDatabaseOverride();
     globalThis[clientKey] = new PrismaClient(preview ? {
       datasources: { db: { url: preview.url } },
     } : undefined);

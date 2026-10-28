@@ -53,6 +53,45 @@ export const activityReflectionAnswersSchema = z.object({
   }).strict().optional(),
 }).strict();
 
+export const postRunAnswersSchema = z.object({
+  rpeAnswer: z.enum(["rated", "unable"]),
+  discomfort: z.enum(["none", "discomfort", "pain", "prefer_not_to_say"]),
+  symptoms: z.object({
+    bodyArea: z.string().trim().max(100).optional(),
+    severity: z.number().int().min(0).max(10).optional(),
+    affectedRunning: z.enum(["yes", "no", "unsure"]).optional(),
+  }).strict().optional(),
+  energy: z.enum(["fresh", "okay", "drained", "skip"]).optional(),
+  note: z.string().trim().max(1000).optional(),
+  fuel: z.enum(["no_issues", "not_enough", "stomach_issues", "unsure"]).optional(),
+  fuelNote: z.string().trim().max(1000).optional(),
+  raceNotes: z.object({
+    workedWell: z.string().trim().max(1000).optional(),
+    changeNextTime: z.string().trim().max(1000).optional(),
+  }).strict().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.discomfort === "none" && value.symptoms) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["symptoms"], message: "Symptom details require discomfort or pain" });
+  }
+  if (value.discomfort === "prefer_not_to_say" && value.symptoms) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["symptoms"], message: "Symptom details cannot be supplied when opting out" });
+  }
+  if (value.fuel === "no_issues" && value.fuelNote) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fuelNote"], message: "Fueling notes are only relevant when reporting an issue or uncertainty" });
+  }
+});
+
+export const postRunActivityReflectionAnswersSchema = activityReflectionAnswersSchema.extend({
+  postRun: postRunAnswersSchema,
+}).strict().superRefine((value, ctx) => {
+  if (value.postRun.rpeAnswer === "rated" && value.overallRpe === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["overallRpe"], message: "A rated effort requires an RPE" });
+  }
+  if (value.postRun.rpeAnswer === "unable" && value.overallRpe !== undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["overallRpe"], message: "An unable-to-rate answer cannot include an RPE" });
+  }
+});
+
 export const activityReflectionSchema = z.object({
   id: idSchema,
   athleteId: idSchema,
@@ -60,12 +99,20 @@ export const activityReflectionSchema = z.object({
   revision: z.number().int().nonnegative(),
   activityRevision: z.number().int().positive(),
   type: activityReflectionTypeSchema.nullable(),
-  answers: activityReflectionAnswersSchema,
+  answers: z.union([activityReflectionAnswersSchema, postRunActivityReflectionAnswersSchema]),
   sections: z.array(activityReflectionSectionSchema).max(20),
-  questionnaireVersion: z.literal("activity-reflection.v1"),
+  questionnaireVersion: z.enum(["activity-reflection.v1", "activity-reflection.v2"]),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
-}).strict();
+}).strict().superRefine((value, ctx) => {
+  const hasPostRunAnswers = "postRun" in value.answers;
+  if (value.questionnaireVersion === "activity-reflection.v2" && !hasPostRunAnswers) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["answers", "postRun"], message: "Version 2 reflections require post-run answers" });
+  }
+  if (value.questionnaireVersion === "activity-reflection.v1" && hasPostRunAnswers) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["questionnaireVersion"], message: "Version 1 reflections cannot contain post-run answers" });
+  }
+});
 
 export const saveActivityReflectionRequestSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
@@ -74,7 +121,40 @@ export const saveActivityReflectionRequestSchema = z.object({
   sections: z.array(activityReflectionSectionSchema).max(20),
 }).strict();
 
+export const savePostRunReflectionRequestSchema = z.object({
+  requestId: z.string().uuid(),
+  expectedRevision: z.number().int().nonnegative(),
+  expectedActivityRevision: z.number().int().nonnegative(),
+  type: activityReflectionTypeSchema.nullable(),
+  answers: postRunActivityReflectionAnswersSchema,
+  sections: z.array(activityReflectionSectionSchema).max(20),
+}).strict().superRefine((value, ctx) => {
+  if (value.type !== "race" && value.answers.postRun.raceNotes) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["answers", "postRun", "raceNotes"], message: "Race notes require the race activity type" });
+  }
+});
+export type SavePostRunReflectionRequest = z.infer<typeof savePostRunReflectionRequestSchema>;
+
+export const postRunReflectionStateChangeSchema = z.object({
+  requestId: z.string().uuid(),
+  expectedStateRevision: z.number().int().nonnegative(),
+}).strict();
+export type PostRunReflectionStateChange = z.infer<typeof postRunReflectionStateChangeSchema>;
+
 export const activityReflectionResponseSchema = z.object({ data: activityReflectionSchema.nullable() }).strict();
+
+export const runReviewStateSchema = z.object({
+  activityId: idSchema,
+  completedAt: isoDateTimeSchema.nullable(),
+  completedReflectionRevision: z.number().int().nullable(),
+  suppressedAt: isoDateTimeSchema.nullable(),
+  reopenedAt: isoDateTimeSchema.nullable(),
+  revision: z.number().int().nonnegative(),
+}).strict();
+
+export const runReviewStateResponseSchema = z.object({
+  data: z.object({ state: runReviewStateSchema.nullable(), reflection: activityReflectionSchema.nullable(), activityRevision: z.number().int().nonnegative().optional() }).strict(),
+}).strict();
 
 export const wellbeingValueSchema = z.enum(["very_poor", "poor", "normal", "good", "very_good"]);
 export const wellbeingLevelSchema = z.enum(["none", "mild", "moderate", "high", "very_high"]);

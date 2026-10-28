@@ -98,12 +98,18 @@ export function createSensitiveRouteWrapper(dependencies: RouteSecurityDependenc
         if (security.mode === "authenticated" && options.cloudHandling !== "actor-scoped") {
           throw cloudUnavailable();
         }
-        return await handler(security, request, ...rest);
+        return privateNoStore(await handler(security, request, ...rest));
       } catch (error) {
-        return failure(error);
+        return privateNoStore(failure(error));
       }
     };
   };
+}
+
+function privateNoStore(response: Response) {
+  response.headers.set("Cache-Control", "private, no-store");
+  response.headers.set("Pragma", "no-cache");
+  return response;
 }
 
 export const withSensitiveRoute = createSensitiveRouteWrapper();

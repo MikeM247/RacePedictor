@@ -17,6 +17,7 @@ const cloudEnvironmentKeys = [
   "RACEPREDICTOR_SECOND_BRAIN_SYNC_ENABLED",
   "RACEPREDICTOR_COACH_UI_ENABLED",
   "RACEPREDICTOR_COACH_CHAT_ENABLED",
+  "RACEPREDICTOR_COACH_RUN_REVIEW_AUTO_ENABLED",
   "RACEPREDICTOR_OWNER_AUTH_CONFIGURED",
   "VERCEL_GIT_COMMIT_SHA",
   "RACEPREDICTOR_RELEASE",
@@ -62,7 +63,7 @@ test("health is non-sensitive and redacts configuration secrets", { concurrency:
         status: "ok",
         runtime: "test",
         cloudMode: "enabled",
-        features: { stravaIngestion: true, secondBrainSync: false, coachUi: false, coachChat: false },
+        features: { stravaIngestion: true, secondBrainSync: false, coachUi: false, coachChat: false, coachRunReviewAuto: false },
         ownerAuthConfigured: false,
         release: "release-123",
       },
@@ -161,7 +162,7 @@ test("environment validation rejects invalid flags and public projection never a
   assert.deepEqual(publicCloudEnvironmentStatus(environment), {
     runtime: "test",
     cloudMode: "enabled",
-    features: { stravaIngestion: false, secondBrainSync: true, coachUi: false, coachChat: false },
+    features: { stravaIngestion: false, secondBrainSync: true, coachUi: false, coachChat: false, coachRunReviewAuto: false },
     ownerAuthConfigured: false,
     release: "safe-release",
   });
@@ -169,12 +170,14 @@ test("environment validation rejects invalid flags and public projection never a
 
 test("Coach UI and generation switches are independent and default off", () => {
   assert.deepEqual(readCloudEnvironment({ NODE_ENV: "test" }).features, {
-    stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false,
+    stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false, coachRunReviewAuto: false,
   });
   assert.deepEqual(readCloudEnvironment({
     NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled", RACEPREDICTOR_COACH_UI_ENABLED: "true",
-  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: true, coachChat: false });
+  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: true, coachChat: false, coachRunReviewAuto: false });
   assert.deepEqual(readCloudEnvironment({
     NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled", RACEPREDICTOR_COACH_CHAT_ENABLED: "true",
-  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: true });
+  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: true, coachRunReviewAuto: false });
+  assert.equal(readCloudEnvironment({ NODE_ENV: "test", RACEPREDICTOR_COACH_RUN_REVIEW_AUTO_ENABLED: "true" }).features.coachRunReviewAuto, true);
+  assert.throws(() => readCloudEnvironment({ RACEPREDICTOR_COACH_RUN_REVIEW_AUTO_ENABLED: "yes" }), (error: unknown) => error instanceof CloudEnvironmentError);
 });

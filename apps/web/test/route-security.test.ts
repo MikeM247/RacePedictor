@@ -37,6 +37,7 @@ const environmentKeys = [
   "RACEPREDICTOR_COACH_CHAT_ENABLED",
   "RACEPREDICTOR_OWNER_AUTH_CONFIGURED",
   "RACEPREDICTOR_ACTOR_ID",
+  "RACEPREDICTOR_COACH_RUN_REVIEW_AUTO_ENABLED",
 ] as const;
 
 async function withEnvironment(overrides: Record<string, string | undefined>, action: () => Promise<void>) {
@@ -106,10 +107,15 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("coaching/chat/history/[archiveId]/route.ts", apiRoot).href,
     new URL("coaching/chat/turns/route.ts", apiRoot).href,
     new URL("coaching/chat/turns/[turnId]/retry/route.ts", apiRoot).href,
+    new URL("coaching/chat/run-review-followups/route.ts", apiRoot).href,
+    new URL("coaching/run-review/route.ts", apiRoot).href,
+    new URL("coaching/run-review/offers/route.ts", apiRoot).href,
+    new URL("coaching/run-review/offers/[offerId]/present/route.ts", apiRoot).href,
+    new URL("coaching/run-review/offers/[offerId]/outcome/route.ts", apiRoot).href,
   ]);
   const backfillResume = new URL("providers/strava/backfill/resume/route.ts", apiRoot).href;
   assert.ok(routeFiles.some((route) => route.href === backfillResume), "owner-scoped backfill resume route is required");
-  assert.equal(routeFiles.length, 77, "route inventory changed; classify every new route explicitly");
+  assert.equal(routeFiles.length, 85, "route inventory changed; classify every new route explicitly");
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;
@@ -129,7 +135,8 @@ test("every current sensitive API handler uses the route-level security wrapper"
       continue;
     }
     if (coachRoutes.has(routeFile.href)) {
-      assert.match(source, /import \{ handle[^}]+, withCoachRoute \}/u, `${routeFile.pathname} must use the Coach owner boundary`);
+      assert.match(source, /import \{[^}]*withCoachRoute[^}]*\}/u, `${routeFile.pathname} must import the Coach owner boundary`);
+      assert.match(source, /handle[A-Z][A-Za-z]+/u, `${routeFile.pathname} must import a Coach handler`);
       assert.match(source, /export const (GET|POST|DELETE) = withCoachRoute/u, `${routeFile.pathname} must wrap its exported handler`);
       continue;
     }

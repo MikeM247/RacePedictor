@@ -61,7 +61,7 @@ export const activityReviewComparisonSchema = z.object({
 }).strict();
 
 export const activityReviewEvidenceSchema = z.object({
-  source: z.enum(["activity", "plan", "recent_history", "second_brain"]),
+  source: z.enum(["activity", "plan", "recent_history", "second_brain", "athlete_reflection"]),
   label: z.string().trim().min(1).max(160),
   reference: idSchema.optional(),
 }).strict();
@@ -143,6 +143,7 @@ export const activityCoachReviewArtifactSchema = activityCoachReviewSchema.exten
   requestId: idSchema,
   leaseToken: idSchema,
   expectedActivityRevision: revisionSchema,
+  expectedReflectionRevision: z.number().int().nonnegative().default(0),
 }).strict();
 
 export const activityReviewClaimResponseSchema = z.object({

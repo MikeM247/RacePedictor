@@ -3,6 +3,7 @@ import { z } from "zod";
 import { athleteScopeFor, buildActorContext } from "../../../../packages/core/src/contracts/auth.ts";
 import { buildReviewComparison, buildReviewFacts, buildReviewPrompt, validateGeneratedReview } from "../../../../packages/core/src/services/activity-coach-review.ts";
 import { PrismaActivityReviewRepository } from "../../../../packages/db/src/cloud/prisma-activity-review-repository.js";
+import { PrismaAthleteJournalRepository } from "../../../../packages/db/src/cloud/index.js";
 import { PrismaCalendarSessionAmendmentRepository } from "../../../../packages/db/src/cloud/prisma-calendar-session-amendment-repository.js";
 import { PrismaCloudActivityRepository } from "../../../../packages/db/src/cloud/prisma-cloud-activity-repository.js";
 import { PrismaCloudCoachingRepository } from "../../../../packages/db/src/cloud/prisma-cloud-coaching-repository.js";
@@ -14,7 +15,7 @@ const generatedReviewSchema = z.object({
   headline: z.string().trim().min(1).max(160),
   assessment: z.string().trim().min(1).max(4000),
   nextStep: z.string().trim().min(1).max(1000),
-  evidence: z.array(z.object({ source: z.enum(["activity", "plan", "recent_history", "second_brain"]), label: z.string().trim().min(1).max(160) }).strict()).max(16),
+  evidence: z.array(z.object({ source: z.enum(["activity", "plan", "recent_history", "second_brain", "athlete_reflection"]), label: z.string().trim().min(1).max(160) }).strict()).max(16),
   limitations: z.array(z.string().trim().min(1).max(500)).max(8),
 }).strict();
 
@@ -43,6 +44,7 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
   if (claim.items.length === 0) return { status: "idle", processed: 0 };
 
   const activities = new PrismaCloudActivityRepository({ prisma });
+  const journal = new PrismaAthleteJournalRepository({ prisma });
   const coaching = new PrismaCloudCoachingRepository({ prisma });
   const calendar = new PrismaCalendarSessionAmendmentRepository({ prisma });
   const results = [] as Array<{ activityId: string; status: string; reason?: string }>;
@@ -50,6 +52,24 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
     try {
       const activity = await activities.findById(scope, item.activityId);
       if (!activity) throw new Error("ACTIVITY_NOT_FOUND");
+      const reflectionRow = await journal.getReflection(scope, item.activityId);
+      const reflectionAnswers = reflectionRow?.answers && typeof reflectionRow.answers === "object" ? reflectionRow.answers as Record<string, any> : {};
+      const postRun = reflectionAnswers.postRun && typeof reflectionAnswers.postRun === "object" ? reflectionAnswers.postRun as Record<string, any> : {};
+      const overallRpe = typeof reflectionAnswers.overallRpe === "number" ? reflectionAnswers.overallRpe : null;
+      const reflection = reflectionRow ? {
+        revision: reflectionRow.revision,
+        questionnaireVersion: reflectionRow.questionnaireVersion,
+        overallRpe,
+        rpeAnswer: postRun.rpeAnswer ?? (overallRpe === null ? null : "rated"),
+        expectation: reflectionAnswers.expectation ?? null,
+        discomfort: postRun.discomfort ?? null,
+        symptoms: postRun.symptoms ? { bodyArea: postRun.symptoms.bodyArea ?? null, severity: postRun.symptoms.severity ?? null, affectedRunning: postRun.symptoms.affectedRunning ?? null } : null,
+        energy: postRun.energy ?? null,
+        fuel: postRun.fuel ?? null,
+        note: postRun.note ?? null,
+      } : null;
+      const expectedActivityRevision = await activities.currentRevision(scope, item.activityId);
+      const expectedReflectionRevision = reflectionRow?.revision ?? 0;
       const coachActivity = selectCoachActivity(activity);
       const localDate = (coachActivity.localOccurredAt ?? coachActivity.occurredAt).slice(0, 10);
       const plan = await coaching.getActivePlan(scope);
@@ -57,6 +77,7 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
       const candidates = sessions.filter((session) => session.kind !== "rest" && session.status !== "skipped");
       const facts = buildReviewFacts({
         activity: coachActivity,
+        reflection,
         sessions: candidates.map((session) => ({
           id: session.id,
           planId: plan?.id ?? "active-plan",
@@ -78,7 +99,7 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
         results.push({ activityId: item.activityId, status: "ready" });
         continue;
       }
-      await reviews.recordInputSnapshot(scope, item.requestId, DEVICE_ID, { activityRevision: await activities.currentRevision(scope, item.activityId), inputFingerprint: facts.fingerprint, planComparison: buildReviewComparison(facts) });
+      await reviews.recordInputSnapshot(scope, item.requestId, DEVICE_ID, { activityRevision: expectedActivityRevision, reflectionRevision: expectedReflectionRevision, inputFingerprint: facts.fingerprint, planComparison: buildReviewComparison(facts) });
       const providerKey = apiKey ?? (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY);
       if (!providerKey || providerKey.trim().length < 20) throw new Error(provider === "openrouter" ? "OPENROUTER_API_KEY_NOT_CONFIGURED" : "OPENAI_API_KEY_NOT_CONFIGURED");
       const modelCapabilities = OPENAI_COACH_MODELS.find((item: any) => item.id === requestedModel);
@@ -95,7 +116,7 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
         assessment: generated.review.assessment,
         nextStep: generated.review.nextStep,
         comparison: buildReviewComparison(facts),
-        evidence: generated.review.evidence.filter((e) => e.source === "activity" || e.source === "plan"),
+        evidence: [...generated.review.evidence.filter((e) => e.source === "activity" || e.source === "plan" || e.source === "athlete_reflection"), ...(reflectionRow ? [{ source: "athlete_reflection" as const, label: `Athlete reflection revision ${reflectionRow.revision}`, reference: item.activityId }] : [])].slice(0, 16),
         limitations: [...new Set([...facts.limitations, ...generated.review.limitations])].slice(0, 8),
         generatedAt: timestamp,
         publishedAt: timestamp,
@@ -103,11 +124,10 @@ export async function runCloudCoachFeedbackBatch({ athleteId, activityId = null,
         provider,
         requestedModel,
         configurationRevision: item.configurationRevision ?? configuration.revision,
-        promptVersion: "activity-coach-review.cloud-metrics.v1",
+        promptVersion: "activity-coach-review.reflection.v2",
         provenance: "cloud_metrics_plan",
       });
-      const revision = await activities.currentRevision(scope, item.activityId);
-      await reviews.publish(scope, { ...review, requestId: item.requestId, leaseToken: item.leaseToken, expectedActivityRevision: revision }, DEVICE_ID);
+      await reviews.publish(scope, { ...review, requestId: item.requestId, leaseToken: item.leaseToken, expectedActivityRevision, expectedReflectionRevision }, DEVICE_ID);
       results.push({ activityId: item.activityId, status: "ready" });
     } catch (error) {
       const reason = error instanceof Error ? error.message.slice(0, 80) : "ACTIVITY_COACH_REVIEW_FAILED";

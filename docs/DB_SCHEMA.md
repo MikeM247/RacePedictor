@@ -1,5 +1,9 @@
 # DB_SCHEMA
 
+## ORBIT post-run review (28 October 2026)
+
+Additive migration `20261028120000_orbit_post_run_review` adds athlete-scoped activation (`CoachRunReviewActivation`), per-activity completion/suppression (`ActivityRunReviewState`), per-login reservation/consumption (`CoachRunReviewOffer`), and content-free mutation receipts (`ActivityReflectionMutation`). Compound foreign keys and uniqueness constraints bind records to their athlete/activity/conversation. A v2 reflection and its completion/suppression update commit atomically under an activity-scoped lock. Replays return current state and never restore feedback deleted later. Existing non-empty reflections are preserved and suppressed without inventing v2 answers or completion. Coach turn references are unique per conversation generation and reflection revision; saved feedback is an explicit event type. Review publication locks the activity and validates exact captured activity/reflection revisions. Rollback is application/flag rollback only; retain the additive records and feedback. See [implementation handoff](plans/ORBIT_POST_RUN_REVIEW_IMPLEMENTATION.md).
+
 ## Coach discussion archives (25 October 2026)
 
 `CoachConversationArchive` / `coach_conversation_archives` adds metadata per conversation/generation, with unique athlete/request identity and a composite conversation/athlete foreign key. Messages and turns stay under their original generation; only the active generation enters conversational AI history. The additive migration is `20261025180000_coach_conversation_archives`; no active-data backfill is required. See [lifecycle and release details](plans/COACH_CHAT_HISTORY.md).

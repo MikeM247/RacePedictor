@@ -10,6 +10,8 @@ import {
   coachArchiveSummarySchema,
   coachContextSchema,
   coachConversationStateSchema,
+  coachRunReviewFeedbackReceiptSchema,
+  coachRunReviewFollowupRequestSchema,
   coachRecordReferenceSchema,
   coachRetryRequestSchema,
   coachTopicSchema,
@@ -170,6 +172,98 @@ export async function handleCoachNewTurn(security: SensitiveRouteContext, reques
   });
 }
 
+/** Start one Coach response for a committed run-feedback revision. The receipt
+ * and provider prompt are built from the saved reflection, never request text. */
+export async function handleCoachRunReviewFollowup(security: SensitiveRouteContext, request: Request, compositionOverride?: ChatComposition) {
+  const scope = requireOwnerScope(security);
+  assertSameOrigin(request);
+  const parsed = coachRunReviewFollowupRequestSchema.safeParse(await readBoundedJson(request));
+  if (!parsed.success) throw validationError(parsed.error);
+  const input = parsed.data;
+  const composition = compositionOverride ?? getChatComposition();
+  const environment = readCloudEnvironment();
+  if (!environment.features.coachChat) throw new ApiHttpError(503, "UNAVAILABLE", "Coach replies are paused; your feedback is saved");
+
+  const requestReplay = await composition.coachChat.getTurnReplay(scope, { expectedGeneration: input.expectedGeneration, clientTurnId: input.requestId });
+  if (requestReplay) {
+    if (requestReplay.userMessage?.eventType !== "activity_reflection"
+      || requestReplay.userMessage?.selectedRecordId !== input.activityId
+      || requestReplay.userMessage?.activityReflectionRevision !== input.reflectionRevision) {
+      throw new CoachChatConflictError("This request identity was already used for different content.");
+    }
+    return existingTurnResponse(requestReplay, "feedback-replay");
+  }
+
+  const revisionReplay = await composition.coachChat.getTurnReplay(scope, {
+    expectedGeneration: input.expectedGeneration,
+    activityReflectionRef: { activityId: input.activityId, revision: input.reflectionRevision },
+  });
+  if (revisionReplay) return existingTurnResponse(revisionReplay, "feedback-revision-replay");
+
+  const saved = await composition.journal.getRunReviewState(scope, input.activityId);
+  if (!saved.reflection || saved.reflection.questionnaireVersion !== "activity-reflection.v2"
+    || saved.reflection.revision !== input.reflectionRevision
+    || saved.state?.completedReflectionRevision !== input.reflectionRevision) {
+    throw new ApiHttpError(409, "REFLECTION_CHANGED", "The saved run feedback changed. Refresh the review before asking ORBIT to respond.");
+  }
+
+  const conversation = coachConversationStateSchema.parse(await composition.coachChat.getConversation(scope));
+  if (conversation.generation !== input.expectedGeneration) throw new ApiHttpError(409, "CONVERSATION_CHANGED", "The discussion changed. Reload before asking ORBIT to respond.");
+  if (conversation.currentTurn?.state === "processing") return success({ status: "waiting", message: "Feedback is saved. ORBIT can respond after the current reply finishes." }, 202);
+  if (conversation.sequence !== input.expectedSequence) throw new ApiHttpError(409, "CONVERSATION_CHANGED", "The discussion changed. Reload before asking ORBIT to respond.");
+
+  let context: CoachContext;
+  try {
+    context = await resolveCoachContext(composition, scope, {
+      topic: "reflect",
+      selectedRecord: { type: "activity", id: input.activityId },
+      canSend: true,
+    });
+  } catch (error) { throw mapChatError(error); }
+  const selected = context.selectedActivity;
+  if (!selected || selected.id !== input.activityId || selected.reflection?.revision !== input.reflectionRevision) {
+    throw new ApiHttpError(409, "REFLECTION_CHANGED", "The saved run feedback changed. Refresh the review before asking ORBIT to respond.");
+  }
+  const receipt = coachRunReviewFeedbackReceiptSchema.parse({
+    activityId: selected.id,
+    activityTitle: selected.title,
+    occurredAt: selected.occurredAt,
+    reflectionRevision: selected.reflection.revision,
+    rpeAnswer: selected.reflection.rpeAnswer,
+    overallRpe: selected.reflection.overallRpe,
+    expectation: selected.reflection.expectation,
+    discomfort: selected.reflection.discomfort,
+    symptoms: selected.reflection.symptoms,
+    energy: selected.reflection.energy,
+    fuel: selected.reflection.fuel,
+    fuelNote: selected.reflection.fuelNote,
+    note: selected.reflection.note,
+    raceNotes: selected.reflection.raceNotes,
+  });
+  const requestHash = hashJson({ eventType: "activity_reflection", receipt, contextFingerprint: context.fingerprint });
+  let result: any;
+  try {
+    result = await composition.coachChat.beginTurn(scope, {
+      clientTurnId: input.requestId,
+      expectedGeneration: input.expectedGeneration,
+      expectedSequence: input.expectedSequence,
+      topic: "reflect",
+      selectedRecord: { type: "activity", id: input.activityId },
+      text: "Run feedback saved",
+      eventType: "activity_reflection",
+      eventPayload: receipt,
+      activityReflectionRef: { activityId: input.activityId, revision: input.reflectionRevision },
+      requestHash,
+      contextFingerprint: context.fingerprint,
+      contextSnapshot: context,
+      reflectedActivityAt: selected.occurredAt,
+      model: coachModelFromEnvironment(),
+    });
+  } catch (error) { throw mapChatError(error); }
+  if (result.kind === "replay") return existingTurnResponse(result, "feedback-replay");
+  return generateAndPersist({ composition, scope, context, turn: result.turn, userMessage: result.userMessage, leaseToken: result.leaseToken });
+}
+
 export async function handleCoachRetry(security: SensitiveRouteContext, request: Request, turnId: string, compositionOverride?: ChatComposition) {
   const scope = requireOwnerScope(security);
   assertSameOrigin(request);
@@ -290,7 +384,7 @@ async function generateAndPersist(input: {
     const generated = await (composition.generateReply ?? createOpenAIChatProvider({ model: coachModelFromEnvironment() }))({
       context,
       history,
-      userText: userMessage.text,
+      userText: providerUserText(userMessage),
     });
     const latestContext = await resolveCoachContext(composition, scope, {
       topic: turn.topic as CoachTopic,
@@ -379,7 +473,15 @@ function messageOutput(message: any, turnState: any) {
       ? { type: message.selectedRecordType, id: message.selectedRecordId }
       : message.selectedRecord ?? null,
     turnState,
+    eventType: message.eventType ?? null,
+    activityReflectionRevision: message.activityReflectionRevision ?? null,
+    eventPayload: message.eventPayload ?? null,
   };
+}
+
+function providerUserText(message: any) {
+  if (message?.eventType !== "activity_reflection" || !message.eventPayload) return message.text;
+  return `Structured athlete run feedback saved from the post-run review form. This is not text the athlete typed. Use it as read-only evidence and respond to the athlete's reported experience.\n${JSON.stringify(message.eventPayload)}`;
 }
 
 function requireOwnerScope(security: SensitiveRouteContext) {

@@ -35,6 +35,16 @@ test("comparison uses measured facts and exposes missing evidence", () => {
   assert.doesNotThrow(() => activityReviewComparisonSchema.parse(comparison));
 });
 
+test("athlete RPE is fingerprinted and kept distinct as self-reported evidence", () => {
+  const reflection = { revision: 4, questionnaireVersion: "activity-reflection.v2", overallRpe: 7, rpeAnswer: "rated" as const, expectation: "as_expected", discomfort: "none", symptoms: null, energy: "okay", fuel: null, note: null };
+  const facts = buildReviewFacts({ activity, reflection });
+  const withoutFeedback = buildReviewFacts({ activity });
+  assert.notEqual(facts.fingerprint, withoutFeedback.fingerprint);
+  assert.equal(buildReviewComparison(facts).actualPerceivedEffort, 7);
+  assert.match(buildReviewPrompt(facts), /self-reported evidence/u);
+  assert.doesNotThrow(() => activityReviewComparisonSchema.parse(buildReviewComparison(facts)));
+});
+
 test("review contract rejects invented identity and malformed hashes", () => {
   assert.throws(() => activityCoachReviewSchema.parse({
     id: "review-1", athleteId: "athlete-1", activityId: "activity-1", revision: 1,

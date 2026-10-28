@@ -5,6 +5,7 @@ import { PrismaActivityReviewRepository } from "../../../packages/db/src/cloud/p
 import { PrismaCloudActivityRepository } from "../../../packages/db/src/cloud/prisma-cloud-activity-repository.js";
 import { PrismaCloudCoachingRepository } from "../../../packages/db/src/cloud/prisma-cloud-coaching-repository.js";
 import { PrismaCalendarSessionAmendmentRepository } from "../../../packages/db/src/cloud/prisma-calendar-session-amendment-repository.js";
+import { PrismaAthleteJournalRepository } from "../../../packages/db/src/cloud/index.js";
 import { runCloudCoachFeedbackBatch } from "../lib/server/activity-coach-worker.ts";
 
 for (const configuration of [{ provider: "openai" as const, model: "test-model", reasoningEffort: "" }, { provider: "openai" as const, model: "gpt-6-luna", reasoningEffort: "high" }, { provider: "openrouter" as const, model: "openai/gpt-4o-mini", reasoningEffort: "" }]) {
@@ -14,7 +15,7 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
   const previousClient = globals[clientKey];
   // Replace the existing client cache only in this test process. No DB connection is created.
   globals[clientKey] = {
-    activityReviewRequest: { aggregate: async () => ({ _sum: { attemptCount: 0 } }) },
+    activityReviewRequest: { aggregate: async () => ({ _sum: { attemptCount: 0 } }) }, activityReflection: {}, dailyWellbeingCheckIn: {},
     activityCoachReview: {}, activity: {}, trainingPlanProjection: {},
     calendarSessionProjection: {}, calendarSessionAmendment: {}, $transaction: async () => {},
   };
@@ -22,6 +23,7 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
   const activityId = "activity-worker-test";
   const timestamp = "2026-10-04T06:00:00.000Z";
   const published: ActivityCoachReviewArtifact[] = [];
+  const snapshots: Array<Record<string, unknown>> = [];
   const failures: string[] = [];
   const scoped = (scope: { athleteId: string }) => assert.equal(scope.athleteId, athleteId);
   context.mock.method(PrismaActivityReviewRepository.prototype, "claim", async (scope: { athleteId: string }) => {
@@ -29,7 +31,10 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
     return { items: [{ requestId: "request-worker-test", activityId, leaseToken: "lease-worker-test", status: "processing", provider: configuration.provider, requestedModel: configuration.model, configurationRevision: 3, forceRegenerate: true }] };
   });
   context.mock.method(PrismaActivityReviewRepository.prototype, "get", async () => ({ review: null }));
-  context.mock.method(PrismaActivityReviewRepository.prototype, "recordInputSnapshot", async () => {});
+  context.mock.method(PrismaAthleteJournalRepository.prototype, "getReflection", async () => ({
+    revision: 2, questionnaireVersion: "activity-reflection.v2", answers: { overallRpe: 7, expectation: "as_expected", postRun: { rpeAnswer: "rated", discomfort: "none" } },
+  }));
+  context.mock.method(PrismaActivityReviewRepository.prototype, "recordInputSnapshot", async (_scope: unknown, _request: string, _device: string, input: Record<string, unknown>) => { snapshots.push(input); });
   context.mock.method(PrismaActivityReviewRepository.prototype, "recordProviderResult", async () => {});
   context.mock.method(PrismaActivityReviewRepository.prototype, "markFailure", async (_scope: unknown, _request: string, _device: string, reason: string) => { failures.push(reason); });
   context.mock.method(PrismaActivityReviewRepository.prototype, "publish", async (scope: { athleteId: string }, artifact: unknown) => {
@@ -54,6 +59,7 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
     providerCalls += 1;
     assert.equal(init?.method, "POST");
     const request = JSON.parse(String(init?.body));
+    assert.match(JSON.stringify(request), /overallRpe/u);
     assert.equal(request.model, configuration.model);
     if (configuration.provider === "openrouter") {
       assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
@@ -72,13 +78,17 @@ test(`cloud coach worker publishes generated feedback with ${configuration.model
     assert.deepEqual(failures, []);
     assert.equal(providerCalls, 1);
     assert.equal(published.length, 1);
-    assert.equal(published[0].promptVersion, "activity-coach-review.cloud-metrics.v1");
+    assert.equal(snapshots[0].reflectionRevision, 2);
+    assert.equal(published[0].promptVersion, "activity-coach-review.reflection.v2");
     assert.equal(published[0].provenance, "cloud_metrics_plan");
     assert.equal(published[0].model, configuration.model);
     assert.equal(published[0].provider, configuration.provider);
     assert.equal(published[0].requestedModel, configuration.model);
     assert.equal(published[0].configurationRevision, 3);
     assert.equal(published[0].expectedActivityRevision, 1);
+    assert.equal(published[0].expectedReflectionRevision, 2);
+    assert.equal(published[0].comparison.actualPerceivedEffort, 7);
+    assert.ok(published[0].evidence.some((item) => item.source === "athlete_reflection"));
     assert.equal(published[0].comparison.sessionId, "session-worker-test");
     assert.equal(published[0].requestId, "request-worker-test");
     assert.equal(published[0].leaseToken, "lease-worker-test");

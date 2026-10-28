@@ -11,6 +11,7 @@ import {
   PrismaActivityReviewRepository,
   PrismaAthleteFeedbackRepository,
   PrismaAthleteJournalRepository,
+  PrismaCoachRunReviewRepository,
   PrismaCoachChatRepository,
   createTrainingPlanGoalContextReader,
 } from "../../../../packages/db/src/cloud/index.js";
@@ -34,6 +35,7 @@ function buildComposition() {
     activityReviews: new PrismaActivityReviewRepository({ prisma }),
     athleteFeedback: new PrismaAthleteFeedbackRepository({ prisma }),
     journal: new PrismaAthleteJournalRepository({ prisma }),
+    runReviews: new PrismaCoachRunReviewRepository({ prisma }),
     coachChat: new PrismaCoachChatRepository({ prisma }),
   });
 }

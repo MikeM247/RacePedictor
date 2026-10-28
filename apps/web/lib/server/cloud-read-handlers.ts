@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { athleteScopeFor } from "../../../../packages/core/src/contracts/auth.ts";
 import { syncChangesQuerySchema } from "../../../../packages/core/src/contracts/sync.ts";
 import { projectOnlineStatus } from "../../../../packages/core/src/services/online-status.ts";
@@ -12,7 +13,7 @@ import {
   todayRouteDataSchema,
   todayQueryRequestSchema,
 } from "../../../../packages/core/src/contracts/coaching.ts";
-import { ApiHttpError, success } from "./api-response.ts";
+import { ApiHttpError, success, type ApiErrorCode } from "./api-response.ts";
 import { projectCloudToday } from "../../../../packages/core/src/services/cloud-coaching.ts";
 import {
   CloudActivityCursorError,
@@ -26,6 +27,8 @@ import { activityFeedbackResponseDataSchema, activityReviewRequestIntentSchema }
 import {
   activityReflectionResponseSchema,
   saveActivityReflectionRequestSchema,
+  savePostRunReflectionRequestSchema,
+  postRunReflectionStateChangeSchema,
   saveDailyWellbeingRequestSchema,
   wellbeingRangeQuerySchema,
   dailyWellbeingListResponseSchema,
@@ -99,6 +102,75 @@ export async function handleCloudSaveActivityReflection(
     if (error instanceof AthleteJournalConflictError) throw new ApiHttpError(409, "CONFLICT", "The reflection changed; reload and review the latest values");
     throw error;
   }
+}
+
+/** Route v2 run reflections through their atomic completion transaction while
+ * preserving the existing v1 journal endpoint for other sports and clients. */
+export async function handleCloudSaveActivityReflectionVersioned(
+  security: SensitiveRouteContext,
+  request: Request,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  let body: unknown;
+  try { body = await request.clone().json(); }
+  catch { return handleCloudSaveActivityReflection(security, request, activityId, getComposition); }
+  if (body && typeof body === "object" && "answers" in body && body.answers && typeof body.answers === "object" && "postRun" in body.answers) {
+    return handleCloudSavePostRunReflection(security, request, activityId, getComposition);
+  }
+  return handleCloudSaveActivityReflection(security, request, activityId, getComposition);
+}
+
+export async function handleCloudSavePostRunReflection(
+  security: SensitiveRouteContext,
+  request: Request,
+  activityId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  assertSameOriginRequest(request);
+  const parsed = savePostRunReflectionRequestSchema.safeParse(await readBoundedJson(request, 24_000));
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Run feedback is invalid", parsed.error.issues);
+  try {
+    const result = await getComposition().journal.savePostRunReflection(scope, decodeId(activityId), parsed.data);
+    if (!result) throw new ApiHttpError(404, "NOT_FOUND", "This run is not available for feedback");
+    return success({ ...result, operation: { requestId: result.operation.requestId, operation: result.operation.operation, appliedRevision: result.operation.appliedRevision, stateRevision: result.operation.appliedStateRevision } });
+  } catch (error) { throw mapReflectionError(error); }
+}
+
+export async function handleCloudReflectionMutationRead(
+  security: SensitiveRouteContext,
+  activityId: string,
+  requestId: string,
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireScope(security);
+  const request = z.string().uuid().safeParse(requestId);
+  if (!request.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Request identity is invalid");
+  const result = await getComposition().journal.getReflectionMutation(scope, decodeId(activityId), request.data);
+  if (!result) throw new ApiHttpError(404, "NOT_FOUND", "The feedback request was not found");
+  return success(result);
+}
+
+export async function handleCloudReflectionStateChange(
+  security: SensitiveRouteContext,
+  request: Request,
+  activityId: string,
+  operation: "deleted" | "reopened",
+  getComposition: GetCloudReadComposition = getCloudReadComposition,
+) {
+  const scope = requireOwnerScope(security);
+  assertSameOriginRequest(request);
+  const parsed = postRunReflectionStateChangeSchema.safeParse(await readBoundedJson(request, 1024));
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Run feedback update is invalid", parsed.error.issues);
+  try {
+    const journal = getComposition().journal;
+    const result = operation === "deleted"
+      ? await journal.deletePostRunReflection(scope, decodeId(activityId), parsed.data)
+      : await journal.reopenPostRunReflection(scope, decodeId(activityId), parsed.data);
+    if (!result) throw new ApiHttpError(404, "NOT_FOUND", "This run is no longer available");
+    return success({ ...result, operation: { requestId: result.operation.requestId, operation: result.operation.operation, appliedRevision: result.operation.appliedRevision, stateRevision: result.operation.appliedStateRevision } });
+  } catch (error) { throw mapReflectionError(error); }
 }
 
 export async function handleCloudWellbeingList(
@@ -710,6 +782,31 @@ function decodeId(value: string) {
 async function readJson(request: Request) {
   try { return await request.json(); }
   catch { throw new ApiHttpError(400, "VALIDATION_ERROR", "Request body must be valid JSON"); }
+}
+
+async function readBoundedJson(request: Request, maxBytes: number) {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > maxBytes) throw new ApiHttpError(413, "VALIDATION_ERROR", "Request body is too large");
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) throw new ApiHttpError(413, "VALIDATION_ERROR", "Request body is too large");
+  try { return JSON.parse(text) as unknown; } catch { throw new ApiHttpError(400, "VALIDATION_ERROR", "Request body must be valid JSON"); }
+}
+
+function assertSameOriginRequest(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin || origin !== new URL(request.url).origin) throw new ApiHttpError(403, "FORBIDDEN", "A same-origin request is required");
+}
+
+function mapReflectionError(error: unknown) {
+  if (!(error instanceof AthleteJournalConflictError)) return error;
+  const messages: Record<string, string> = {
+    ACTIVITY_CHANGED: "The run changed; refresh its details before saving.",
+    REFLECTION_VERSION_CHANGED: "This feedback changed in another session. Refresh before saving.",
+    IDEMPOTENCY_CONFLICT: "This request identity was used for different feedback.",
+    REFLECTION_EXISTS: "Delete the saved feedback before reopening this review.",
+  };
+  const structuredCodes = new Set<ApiErrorCode>(["ACTIVITY_CHANGED", "REFLECTION_CHANGED", "REFLECTION_VERSION_CHANGED", "REFLECTION_EXISTS", "IDEMPOTENCY_CONFLICT"]);
+  return new ApiHttpError(409, structuredCodes.has(error.code as ApiErrorCode) ? error.code as ApiErrorCode : "CONFLICT", messages[error.code] ?? "The feedback changed. Refresh before saving.");
 }
 
 function mapAmendmentError(error: unknown) {

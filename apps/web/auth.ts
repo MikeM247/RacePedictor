@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
+import { randomUUID } from "node:crypto";
 import {
   isConfiguredOwnerAccount,
   projectOwnerSession,
@@ -15,7 +16,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return isConfiguredOwnerAccount(account);
     },
     jwt({ token, account }) {
-      return updateOwnerAuthToken(token, account);
+      const updated = updateOwnerAuthToken(token, account);
+      if (account && isConfiguredOwnerAccount(account)) updated.runReviewLoginId = randomUUID();
+      else if (account) delete updated.runReviewLoginId;
+      return updated;
     },
     session({ session, token }) {
       return projectOwnerSession(session, token);

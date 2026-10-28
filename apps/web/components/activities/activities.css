@@ -392,6 +392,12 @@
 .athlete-journal-form textarea { min-height: 76px; resize: vertical; }
 .journal-choice-row { display: flex; flex-wrap: wrap; gap: .9rem 1.25rem; }
 .journal-choice-row label { display: inline-flex; align-items: center; gap: .35rem; }
+.run-rpe-choices { display: grid; grid-template-columns: repeat(5, minmax(40px, 1fr)); gap: 7px; max-width: 340px; margin: 7px 0; }
+.run-rpe-choice { position: relative; display: grid; min-height: 44px; place-items: center; border: 1px solid #c3cfde; border-radius: 8px; color: #1f3858; font-weight: 700; cursor: pointer; }
+.run-rpe-choice input { position: absolute; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.run-rpe-choice:has(input:checked) { border-color: #075dcc; background: #eaf2ff; color: #074b9e; box-shadow: inset 0 0 0 1px #075dcc; }
+.run-rpe-choice:has(input:focus-visible), .run-rpe-unable:has(input:focus-visible) { outline: 3px solid #7baaf1; outline-offset: 2px; }
+.run-rpe-unable { display: flex; grid-column: 1 / -1; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px; }
 .form-help { margin: 0; color: var(--rp-text-muted); font-size: .86rem; }
 .journal-section-row { display: grid; grid-template-columns: 10rem 1fr 2fr; gap: .5rem; }
 .journal-form-actions { display: flex; flex-wrap: wrap; gap: .65rem; }

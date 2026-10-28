@@ -13,6 +13,7 @@ export const actorContextInputSchema = z.object({
   permittedAthleteIds: z.array(scopedIdSchema).min(1).max(100),
   activeAthleteId: scopedIdSchema,
   requestId: scopedIdSchema,
+  runReviewLoginId: z.string().uuid().optional(),
   credentialKind: actorCredentialKindSchema,
 }).strict();
 

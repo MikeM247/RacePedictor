@@ -186,6 +186,31 @@ test("durable turns deduplicate by client identity, single-flight, and persist c
   ]);
 });
 
+test("a saved run-feedback receipt is structured and creates at most one Coach turn per reflection revision", async () => {
+  const { repository } = setup();
+  const receipt = { activityId: "activity_12345678", activityTitle: "Morning run", reflectionRevision: 4, rpeAnswer: "rated", overallRpe: 7, discomfort: "none" };
+  const first = await repository.beginTurn(scope, {
+    ...turnInput(0, "followup_first", "Run feedback saved"),
+    eventType: "activity_reflection", eventPayload: receipt,
+    activityReflectionRef: { activityId: receipt.activityId, revision: receipt.reflectionRevision },
+  });
+  assert.equal(first.kind, "started");
+  assert.equal(first.userMessage.text, "Run feedback saved");
+  assert.equal(first.userMessage.eventType, "activity_reflection");
+  assert.deepEqual(first.userMessage.eventPayload, receipt);
+  await complete(repository, first, "You reported a controlled RPE 7 effort.");
+
+  const replay = await repository.beginTurn(scope, {
+    ...turnInput(2, "followup_retry_identity", "Run feedback saved"),
+    eventType: "activity_reflection", eventPayload: receipt,
+    activityReflectionRef: { activityId: receipt.activityId, revision: receipt.reflectionRevision },
+  });
+  assert.equal(replay.kind, "replay");
+  assert.equal(replay.turn.id, first.turn.id);
+  assert.equal((await repository.getConversation(scope)).messages[0].eventType, "activity_reflection");
+  assert.match((await repository.getCompletedHistory(scope))[0].text, /not a message they typed/u);
+});
+
 test("failed turns retain the user message, retry with a fenced lease, and clear history without late publication", async () => {
   const { prisma, repository } = setup();
   const first = await repository.beginTurn(scope, turnInput(0, "client_first"));

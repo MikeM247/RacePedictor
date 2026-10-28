@@ -99,7 +99,7 @@ export class PrismaActivityReviewRepository {
       if (existing?.status === "processing" || existing?.status === "queued") {
         return { activityId, requestId: existing.id, status: activityReviewRequestStatusSchema.parse(existing.status), reused: true, updatedAt: existing.updatedAt.toISOString() };
       }
-      const data = { status: "queued", executionTarget: "cloud", availableAt: now, activityRevision: latestRevision?.revisionNumber ?? null, inputFingerprint: null, lastErrorCode: null, forceRegenerate: regenerate, expectedReviewRevision: regenerate ? review.revision : null };
+      const data = { status: "queued", executionTarget: "cloud", availableAt: now, activityRevision: latestRevision?.revisionNumber ?? null, reflectionRevision: null, inputFingerprint: null, lastErrorCode: null, forceRegenerate: regenerate, expectedReviewRevision: regenerate ? review.revision : null };
       const request = existing
         ? await tx.activityReviewRequest.update({ where: { id_athleteId: { id: existing.id, athleteId } }, data })
         : await tx.activityReviewRequest.create({ data: { id: "activity_review_request_" + randomUUID().replaceAll("-", ""), athleteId, activityId, ...data } });
@@ -124,30 +124,43 @@ export class PrismaActivityReviewRepository {
 
   async publish(scope, artifact, deviceId) {
     const athleteId = assertAthleteScope(scope);
-    const { requestId, leaseToken, expectedActivityRevision: _expectedActivityRevision, ...review } = activityCoachReviewArtifactSchema.parse(artifact);
+    const { requestId, leaseToken, expectedActivityRevision: _expectedActivityRevision, expectedReflectionRevision: _expectedReflectionRevision, ...review } = activityCoachReviewArtifactSchema.parse(artifact);
     const parsed = activityCoachReviewSchema.parse(review);
     if (parsed.athleteId !== athleteId) throw new Error("Review crosses athlete scope");
-    const request = await this.#prisma.activityReviewRequest.findUnique({ where: { id_athleteId: { id: requestId, athleteId } } });
-    if (!request) throw new Error("Activity review request was not found");
-    if (request.executionTarget === "cloud" && deviceId !== "cloud-coach-worker") throw new Error("Cloud activity reviews cannot be published by a paired device");
-    if (request.forceRegenerate && request.expectedReviewRevision) {
-      const previous = await this.#prisma.activityCoachReview.findFirst({ where: { athleteId, activityId: parsed.activityId }, orderBy: { revision: "desc" }, select: { revision: true } });
-      if (previous?.revision !== request.expectedReviewRevision) throw new Error("The published feedback changed during regeneration");
-    }
-    if (request.status !== "processing" || request.lockedBy !== deviceId || request.leaseToken !== leaseToken) throw new Error("Activity review lease is invalid");
-    const latestRevision = this.#prisma.activityRevision
-      ? await this.#prisma.activityRevision.findFirst({ where: { athleteId, activityId: parsed.activityId }, orderBy: { revisionNumber: "desc" }, select: { revisionNumber: true } })
-      : null;
-    if (latestRevision && latestRevision.revisionNumber !== _expectedActivityRevision) throw new Error("Activity review activity revision is stale");
-    const row = await this.#prisma.activityCoachReview.upsert({
-      where: { athleteId_activityId_revision: { athleteId, activityId: parsed.activityId, revision: parsed.revision } },
-      update: {},
-      create: {
-        ...toPrisma(parsed), requestId: request.id,
-      },
-    });
-    await this.#prisma.activityReviewRequest.update({ where: { id_athleteId: { id: request.id, athleteId } }, data: { status: "ready", activityRevision: _expectedActivityRevision, inputFingerprint: parsed.inputFingerprint, lastErrorCode: null, leaseToken: null, lockedBy: null, lockedAt: null } });
-    return activityCoachReviewSchema.parse(toReview(row));
+    const publish = async (tx) => {
+      if (typeof tx.$queryRaw === "function") {
+        const activity = await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "athleteId" = ${athleteId} AND "id" = ${parsed.activityId} AND "deletedAt" IS NULL FOR UPDATE`;
+        if (!activity.length) throw new Error("Activity review activity was deleted");
+      }
+      const request = await tx.activityReviewRequest.findUnique({ where: { id_athleteId: { id: requestId, athleteId } } });
+      if (!request) throw new Error("Activity review request was not found");
+      if (request.executionTarget === "cloud" && deviceId !== "cloud-coach-worker") throw new Error("Cloud activity reviews cannot be published by a paired device");
+      if (request.forceRegenerate && request.expectedReviewRevision) {
+        const previous = await tx.activityCoachReview.findFirst({ where: { athleteId, activityId: parsed.activityId }, orderBy: { revision: "desc" }, select: { revision: true } });
+        if (previous?.revision !== request.expectedReviewRevision) throw new Error("The published feedback changed during regeneration");
+      }
+      if (request.status !== "processing" || request.lockedBy !== deviceId || request.leaseToken !== leaseToken) throw new Error("Activity review lease is invalid");
+      if (request.activityRevision !== null && request.activityRevision !== undefined && request.activityRevision !== _expectedActivityRevision) throw new Error("Activity review activity snapshot changed");
+      if (request.reflectionRevision !== null && request.reflectionRevision !== undefined && request.reflectionRevision !== _expectedReflectionRevision) throw new Error("Activity review reflection snapshot changed");
+      if (tx.activityRevision) {
+        const latestRevision = await tx.activityRevision.findFirst({ where: { athleteId, activityId: parsed.activityId }, orderBy: { revisionNumber: "desc" }, select: { revisionNumber: true } });
+        if ((latestRevision?.revisionNumber ?? 0) !== _expectedActivityRevision) throw new Error("Activity review activity is stale");
+      }
+      if (tx.activityReflection && request.reflectionRevision !== null && request.reflectionRevision !== undefined) {
+        const reflection = await tx.activityReflection.findUnique({ where: { athleteId_activityId: { athleteId, activityId: parsed.activityId } }, select: { revision: true } });
+        if ((reflection?.revision ?? 0) !== _expectedReflectionRevision) throw new Error("Activity review reflection is stale");
+      }
+      const row = await tx.activityCoachReview.upsert({
+        where: { athleteId_activityId_revision: { athleteId, activityId: parsed.activityId, revision: parsed.revision } },
+        update: {},
+        create: { ...toPrisma(parsed), requestId: request.id },
+      });
+      await tx.activityReviewRequest.update({ where: { id_athleteId: { id: request.id, athleteId } }, data: { status: "ready", activityRevision: _expectedActivityRevision, reflectionRevision: _expectedReflectionRevision, inputFingerprint: parsed.inputFingerprint, lastErrorCode: null, leaseToken: null, lockedBy: null, lockedAt: null } });
+      return activityCoachReviewSchema.parse(toReview(row));
+    };
+    return typeof this.#prisma.$transaction === "function"
+      ? this.#prisma.$transaction(publish, { isolationLevel: "Serializable" })
+      : publish(this.#prisma);
   }
 
   async claim(scope, deviceId, limit = 5, activityId = null, configuration = null) {
@@ -229,7 +242,7 @@ export class PrismaActivityReviewRepository {
     const athleteId = assertAthleteScope(scope);
     await this.#prisma.activityReviewRequest.updateMany({
       where: { id: requestId, athleteId, status: "processing", lockedBy: deviceId },
-      data: { activityRevision: input.activityRevision, inputFingerprint: input.inputFingerprint, planComparison: input.planComparison ?? null },
+      data: { activityRevision: input.activityRevision, reflectionRevision: input.reflectionRevision ?? 0, inputFingerprint: input.inputFingerprint, planComparison: input.planComparison ?? null },
     });
   }
 }

@@ -1,5 +1,9 @@
 # PRODUCT
 
+## ORBIT post-run review (28 October 2026)
+
+When Coach opens after a newly synced eligible run, it presents the newest run and its existing published assessment before asking for athlete feedback. If a discussion already has messages, the athlete chooses whether to save it and start a review, keep reviewing in the current discussion, or defer. The shared Coach/activity-detail reflection explicitly records RPE or inability, discomfort or opt-out, and optional conditional details. Saving removes the invitation and leaves a compact summary; a feedback-aware Coach reply is separate and retryable. Completion suppresses that activity across chats and later logins. Manual review/edit is available from activity detail. Automatic offers remain disabled by default until preview acceptance. See the [requirements](product/POST_RUN_REVIEW_BRD.md) and [implementation handoff](plans/ORBIT_POST_RUN_REVIEW_IMPLEMENTATION.md).
+
 ## Coach saved discussions (25 October 2026)
 
 Coach keeps its composer, send action, training links and guidance footer within the normal desktop viewport by scrolling the transcript. Clear chat saves the complete discussion before starting a fresh one and carries the unsent draft forward. Previous chats provides read-only access; Settings offers explicit permanent deletion of active and previous discussions. Saved discussions do not become AI memory for new discussions. See [Coach chat history](plans/COACH_CHAT_HISTORY.md).

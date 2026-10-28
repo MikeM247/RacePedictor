@@ -19,9 +19,23 @@ export type ReviewSession = {
   prescription?: string;
 };
 
+export type ReviewReflection = {
+  revision: number;
+  questionnaireVersion: string;
+  overallRpe: number | null;
+  rpeAnswer: "rated" | "unable" | null;
+  expectation: string | null;
+  discomfort: string | null;
+  symptoms: { bodyArea: string | null; severity: number | null; affectedRunning: string | null } | null;
+  energy: string | null;
+  fuel: string | null;
+  note: string | null;
+};
+
 export type ReviewFacts = {
   activity: Pick<ActivityDetail, "id" | "athleteId" | "sport" | "occurredAt" | "localOccurredAt" | "distanceM" | "elapsedTimeS" | "movingTimeS" | "avgPaceSecPerKm" | "elevationGainM" | "elevationLossM" | "avgHrBpm" | "maxHrBpm" | "avgCadenceSpm" | "maxCadenceSpm" | "avgPowerW" | "maxPowerW" | "calories" | "splits">;
   session: ReviewSession | null;
+  reflection: ReviewReflection | null;
   matchState: ActivityReviewComparison["matchState"];
   limitations: string[];
   fingerprint: string;
@@ -39,6 +53,7 @@ export function buildReviewFacts(input: {
   activity: ReviewFacts["activity"];
   sessions?: ReviewSession[];
   session?: ReviewSession | null;
+  reflection?: ReviewReflection | null;
   extraFingerprint?: unknown;
 }): ReviewFacts {
   const selected = input.session === undefined
@@ -59,11 +74,12 @@ export function buildReviewFacts(input: {
     .update(JSON.stringify({
       activity: input.activity,
       session: selected.session,
+      reflection: input.reflection ?? null,
       state: selected.state,
       extra: input.extraFingerprint ?? null,
     }))
     .digest("hex");
-  return { activity: input.activity, session: selected.session, matchState: selected.state, limitations, fingerprint };
+  return { activity: input.activity, session: selected.session, reflection: input.reflection ?? null, matchState: selected.state, limitations, fingerprint };
 }
 
 export function buildReviewComparison(facts: ReviewFacts): ActivityReviewComparison {
@@ -78,9 +94,10 @@ export function buildReviewComparison(facts: ReviewFacts): ActivityReviewCompari
     ? [
       durationDelta === null ? null : `Elapsed time was ${Math.abs(durationDelta)} minutes ${durationDelta >= 0 ? "over" : "under"} the effective prescription.`,
       distanceDelta === null ? null : `Distance was ${Math.abs(distanceDelta)} km ${distanceDelta >= 0 ? "over" : "under"} the effective prescription.`,
-      session.intensityRpe ? `The planned effort was RPE ${session.intensityRpe}; recorded perceived effort is not available.` : null,
+      session.intensityRpe ? `The planned effort was RPE ${session.intensityRpe}.` : null,
     ].filter(Boolean).join(" ") || "The activity was compared with the effective planned session."
     : "This workout can be reviewed on its own; no planned-session comparison is available.";
+  const actualPerceivedEffort = facts.reflection?.rpeAnswer === "rated" ? facts.reflection.overallRpe : null;
   return {
     matchState: facts.matchState,
     planId: session?.planId ?? null,
@@ -92,8 +109,8 @@ export function buildReviewComparison(facts: ReviewFacts): ActivityReviewCompari
     plannedDistanceMeters,
     actualDistanceMeters,
     plannedIntensityRpe: session?.intensityRpe ?? null,
-    actualPerceivedEffort: null,
-    interpretation,
+    actualPerceivedEffort,
+    interpretation: actualPerceivedEffort ? `${interpretation} The athlete reported RPE ${actualPerceivedEffort}/10.` : interpretation,
   };
 }
 
@@ -102,6 +119,7 @@ export function buildReviewPrompt(facts: ReviewFacts): string {
   return [
     "You are a careful running coach reviewing one completed activity.",
     "Use only the supplied facts. Separate observations from interpretation and recommendation.",
+    "Treat athlete reflection and RPE as self-reported evidence, not device measurements. Do not infer symptoms or diagnose.",
     "Write a concise, personal review with a specific headline, two short assessment paragraphs, one next step, and limitations where evidence is missing.",
     "Do not diagnose, invent metrics, claim completion, change a plan, or quote private source text.",
     JSON.stringify({ facts: { ...facts, comparison } }),

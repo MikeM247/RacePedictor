@@ -27,9 +27,34 @@ test("all migrations apply to PostgreSQL and enforce tenant-safe cloud persisten
       VALUES ('legacy_import', 'athlete_legacy', CURRENT_TIMESTAMP);
     `);
 
-    for (const directory of migrationDirectories.slice(cloudMigrationIndex)) {
+    const postCloudMigrations = migrationDirectories.slice(cloudMigrationIndex);
+    for (const directory of postCloudMigrations.slice(0, -1)) {
       await database.exec(await readFile(new URL(`${directory}/migration.sql`, migrationsUrl), "utf8"));
     }
+
+    await database.exec(`
+      INSERT INTO "Activity" (
+        "id", "athleteId", "sourceType", "occurredAt", "endedAt", "elapsedTimeS",
+        "sport", "distanceM", "avgPaceSecPerKm", "elevationGainM", "elevationLossM", "dedupeHash"
+      ) VALUES (
+        'activity_existing_reflection', 'athlete_legacy', 'manual', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+        1800, 'run', 5000, 360, 20, 20, 'dedupe_existing_reflection'
+      );
+      INSERT INTO "activity_reflections" (
+        "id", "athleteId", "activityId", "revision", "activityRevision", "answers", "sections", "updatedAt"
+      ) VALUES (
+        'reflection_existing', 'athlete_legacy', 'activity_existing_reflection', 2, 1,
+        '{"overallRpe":7}'::jsonb, '[{"id":"turn_1","kind":"turning_point","notes":"kept"}]'::jsonb, CURRENT_TIMESTAMP
+      );
+    `);
+    const finalMigration = postCloudMigrations.at(-1);
+    assert.ok(finalMigration, "the additive run-review migration is required");
+    await database.exec(await readFile(new URL(`${finalMigration}/migration.sql`, migrationsUrl), "utf8"));
+    const preservedReflection = await database.query(`SELECT "answers", "sections", "questionnaireVersion" FROM "activity_reflections" WHERE "id" = 'reflection_existing'`);
+    assert.deepEqual(preservedReflection.rows, [{ answers: { overallRpe: 7 }, sections: [{ id: "turn_1", kind: "turning_point", notes: "kept" }], questionnaireVersion: "activity-reflection.v1" }]);
+    const legacyRunState = await database.query(`SELECT "completedAt", "suppressedAt", "revision" FROM "activity_run_review_states" WHERE "activityId" = 'activity_existing_reflection'`);
+    assert.equal(legacyRunState.rows[0]?.completedAt, null);
+    assert.ok(legacyRunState.rows[0]?.suppressedAt);
 
     const legacyAthlete = await database.query(
       `SELECT "id" FROM "athletes" WHERE "id" = $1`,

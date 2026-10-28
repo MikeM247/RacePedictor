@@ -1,5 +1,9 @@
 # UI_UX_SPEC
 
+## ORBIT post-run review
+
+Coach presents the newest eligible run and published assessment before feedback. A non-empty discussion requires a save/archive, review-in-place, or defer choice. The feedback form is shared with running activity detail; RPE and discomfort have required explicit opt-outs, symptom details are conditional, fuel/fluid questions appear only for races or runs with at least 75 minutes of recorded moving time, and race notes require explicit race classification. Explicit save becomes a compact authoritative summary; the next older run is never auto-opened. Manual resume and edit remain available. Drafts use an opaque authenticated-session scope plus activity ID; cross-tab events contain no answer content. An active review revalidates on focus and every 30 seconds; stale drafts survive and explain conflicts, while the summary refreshes from the server. Authentication loss clears private drafts and hides saved content. Dialog focus, keyboard close/restore, narrow screens, zoom and transcript scrolling follow the linked [UX design](design/POST_RUN_REVIEW_UX.md).
+
 ## Scenic startup (27 October 2026)
 
 The shared route/Readiness startup splash uses the default Home road-and-sunrise photograph edge to edge, with proportional responsive cropping and no visible text, logo, spinner, or controls. Existing ready/error transitions and section loading states remain unchanged. See [Scenic loading screen](design/SCENIC_LOADING_SCREEN.md) for framing, accessibility, failure behavior, and local validation.

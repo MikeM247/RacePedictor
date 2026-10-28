@@ -1,5 +1,9 @@
 # CONTEXT
 
+## 28 October 2026 scope amendment: ORBIT post-run review
+
+The approved ORBIT post-run review extends Coach and the existing activity reflection with an explicit, durable feedback journey. A stable server-issued login identity receives at most one automatic offer per login; activity completion/suppression survives conversation archival and later logins. RPE and discomfort require explicit answers (including opt-outs), feedback commits atomically with completion, and AI follow-up remains a separate retryable operation. Manual review remains available; automatic offers default off and can be enabled only in the isolated Preview while acceptance scenarios are exercised. Keep other environments off pending rollout approval. This adds no AI mutation tools, automatic plan changes, diagnosis, Strava branding, or shared-staging deployment. See [BRD](product/POST_RUN_REVIEW_BRD.md), [UX contract](design/POST_RUN_REVIEW_UX.md), and [implementation handoff](plans/ORBIT_POST_RUN_REVIEW_IMPLEMENTATION.md).
+
 ## 25 October 2026 scope amendment: saved Coach discussions
 
 The owner approved viewport-aware Coach panel sizing, archive-before-clear, draft preservation, and read-only Previous chats. Clear chat preserves the current generation's database records and starts a fresh discussion; Settings alone permanently deletes current and archived history. Authoritative training approval boundaries remain unchanged. See [implementation and release contract](plans/COACH_CHAT_HISTORY.md).

@@ -1,5 +1,9 @@
 # ARCHITECTURE
 
+## ORBIT post-run review (28 October 2026)
+
+Core owns `activity-reflection.v2`, offer eligibility and DTO contracts. DB repositories serialize activity reflection mutations, retain content-free idempotency receipts, and keep login offers separate from activity completion. Authenticated web handlers derive athlete and login identity only from the trusted session, validate same-origin mutations, and orchestrate offers, explicit save/delete/reopen, archive choice, and feedback-aware Coach turns. React owns accessible form state and opaque session-scoped drafts. AI receives a committed, read-only reflection snapshot and cannot write reflection state. Assessment generation fingerprints athlete-reported RPE and publication validates the captured activity/reflection revisions transactionally. Feature Preview configuration fails closed unless exact branch, Preview environment, dedicated TLS database endpoints, and feature migration selection all agree. Details: [implementation handoff](plans/ORBIT_POST_RUN_REVIEW_IMPLEMENTATION.md).
+
 ## Coach discussion archival (25 October 2026)
 
 The V2 Coach reuses its athlete-scoped conversation generation as a discussion boundary. Transactional archive metadata retains original message/turn rows, invalidates pending leases and advances the active generation. Private paginated history reads expose closed generations without sending them to the provider. Core contracts, DB repositories and authenticated web composition preserve existing boundaries. See [Coach chat history](plans/COACH_CHAT_HISTORY.md) and the amendment to ADR 0010.

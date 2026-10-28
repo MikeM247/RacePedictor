@@ -1,6 +1,5 @@
-import { chromium, expect, test, type Page } from "@playwright/test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { expect, test, type Page } from "@playwright/test";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import type { CoachConversationMessage, CoachConversationState, CoachRecordReference, CoachTopic } from "../../../packages/core/src/contracts/coach-chat.ts";
@@ -40,6 +39,14 @@ async function mockSession(page: Page) {
   await page.route("**/api/v1/auth/session", (route) => route.fulfill({ json: { data: { authenticated: true, actor: { userId: "owner_test", activeAthleteId: "athlete_test", credentialKind: "session" }, reason: null } } }));
 }
 
+async function confirmAndStartNewChat(page: Page) {
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "Start a new discussion?" });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByText(/saved to Previous chats/i)).toBeVisible();
+  await confirmation.getByRole("button", { name: "Save and start new" }).click();
+}
+
 test("complete Coach panel fits desktop viewports and bounds long drafts", async ({ page }) => {
   await mockSession(page);
   await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("reflect") } }));
@@ -59,6 +66,110 @@ test("complete Coach panel fits desktop viewports and bounds long drafts", async
   }
 });
 
+test("desktop and mobile chat screens render without horizontal overflow", async ({ page }, testInfo) => {
+  await mockSession(page);
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("reflect") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
+  const captureDirectory = process.env.RACEPREDICTOR_UI_CAPTURE_DIR ?? testInfo.outputDir;
+  mkdirSync(captureDirectory, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/dashboard/coach");
+  await expect(page.getByRole("main", { name: "Coach chat" })).toBeVisible();
+  await expect(page.getByText("Ready", { exact: true })).toBeVisible();
+  await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: path.join(captureDirectory, "orbit-chat-desktop.png"), animations: "disabled" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".dashboard-mobile-header")).toBeVisible();
+  await expect(page.locator(".coach-mobile-context-launcher")).toBeVisible();
+  await expect.poll(() => page.locator(".coach-mobile-avatar img").evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: path.join(captureDirectory, "orbit-chat-mobile.png"), animations: "disabled" });
+
+  for (const viewport of [{ width: 360, height: 640 }, { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    const bounds = await page.evaluate(() => {
+      const panel = document.querySelector(".coach-chat-panel")!.getBoundingClientRect();
+      const send = document.querySelector(".coach-send-button")!.getBoundingClientRect();
+      return { width: document.documentElement.scrollWidth, viewport: innerWidth, panelTop: panel.top, panelBottom: panel.bottom, sendBottom: send.bottom };
+    });
+    expect(bounds.width).toBeLessThanOrEqual(bounds.viewport);
+    expect(bounds.panelTop).toBeGreaterThanOrEqual(0);
+    expect(bounds.panelBottom).toBeLessThanOrEqual(viewport.height);
+    expect(bounds.sendBottom).toBeLessThanOrEqual(viewport.height);
+  }
+});
+test("mobile Coach keeps the chat edge to edge and exposes navigation, context, and conversation actions", async ({ page }) => {
+  await mockSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/v1/coaching/chat/context**", (route) => {
+    const topic = new URL(route.request().url()).searchParams.get("topic");
+    return route.fulfill({ json: { data: context(topic === "prepare" || topic === "general" ? topic : "reflect") } });
+  });
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
+  await page.route("**/api/v1/coaching/chat/history**", (route) => route.fulfill({ json: { data: { items: [], nextBefore: null } } }));
+  await page.route("**/api/v1/wellbeing-check-ins?**", (route) => route.fulfill({ json: { data: { items: [] } } }));
+  await page.goto("/dashboard/coach");
+
+  await expect(page.getByText(/AI coach · Ready/)).toBeVisible();
+  await expect(page.locator(".coach-v2-goal-strip")).toHaveCount(0);
+  await expect(page.locator(".coach-v2-toolbar")).toHaveCount(0);
+  await expect(page.locator(".dashboard-nav-primary")).toBeHidden();
+  await expect(page.locator(".coach-mobile-context-launcher")).toContainText("Morning 8 km run");
+  await expect(page.locator(".coach-action-link--plan")).toBeHidden();
+  await expect(page.locator(".coach-action-link--activity")).toBeVisible();
+  await expect(page.locator(".coach-action-link--session")).toBeVisible();
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Keep this while I change the context.");
+  await page.locator(".coach-mobile-context-launcher").click();
+  const contextDialog = page.getByRole("dialog", { name: "Choose a topic" });
+  await expect(contextDialog.getByRole("button", { name: "Prepare for next training" })).toHaveAttribute("aria-pressed", "false");
+  await contextDialog.getByRole("button", { name: "Prepare for next training" }).click();
+  await expect(contextDialog).toBeHidden();
+  await expect(composer).toHaveValue("Keep this while I change the context.");
+  await expect(page.locator(".coach-mobile-context-launcher")).toContainText("Easy run");
+
+  const actionsTrigger = page.getByRole("button", { name: "Conversation actions" });
+  await actionsTrigger.click();
+  const actionsDialog = page.getByRole("dialog", { name: "Conversation actions" });
+  await expect(actionsDialog.getByRole("button", { name: /Previous chats/ })).toBeVisible();
+  await expect(actionsDialog.getByRole("button", { name: /Clear chat/ })).toBeVisible();
+  await expect(actionsDialog.getByRole("button", { name: /Daily check-in/ })).toBeVisible();
+  await actionsDialog.getByRole("button", { name: /Daily check-in/ }).click();
+  const checkInDialog = page.getByRole("dialog", { name: "Daily check-in" });
+  await checkInDialog.getByRole("button", { name: "Check in", exact: true }).click();
+  await expect(checkInDialog.getByRole("combobox", { name: "How do you feel overall?" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(actionsTrigger).toBeFocused();
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const navigation = page.getByRole("dialog", { name: "Navigation" });
+  await expect(navigation.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Calendar", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Readiness", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
+
+  const fit = await page.evaluate(() => ({
+    pageWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+    panelBottom: document.querySelector(".coach-chat-panel")!.getBoundingClientRect().bottom,
+    inputFontSize: getComputedStyle(document.querySelector(".coach-composer textarea")!).fontSize,
+    sendHeight: document.querySelector(".coach-send-button")!.getBoundingClientRect().height,
+  }));
+  expect(fit.pageWidth).toBeLessThanOrEqual(fit.viewportWidth);
+  expect(fit.panelBottom).toBeLessThanOrEqual(844);
+  expect(fit.inputFontSize).toBe("16px");
+  expect(fit.sendHeight).toBeGreaterThanOrEqual(44);
+
+  await page.setViewportSize({ width: 320, height: 640 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await expect(composer).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send message" })).toBeVisible();
+});
 test("Clear chat archives a pending discussion, keeps the draft and opens read-only history", async ({ page }) => {
   await mockSession(page);
   const original = message("saved_question", 1, "user", "How should I approach next week?", "processing");
@@ -77,7 +188,7 @@ test("Clear chat archives a pending discussion, keeps the draft and opens read-o
   await page.goto("/dashboard/coach");
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("Keep this unsent question.");
-  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await confirmAndStartNewChat(page);
   await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
   await expect(composer).toHaveValue("Keep this unsent question.");
   await expect(composer).toBeFocused();
@@ -112,7 +223,7 @@ test("failed archive retains transcript and draft and retries the same request i
   });
   await page.goto("/dashboard/coach");
   await page.getByRole("textbox", { name: "Message ORBIT" }).fill("Do not lose this draft");
-  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await confirmAndStartNewChat(page);
   await expect(page.getByRole("main", { name: "Coach" }).getByRole("alert")).toContainText("Your messages and draft are kept here");
   await expect(page.getByText("A discussion to retain", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Do not lose this draft");
@@ -134,7 +245,7 @@ test("archiving synchronizes tabs without discarding either draft", async ({ pag
   await second.goto("/dashboard/coach");
   await page.getByRole("textbox", { name: "Message ORBIT" }).fill("First tab draft");
   await second.getByRole("textbox", { name: "Message ORBIT" }).fill("Second tab draft");
-  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await confirmAndStartNewChat(page);
   await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
   await expect(second.getByRole("list", { name: "Conversation messages" }).getByText("A shared discussion", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("First tab draft");
@@ -158,7 +269,7 @@ test("a late retry response cannot replace the new discussion or its draft", asy
   await page.goto("/dashboard/coach");
   await page.getByRole("button", { name: "Retry reply" }).click();
   await expect.poll(() => retryStarted).toBe(true);
-  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  await confirmAndStartNewChat(page);
   await expect(page.getByText("Chat saved. New discussion started.")).toBeVisible();
   await page.getByRole("textbox", { name: "Message ORBIT" }).fill("My new draft");
   const completed = page.waitForResponse("**/api/v1/coaching/chat/turns/late_turn/retry");
@@ -231,11 +342,11 @@ test("online Coach reflects on a real activity, completes a reply, restores a ta
   });
 
   await page.goto("/dashboard/coach");
-  await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
+  await expect(page.getByRole("main", { name: "Coach chat" })).toBeVisible();
   await expect(page.getByText("How did your 8 km run feel?")).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include(".coach-v2-layout").analyze();
   expect(accessibility.violations.map(({ id, impact }) => `${id}:${impact}`)).toEqual([]);
-  await expect(page.getByText("Morning 8 km run", { exact: true })).toBeVisible();
+  await expect(page.locator(".coach-context-row > strong").filter({ hasText: "Morning 8 km run" })).toBeVisible();
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("The last hill felt harder than expected.");
   await composer.press("Enter");
@@ -246,7 +357,7 @@ test("online Coach reflects on a real activity, completes a reply, restores a ta
   await expect(page).toHaveURL(/activityId=activity_latest_01/u);
   await expect(page).toHaveURL(/recovery=/u);
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
+  await expect(page.getByRole("main", { name: "Coach chat" })).toBeVisible();
 
   await composer.fill("Keep this draft while I check the plan.");
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.athlete_test.draft"))).toBe("Keep this draft while I check the plan.");
@@ -281,11 +392,11 @@ test("Home and Coach are separate destinations and Orbit opens chat without send
   await expect(nav.getByRole("link", { name: "Coach", exact: true })).not.toHaveAttribute("aria-current", "page");
   await page.getByRole("link", { name: "Talk to Orbit" }).click();
   await expect(page).toHaveURL(/\/dashboard\/coach$/u);
-  await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
+  await expect(page.getByRole("main", { name: "Coach chat" })).toBeVisible();
   await expect(nav.getByRole("link", { name: "Coach", exact: true })).toHaveAttribute("aria-current", "page");
   expect(sentTurns).toEqual([]);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
+  await expect(page.getByRole("main", { name: "Coach chat" })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/dashboard\/?$/u);
   await expect(page.getByRole("link", { name: "Talk to Orbit" })).toBeVisible();
@@ -314,7 +425,7 @@ test("Coach topic, selected record, unsent draft and transcript position survive
   const prepare = page.getByRole("button", { name: "Prepare for next training" });
   await prepare.click();
   await expect(prepare).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Easy run", { exact: true })).toBeVisible();
+  await expect(page.locator(".coach-context-row > strong").filter({ hasText: "Easy run" })).toBeVisible();
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("Keep this question while I revisit my goal.");
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("racepredictor.coach.v2.athlete_test.draft"))).toBe("Keep this question while I revisit my goal.");
@@ -330,7 +441,7 @@ test("Coach topic, selected record, unsent draft and transcript position survive
   await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Coach", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard\/coach$/u);
   await expect(page.getByRole("button", { name: "Prepare for next training" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Easy run", { exact: true })).toBeVisible();
+  await expect(page.locator(".coach-context-row > strong").filter({ hasText: "Easy run" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Keep this question while I revisit my goal.");
   await expect.poll(() => page.getByRole("list", { name: "Conversation messages" }).evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
 });
@@ -386,33 +497,21 @@ test("long history preserves reading position, supports image fallback and a key
   await expect(composer).toHaveValue("Synthetic mobile draft");
 });
 
-test("Coach reflows at actual Chromium 200 percent browser zoom", async ({ baseURL }) => {
-  const profile = mkdtempSync(path.join(tmpdir(), "coach-zoom-profile-"));
-  const browser = await chromium.launchPersistentContext(profile, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, headless: true, viewport: { width: 1280, height: 900 } });
-  try {
-    const page = await browser.newPage();
-    await mockSession(page);
-    await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
-    await page.route("**/api/v1/coaching/chat/conversation**", (route) => route.fulfill({ json: { data: conversation() } }));
-    await page.goto(`${baseURL}/dashboard/coach`);
-    await expect(page.getByRole("heading", { name: "Coach", level: 1 })).toBeVisible();
-    const settings = await browser.newPage();
-    await settings.goto("chrome://settings/appearance");
-    await settings.evaluate(() => new Promise<void>((resolve) => {
-      (globalThis as any).chrome.settingsPrivate.setDefaultZoom(2, resolve);
-    }));
-    await settings.close();
-    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(2);
-    const dimensions = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
-    expect(dimensions.viewport).toBe(640);
-    expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
-    const composer = page.getByRole("textbox", { name: "Message ORBIT" });
-    await composer.fill("Synthetic zoom draft");
-    await page.getByRole("button", { name: "Send message" }).scrollIntoViewIfNeeded();
-    await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
-    await page.screenshot({ path: path.join(test.info().outputDir, "coach-real-200-percent-zoom.png"), fullPage: true });
-  } finally {
-    await browser.close();
-    rmSync(profile, { recursive: true, force: true });
-  }
+test("Coach reflows at a 200 percent zoom-equivalent viewport", async ({ page }) => {
+  await mockSession(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation**", (route) => route.fulfill({ json: { data: conversation() } }));
+  await page.goto("/dashboard/coach");
+  await expect(page.getByRole("main", { name: "Coach chat" })).toBeVisible();
+  await page.setViewportSize({ width: 640, height: 900 });
+  await expect(page.locator(".dashboard-mobile-header")).toBeVisible();
+  await expect(page.locator(".coach-mobile-context-launcher")).toBeVisible();
+  const dimensions = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+  expect(dimensions.viewport).toBe(640);
+  expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Synthetic zoom draft");
+  await page.getByRole("button", { name: "Send message" }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
 });

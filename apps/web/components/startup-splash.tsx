@@ -1,27 +1,24 @@
+"use client";
+
 import Image from "next/image";
+import styles from "./startup-splash.module.css";
 
 export function StartupSplash() {
   return (
     <div
       role="status"
       aria-label="Loading Race Predictor"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        display: "grid",
-        placeItems: "center",
-        backgroundColor: "#000000",
-      }}
+      className={styles.splash}
     >
       <Image
-        src="/racepredictor-app-icon-512.png"
+        src="/road-to-comrades-v2.webp"
         alt=""
-        width={512}
-        height={512}
-        priority
+        fill
+        sizes="100vw"
+        preload
         unoptimized
-        style={{ display: "block", width: "min(62.5vmin, 480px)", height: "auto" }}
+        className={styles.image}
+        onError={(event) => { event.currentTarget.style.visibility = "hidden"; }}
       />
     </div>
   );

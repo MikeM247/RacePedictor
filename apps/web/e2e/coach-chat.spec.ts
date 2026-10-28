@@ -515,3 +515,72 @@ test("Coach reflows at a 200 percent zoom-equivalent viewport", async ({ page })
   await page.getByRole("button", { name: "Send message" }).scrollIntoViewIfNeeded();
   await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
 });
+
+test("voice dictation discloses the provider, reviews audio text, appends to the draft and never auto-sends", async ({ page }) => {
+  await mockSession(page);
+  await page.addInitScript(() => {
+    (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls = 0;
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {
+      getUserMedia: async () => {
+        (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls! += 1;
+        return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+      },
+    } });
+    class SyntheticWorkletNode {
+      port = {
+        onmessage: null as ((event: { data: { type?: string; frame?: Int16Array } }) => void) | null,
+        close() {},
+        postMessage: (message: { type?: string }) => {
+          if (message.type !== "flush") return;
+          queueMicrotask(() => {
+            this.port.onmessage?.({ data: { type: "pcm", frame: new Int16Array(8_000).fill(240) } });
+            this.port.onmessage?.({ data: { type: "flushed" } });
+          });
+        },
+      };
+      constructor(_context: AudioContext, _name: string, _options: AudioWorkletNodeOptions) {}
+      connect() { return this; }
+      disconnect() {}
+    }
+    Object.defineProperty(window, "AudioWorkletNode", { configurable: true, value: SyntheticWorkletNode });
+    Object.defineProperty(AudioContext.prototype, "createMediaStreamSource", { configurable: true, value: () => ({ connect() {}, disconnect() {} }) });
+    Object.defineProperty(AudioContext.prototype, "createGain", { configurable: true, value: () => ({ gain: { value: 1 }, connect() {}, disconnect() {} }) });
+  });
+
+  let state = conversation();
+  let transcriptionCalls = 0;
+  let sendCalls = 0;
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/voice/capabilities", (route) => route.fulfill({ json: { data: {
+    dictation: { available: true, reason: "available" }, playback: { available: false, reason: "disabled" },
+    limits: { maxRecordingSeconds: 120, maxAudioBytes: 3_840_044, maxDraftChars: 4_000, transcriptionTimeoutMs: 20_000, speechTimeoutMs: 15_000, transientAudioTtlMs: 300_000, monthlyAllowanceMicroUsd: 5_000_000, remainingAllowanceMicroUsd: 4_990_000, resetsAt: "2026-11-01T00:00:00.000Z" },
+    disclosureVersion: 1, providerName: "OpenAI", providerDataControlsUrl: "https://platform.openai.com/docs/guides/your-data",
+  } } }));
+  await page.route("**/api/v1/coaching/voice/transcriptions", async (route) => {
+    transcriptionCalls += 1;
+    expect(route.request().headers()["content-type"]).toBe("audio/wav");
+    expect(route.request().postDataBuffer()).toHaveLength(16_044);
+    const metadata = JSON.parse(route.request().headers()["x-orbit-voice"]!);
+    await route.fulfill({ json: { data: { operationId: metadata.operationId, generation: metadata.expectedGeneration, sequence: metadata.expectedSequence, contextFingerprint: metadata.contextFingerprint, transcript: "The hill felt harder than expected." } } });
+  });
+  await page.route("**/api/v1/coaching/chat/turns", async (route) => { sendCalls += 1; await route.fulfill({ json: { data: {} } }); });
+
+  await page.goto("/dashboard/coach");
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Earlier typed note");
+  await page.getByRole("button", { name: "Dictate" }).click();
+  await expect(page.getByText("Voice data and microphone access", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls)).toBe(0);
+  await page.getByRole("button", { name: "Continue to microphone permission" }).click();
+  await expect(page.getByRole("button", { name: "Stop and review" })).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls)).toBe(1);
+  await page.getByRole("button", { name: "Stop and review" }).click();
+  const review = page.getByRole("textbox", { name: "Review and edit transcript" });
+  await expect(review).toHaveValue("The hill felt harder than expected.");
+  await expect(composer).toHaveValue("Earlier typed note");
+  await page.getByRole("button", { name: "Append to draft" }).click();
+  await expect(composer).toHaveValue("Earlier typed note\nThe hill felt harder than expected.");
+  expect(transcriptionCalls).toBe(1);
+  expect(sendCalls).toBe(0);
+});

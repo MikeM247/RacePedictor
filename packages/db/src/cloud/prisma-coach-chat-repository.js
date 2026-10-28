@@ -94,6 +94,18 @@ export class PrismaCoachChatRepository {
     } : { id: null, generation: 1, sequence: 0, lastReflectedActivityId: null, lastReflectedActivityAt: null };
   }
 
+  async getCurrentAssistantMessage(scope, generation, messageId) {
+    const athleteId = assertAthleteScope(scope);
+    return this.#prisma.$transaction(async (tx) => {
+      const conversation = await tx.coachConversation.findUnique({ where: { athleteId }, select: { id: true, generation: true } });
+      if (!conversation || conversation.generation !== generation) return null;
+      return tx.coachMessage.findFirst({
+        where: { athleteId, conversationId: conversation.id, generation, id: messageId, role: "assistant", turn: { is: { state: "completed" } } },
+        select: { id: true, text: true },
+      });
+    });
+  }
+
   async getCompletedHistory(scope, limit = 20) {
     const athleteId = assertAthleteScope(scope);
     const conversation = await this.#prisma.coachConversation.findUnique({ where: { athleteId }, select: { id: true, generation: true } });

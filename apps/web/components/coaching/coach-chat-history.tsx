@@ -11,7 +11,7 @@ async function read(url: string) {
   return body.data;
 }
 
-export function CoachChatHistory({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function CoachChatHistory({ open, onClose, returnFocusRef }: { open: boolean; onClose: () => void; returnFocusRef?: { readonly current: HTMLElement | null } }) {
   const [items, setItems] = useState<CoachArchiveSummary[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
   const [selected, setSelected] = useState<CoachArchiveSummary | null>(null);
@@ -54,7 +54,7 @@ export function CoachChatHistory({ open, onClose }: { open: boolean; onClose: ()
     return () => { epoch.current += 1; };
   }, [open]);
 
-  return <NativeModal open={open} titleId="coach-history-title" onClose={onClose} className="coach-history-dialog">
+  return <NativeModal open={open} titleId="coach-history-title" onClose={onClose} returnFocusRef={returnFocusRef} className="coach-history-dialog">
     <header className="coach-history-heading"><h2 id="coach-history-title">Previous chats</h2><button type="button" onClick={onClose} aria-label="Close previous chats">×</button></header>
     {selected ? <>
       <button type="button" onClick={() => { epoch.current += 1; setBusy(false); setError(""); setRetry(null); setSelected(null); }}>Back to saved chats</button>

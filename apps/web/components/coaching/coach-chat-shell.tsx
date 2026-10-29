@@ -679,6 +679,8 @@ export function CoachChatShell() {
       : topic === "reflect" ? context.latestActivity?.title ?? "No recent activity"
         : topic === "prepare" ? context.nextSession?.title ?? "No upcoming session" : "General training"
     : loadState === "error" ? "Training context unavailable" : "Loading training context";
+  const messageInput = <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={2} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />;
+  const composerFooter = <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={voiceBusy || archiving || Boolean(archiveError || discardError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>;
   const showHistoryFromActions = () => {
     historyReturnFocusRef.current = mobileActionsTriggerRef.current;
     setConversationActionsOpen(false);
@@ -719,7 +721,7 @@ export function CoachChatShell() {
         <button ref={contextLauncherRef} className="coach-mobile-context-launcher" type="button" aria-haspopup="dialog" aria-expanded={contextSheetOpen} onClick={() => setContextSheetOpen(true)}><span><strong>{topic === "reflect" ? "Reflect" : topic === "prepare" ? "Prepare" : "Ask ORBIT"}</strong><span>{mobileSubject}</span></span><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
         {context ? <div className="coach-context-row">
           <span className="coach-context-label">{topic === "reflect" ? "REFLECTING ON" : topic === "prepare" ? "GETTING READY FOR" : "TRAINING CONTEXT"}</span>
-          {context.ambiguousSessions.length > 1 && topic === "prepare" && !selectedRecord ? <div className="coach-record-choices" role="group" aria-label="Choose a session to prepare for">{context.ambiguousSessions.map((session) => <button key={session.id} type="button" onClick={() => void selectRecord({ type: "session", id: session.id })}>{session.title} · {session.date}</button>)}</div> : <strong>{recordLabel(context, selectedRecord)}</strong>}
+          {context.ambiguousSessions.length > 1 && topic === "prepare" && !selectedRecord ? <div className="coach-record-choices" role="group" aria-label="Choose a session to prepare for">{context.ambiguousSessions.map((session) => <button key={session.id} type="button" onClick={() => void selectRecord({ type: "session", id: session.id })}>{session.title} · {session.date}</button>)}</div> : <strong title={recordLabel(context, selectedRecord)}>{recordLabel(context, selectedRecord)}</strong>}
           {selectedRecord ? <button className="coach-change-context" type="button" onClick={() => { setSelectedRecord(null); void refreshContext(topic, null); }}>Change</button> : null}
           {context.latestActivity && topic !== "reflect" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "activity", id: context.latestActivity!.id })}>Last activity · {context.latestActivity.title}</button> : null}
           {context.nextSession && topic !== "prepare" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "session", id: context.nextSession!.id })}>Next session · {context.nextSession.title}</button> : null}
@@ -746,11 +748,8 @@ export function CoachChatShell() {
         {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
         {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link className={`coach-action-link coach-action-link--${action.kind}`} id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
         <form className="coach-composer" onSubmit={(event) => { if (voiceBusy) { event.preventDefault(); return; } void submitMessage(event); }}>
-          <label className="coach-composer-label" htmlFor="coach-message-input">Message ORBIT</label>
-          <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={2} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />
-          <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span></div>
-          <div className="coach-composer-actions">
-            {voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
+          <label className="coach-composer-label sr-only" htmlFor="coach-message-input">Message ORBIT</label>
+          {voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
               available={voiceCapabilities.dictation.available}
               disabled={archiving || sending || pending || loadState !== "ready" || !context.canSend || voiceCapabilities.limits.remainingAllowanceMicroUsd === 0}
               disclosureVersion={voiceCapabilities.disclosureVersion}
@@ -764,9 +763,8 @@ export function CoachChatShell() {
               prepareTranscription={prepareVoiceTranscription}
               onStart={() => window.dispatchEvent(new Event("orbit:voice-playback-stop"))}
               onAllowanceChanged={onVoiceAllowanceChanged}
-            /> : null}
-            <button className="coach-send-button" type="submit" disabled={voiceBusy || archiving || Boolean(archiveError || discardError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button>
-          </div>
+              footer={composerFooter}
+            >{messageInput}</CoachVoiceDictation> : <><div className="coach-composer-input-frame">{messageInput}</div>{composerFooter}</>}
         </form>
         {context && !context.canSend ? <p className="coach-chat-paused" role="status">Chat replies are paused. Your conversation remains available, and your training plan is unchanged.</p> : null}
         <p className="coach-chat-boundary">ORBIT offers training guidance. Your plan only changes when you approve an update.</p>

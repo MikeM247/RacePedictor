@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomUUID } from "node:crypto";
 import { athleteScopeFor, buildActorContext } from "../../core/src/contracts/auth.ts";
 import {
   CoachVoiceBudgetError,
@@ -61,7 +62,7 @@ function fakePrisma() {
       },
       update: async ({ where, data }) => { const row = store.buckets.find((item) => matches(item, where)); if (!row) throw new Error("bucket missing"); apply(row, data); return row; },
     },
-    async $queryRaw() { return []; },
+    async $executeRaw() { return 1; },
     async $transaction(work) {
       const previous = lock;
       let release;
@@ -78,6 +79,36 @@ function fakePrisma() {
 }
 
 const reservation = (operationId, amount = 10_000) => ({ operationId, kind: "transcription", model: "whisper-1", inputUnits: 30, reservedMicroUsd: amount });
+
+test("real PostgreSQL voice admissions execute the lock and serialize separate Prisma clients", {
+  skip: !process.env.COACH_VOICE_TEST_DATABASE_URL,
+}, async () => {
+  const url = process.env.COACH_VOICE_TEST_DATABASE_URL;
+  assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(new URL(url).hostname), "use a migrated, disposable loopback database");
+  const { PrismaClient } = await import("@prisma/client");
+  const clients = [new PrismaClient({ datasources: { db: { url } } }), new PrismaClient({ datasources: { db: { url } } })];
+  const id = `voice_regression_${randomUUID()}`;
+  const scope = actor(id);
+  const now = new Date();
+  const repositories = clients.map((prisma) => new PrismaCoachVoiceRepository({ prisma, now: () => now }));
+  try {
+    await clients[0].athlete.create({ data: { id } });
+    const results = await Promise.allSettled(repositories.map((repository, index) => repository.reserve(scope, reservation(`concurrent-${index}`))));
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const rejected = results.find((result) => result.status === "rejected");
+    assert.ok(rejected?.reason instanceof CoachVoiceBusyError);
+    assert.equal(await repositories[0].remainingAllowance(scope, now), 4_990_000);
+    const admitted = results.find((result) => result.status === "fulfilled").value;
+    assert.equal(await repositories[0].complete(scope, admitted.operationId, { state: "completed", now }), true);
+    await assert.rejects(repositories[1].reserve(scope, reservation(admitted.operationId)), CoachVoiceConflictError);
+    await repositories[1].reserve(scope, reservation("next-recording"));
+    assert.equal(await repositories[1].complete(scope, "next-recording", { state: "completed", now }), true);
+    assert.equal(await repositories[0].remainingAllowance(scope, now), 4_980_000);
+  } finally {
+    await clients[0].athlete.deleteMany({ where: { id } });
+    await Promise.all(clients.map((client) => client.$disconnect()));
+  }
+});
 
 test("voice usage admission is owner-scoped, content-free and deduplicates provider operations", async () => {
   const prisma = fakePrisma();

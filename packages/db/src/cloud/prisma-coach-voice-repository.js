@@ -51,7 +51,8 @@ export class PrismaCoachVoiceRepository {
 
     return this.#prisma.$transaction(async (tx) => {
       // A database transaction lock serializes admissions across workers, tabs and UTC month rollovers.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${athleteId}), hashtext('coach-voice'))`;
+      // The lock returns PostgreSQL void; execute it without decoding a result column.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${athleteId}), hashtext('coach-voice'))`;
       const existing = await tx.coachVoiceAttempt.findUnique({ where: { athleteId_operationId: { athleteId, operationId: input.operationId } } });
       if (existing) throw new CoachVoiceConflictError();
 

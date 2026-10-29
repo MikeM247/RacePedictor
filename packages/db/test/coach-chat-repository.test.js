@@ -186,6 +186,20 @@ test("durable turns deduplicate by client identity, single-flight, and persist c
   ]);
 });
 
+test("spoken reply lookup is limited to completed messages in the active generation", async () => {
+  const { repository } = setup();
+  const pending = await repository.beginTurn(scope, turnInput(0, "voice_lookup"));
+  assert.equal(await repository.getCurrentAssistantMessage(scope, 1, "message_pending"), null);
+  await complete(repository, pending, "Saved reply for playback.");
+  const conversation = await repository.getConversation(scope);
+  const assistant = conversation.messages.find((message) => message.role === "assistant");
+  assert.ok(assistant);
+  const savedReply = await repository.getCurrentAssistantMessage(scope, 1, assistant.id);
+  assert.equal(savedReply.id, assistant.id);
+  assert.equal(savedReply.text, "Saved reply for playback.");
+  assert.equal(await repository.getCurrentAssistantMessage(scope, 2, assistant.id), null);
+});
+
 test("failed turns retain the user message, retry with a fenced lease, and clear history without late publication", async () => {
   const { prisma, repository } = setup();
   const first = await repository.beginTurn(scope, turnInput(0, "client_first"));

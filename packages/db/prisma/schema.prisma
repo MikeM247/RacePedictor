@@ -377,6 +377,8 @@ model Athlete {
   coachMessages           CoachMessage[]
   coachTurns              CoachTurn[]
   coachUsageBuckets       CoachUsageBucket[]
+  coachVoiceUsageBuckets  CoachVoiceUsageBucket[]
+  coachVoiceAttempts      CoachVoiceAttempt[]
   @@map("athletes")
 }
 
@@ -1060,4 +1062,44 @@ model CoachUsageBucket {
   @@unique([athleteId, windowKind, windowStart])
   @@index([athleteId, windowKind, windowEnd])
   @@map("coach_usage_buckets")
+}
+
+model CoachVoiceUsageBucket {
+  id                   String   @id @default(cuid())
+  athleteId            String
+  windowKind           String
+  windowStart          DateTime @db.Timestamptz(3)
+  windowEnd            DateTime @db.Timestamptz(3)
+  attemptCount         Int      @default(0)
+  reservedMicroUsd     BigInt   @default(0)
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
+  athlete              Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, windowKind, windowStart])
+  @@index([athleteId, windowKind, windowEnd])
+  @@map("coach_voice_usage_buckets")
+}
+
+model CoachVoiceAttempt {
+  id               String    @id @default(cuid())
+  athleteId        String
+  operationId      String
+  kind             String
+  model            String
+  state            String    @default("processing")
+  inputUnits       Int
+  reservedMicroUsd BigInt
+  latencyMs        Int?
+  safeErrorCode    String?
+  leaseExpiresAt   DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  completedAt      DateTime? @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+  athlete          Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId, operationId])
+  @@index([athleteId, state, leaseExpiresAt])
+  @@index([athleteId, createdAt])
+  @@map("coach_voice_attempts")
 }

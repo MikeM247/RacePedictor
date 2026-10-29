@@ -324,6 +324,7 @@
 .coach-confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .coach-confirm-actions button { min-width: 104px; text-align: center; }
 .coach-confirm-actions .coach-confirm-primary { border-color: #075dcc; background: #075dcc; color: white; }
+.coach-confirm-actions .coach-confirm-discard { border-color: #b42318; color: #a11b16; }
 .coach-wellbeing-dialog { width: min(620px, calc(100vw - 32px)); }
 .coach-wellbeing-dialog .coach-context-sheet-intro { margin-bottom: 4px; }
 .coach-wellbeing-dialog .daily-check-in { margin: 0; padding: 12px 0 0; background: white; color: var(--coach-ink); }

@@ -41,10 +41,17 @@ async function mockSession(page: Page) {
 
 async function confirmAndStartNewChat(page: Page) {
   await page.getByRole("button", { name: "Clear chat", exact: true }).click();
-  const confirmation = page.getByRole("dialog", { name: "Start a new discussion?" });
+  const confirmation = page.getByRole("dialog", { name: "Clear this chat?" });
   await expect(confirmation).toBeVisible();
-  await expect(confirmation.getByText(/saved to Previous chats/i)).toBeVisible();
+  await expect(confirmation.getByText(/save.*Previous chats/i)).toBeVisible();
   await confirmation.getByRole("button", { name: "Save and start new" }).click();
+}
+
+async function confirmDiscardChat(page: Page) {
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "Clear this chat?" });
+  await expect(confirmation.getByRole("button", { name: "Save and start new" })).toBeVisible();
+  await confirmation.getByRole("button", { name: "Clear without saving" }).click();
 }
 
 test("complete Coach panel fits desktop viewports and bounds long drafts", async ({ page }) => {
@@ -206,6 +213,120 @@ test("Clear chat archives a pending discussion, keeps the draft and opens read-o
   await expect(composer).toHaveValue("Keep this unsent question.");
   await page.reload();
   await expect(composer).toHaveValue("Keep this unsent question.");
+});
+
+test("Clear without saving removes the current discussion and unsent draft but keeps previous chats", async ({ page }) => {
+  await mockSession(page);
+  const original = message("discard_question", 1, "user", "A discussion to discard", "completed");
+  let state = conversation([original]);
+  let discardCount = 0;
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/discard", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ expectedGeneration: 1, expectedSequence: 1 });
+    discardCount++;
+    state = { ...conversation(), generation: 2 };
+    await route.fulfill({ json: { data: { conversation: state } } });
+  });
+  await page.route("**/api/v1/coaching/chat/history", (route) => route.fulfill({ json: { data: { items: [], nextBefore: null } } }));
+  await page.goto("/dashboard/coach");
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Discard this unsent draft");
+  await confirmDiscardChat(page);
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await expect(page.getByRole("list", { name: "Conversation messages" }).getByText(original.text)).toHaveCount(0);
+  await expect.poll(() => discardCount).toBe(1);
+  await page.getByRole("button", { name: "Previous chats", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Previous chats" }).getByText("No previous chats yet.")).toBeVisible();
+});
+
+test("failed discard retains the draft and retries with the same expected state", async ({ page }) => {
+  await mockSession(page);
+  const state = conversation([message("discard_retry", 1, "user", "Keep this until the clear succeeds", "completed")]);
+  let attempts = 0;
+  let requests: unknown[] = [];
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/discard", async (route) => {
+    requests.push(route.request().postDataJSON());
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 503, json: { error: { message: "Synthetic database outage" } } });
+    return route.fulfill({ json: { data: { conversation: { ...conversation(), generation: 2 } } } });
+  });
+  await page.goto("/dashboard/coach");
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Do not lose this draft");
+  await confirmDiscardChat(page);
+  const dialog = page.getByRole("dialog", { name: "Clear this chat?" });
+  await expect(dialog.getByRole("alert")).toContainText("Could not confirm the clear");
+  await expect(composer).toHaveValue("Do not lose this draft");
+  await dialog.getByRole("button", { name: "Retry clearing" }).click();
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  await expect(composer).toHaveValue("");
+  expect(requests).toEqual([{ expectedGeneration: 1, expectedSequence: 1 }, { expectedGeneration: 1, expectedSequence: 1 }]);
+});
+
+test("mobile conversation actions open the same save or discard choices", async ({ page }) => {
+  await mockSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
+  await page.goto("/dashboard/coach");
+  await page.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("dialog", { name: "Conversation actions" }).getByRole("button", { name: /Clear chat/ }).click();
+  const confirmation = page.getByRole("dialog", { name: "Clear this chat?" });
+  await expect(confirmation.getByRole("button", { name: "Save and start new" })).toBeVisible();
+  await expect(confirmation.getByRole("button", { name: "Clear without saving" })).toBeVisible();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+});
+
+test("a stale discard asks for a fresh choice before clearing the updated discussion", async ({ page }) => {
+  await mockSession(page);
+  let state = conversation([message("old_for_conflict", 1, "user", "The original discussion", "completed")]);
+  const requests: unknown[] = [];
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/discard", async (route) => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) {
+      state = { ...conversation([{ ...message("new_in_other_tab", 1, "user", "A newer discussion from another tab", "completed"), generation: 2 }]), generation: 2 };
+      return route.fulfill({ status: 409, json: { error: { message: "The conversation changed." } } });
+    }
+    state = { ...conversation(), generation: 2 };
+    return route.fulfill({ json: { data: { conversation: state } } });
+  });
+  await page.goto("/dashboard/coach");
+  await confirmDiscardChat(page);
+  const conflictAlert = page.locator(".coach-v2-main .coach-v2-error[role=\"alert\"]").filter({ hasText: "The discussion changed" });
+  await expect(conflictAlert).toContainText("Review the latest messages before choosing again.");
+  await expect(page.getByRole("list", { name: "Conversation messages" }).getByText("A newer discussion from another tab")).toBeVisible();
+  await conflictAlert.getByRole("button", { name: "Review chat" }).click();
+  await confirmDiscardChat(page);
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  expect(requests).toEqual([{ expectedGeneration: 1, expectedSequence: 1 }, { expectedGeneration: 2, expectedSequence: 1 }]);
+});
+
+test("discard synchronizes tabs while preserving the other tab's draft", async ({ page, context: browserContext }) => {
+  let state = conversation([message("discard_shared", 1, "user", "A shared discussion to discard", "completed")]);
+  await browserContext.route("**/api/v1/auth/session", (route) => route.fulfill({ json: { data: { authenticated: true, actor: { activeAthleteId: "athlete_test", credentialKind: "session" } } } }));
+  await browserContext.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await browserContext.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await browserContext.route("**/api/v1/coaching/chat/conversation/discard", (route) => {
+    state = { ...conversation(), generation: 2 };
+    return route.fulfill({ json: { data: { conversation: state } } });
+  });
+  await page.goto("/dashboard/coach");
+  const second = await browserContext.newPage();
+  await second.goto("/dashboard/coach");
+  await page.getByRole("textbox", { name: "Message ORBIT" }).fill("Clear this tab's draft");
+  await second.getByRole("textbox", { name: "Message ORBIT" }).fill("Keep this tab's draft");
+  await confirmDiscardChat(page);
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  await expect(second.getByText("Chat cleared in another tab. New discussion started.")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("");
+  await expect(second.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Keep this tab's draft");
+  await second.close();
 });
 
 test("failed archive retains transcript and draft and retries the same request identity", async ({ page }) => {

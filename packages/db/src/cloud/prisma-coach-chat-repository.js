@@ -423,6 +423,26 @@ export class PrismaCoachChatRepository {
       return { generation: cleared.generation, sequence: cleared.sequence };
     });
   }
+
+  async discardConversation(scope, input) {
+    const athleteId = assertAthleteScope(scope);
+    return this.#prisma.$transaction(async (tx) => {
+      await tx.coachConversation.upsert({ where: { athleteId }, update: {}, create: { athleteId } });
+      const conversation = await lockConversation(tx, athleteId);
+      assertExpectedState(conversation, input.expectedGeneration, input.expectedSequence);
+      await tx.coachTurn.deleteMany({ where: { athleteId, conversationId: conversation.id, generation: conversation.generation } });
+      const discarded = await tx.coachConversation.update({
+        where: { athleteId },
+        data: {
+          generation: { increment: 1 },
+          sequence: 0,
+          lastReflectedActivityId: null,
+          lastReflectedActivityAt: null,
+        },
+      });
+      return { conversation: { ...emptyConversation(), generation: discarded.generation } };
+    });
+  }
 }
 
 async function lockConversation(tx, athleteId, conversationId = null) {

@@ -22,7 +22,7 @@ Use Coach-specific compound selectors alongside the shared dashboard classes. Ne
 
 ## Consequences
 
-- The design uses no new backend or data contract and does not change approved training plans.
+- Clear chat offers separate save-and-start-new and discard-without-saving actions. Discard removes only the active generation, clears the initiating tab's draft, keeps previous chats, and leaves other tabs' drafts intact. The existing authenticated conversation API gains a discard endpoint; no database migration or training-plan change is required.
 - Mobile topic and history controls take one extra interaction; the current subject and recognizable actions remain visible.
 - The app’s existing archive action is explained accurately; permanent history deletion remains in Settings.
 - Mobile/browser behavior adapts to the visual viewport where the platform exposes it, while transcript reading stays independently scrollable.

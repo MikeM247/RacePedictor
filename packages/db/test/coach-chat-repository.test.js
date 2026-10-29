@@ -317,6 +317,45 @@ test("archive retries are idempotent, competing clears conflict, and empty chats
   assert.equal((await repository.getConversation(scope)).generation, 2);
 });
 
+test("discard removes only the active generation, keeps saved chats and fences late replies", async () => {
+  const { prisma, repository } = setup();
+  const savedTurn = await repository.beginTurn(scope, turnInput(0, "saved_before_discard"));
+  await complete(repository, savedTurn);
+  const saved = await repository.archiveConversation(scope, { ...archiveInput, expectedSequence: 2 });
+  const pending = await repository.beginTurn(scope, { ...turnInput(0, "pending_discard"), expectedGeneration: 2 });
+  const usageBefore = prisma.store.usage.map((bucket) => ({ ...bucket }));
+
+  const results = await Promise.allSettled([
+    repository.discardConversation(scope, { expectedGeneration: 2, expectedSequence: 1 }),
+    repository.discardConversation(scope, { expectedGeneration: 2, expectedSequence: 1 }),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected" && result.reason instanceof CoachChatConflictError).length, 1);
+  const discarded = results.find((result) => result.status === "fulfilled").value;
+  assert.equal(discarded.conversation.generation, 3);
+  assert.equal(discarded.conversation.sequence, 0);
+  assert.equal((await repository.getConversation(scope)).messages.length, 0);
+  assert.deepEqual(prisma.store.archives.map((row) => row.id), [saved.archive.id]);
+  assert.equal((await repository.getArchive(scope, saved.archive.id)).messages.length, 2);
+  assert.deepEqual(prisma.store.usage, usageBefore);
+  assert.deepEqual(await complete(repository, pending), { kind: "stale" });
+
+  const emptyDiscard = await repository.discardConversation(scope, { expectedGeneration: 3, expectedSequence: 0 });
+  assert.equal(emptyDiscard.conversation.generation, 4, "empty discussions still advance the generation");
+  assert.equal(prisma.store.archives.length, 1);
+});
+
+test("a failed discard transaction retains the active discussion and metadata", async () => {
+  const { prisma, repository } = setup();
+  const first = await repository.beginTurn(scope, turnInput(0, "discard_rollback"));
+  await complete(repository, first);
+  prisma.coachConversation.update = async () => { throw new Error("synthetic database failure"); };
+  await assert.rejects(repository.discardConversation(scope, { expectedGeneration: 1, expectedSequence: 2 }), /synthetic database failure/u);
+  assert.equal((await repository.getConversation(scope)).sequence, 2);
+  assert.equal((await repository.getConversation(scope)).messages.length, 2);
+  assert.equal(prisma.store.turns.length, 1);
+});
+
 test("a failed archive transaction retains the complete active discussion", async () => {
   const { repository, prisma } = setup();
   const first = await repository.beginTurn(scope, turnInput(0)); await complete(repository, first);

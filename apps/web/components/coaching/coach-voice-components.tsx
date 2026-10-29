@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { CoachContext, CoachConversationMessage } from "../../../../packages/core/src/contracts/coach-chat";
-import { coachVoiceTranscriptionResultSchema, COACH_VOICE_MAX_DRAFT_CHARS, COACH_VOICE_MAX_TRANSCRIPT_CHARS } from "../../../../packages/core/src/contracts/coach-voice";
+import { coachVoiceTranscriptionResultSchema } from "../../../../packages/core/src/contracts/coach-voice";
 import { encodeCoachVoiceWav } from "../../../../packages/core/src/services/coach-voice-audio";
 import "./coach-voice.css";
 
@@ -16,8 +16,8 @@ type VoiceDictationProps = {
   monthlyAllowanceMicroUsd: number;
   resetsAt: string;
   scopeKey: string;
-  draft: string;
-  setDraft(value: string): void;
+  onTranscriptReady(transcript: string): boolean;
+  onBusyChange(busy: boolean): void;
   prepareTranscription(): Promise<CaptureContext>;
   onStart(): void;
   onAllowanceChanged(): void;
@@ -30,7 +30,7 @@ const MAX_RECORDING_MS = 120_000;
 export function CoachVoiceDictation(props: VoiceDictationProps) {
   const [recordingState, setRecordingState] = useState<"idle" | "permission" | "recording" | "transcribing">("idle");
   const [elapsed, setElapsed] = useState(0);
-  const [transcript, setTranscript] = useState("");
+  const [audioLevel, setAudioLevel] = useState(0);
   const [disclosureOpen, setDisclosureOpen] = useState(false);
   const [error, setError] = useState("");
   const [disclosureAccepted, setDisclosureAccepted] = useState(false);
@@ -42,7 +42,7 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
   const muteRef = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
   const maximumTimerRef = useRef<number | null>(null);
-  const transcriptExpiryTimerRef = useRef<number | null>(null);
+  const lastVisualUpdateRef = useRef(0);
   const recordedSampleCountRef = useRef(0);
   const flushAckRef = useRef<(() => void) | null>(null);
   const flushAckTimerRef = useRef<number | null>(null);
@@ -51,6 +51,11 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
   const captureSessionRef = useRef(0);
   const recordingRef = useRef(false);
   const unmountingRef = useRef(false);
+
+  const updateRecordingState = useCallback((state: typeof recordingState) => {
+    setRecordingState(state);
+    props.onBusyChange(state !== "idle");
+  }, [props.onBusyChange]);
 
   useEffect(() => {
     try { setDisclosureAccepted(sessionStorage.getItem(`${DISCLOSURE_PREFIX}${props.disclosureVersion}`) === "accepted"); }
@@ -89,15 +94,13 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
     if (flushAckTimerRef.current !== null) window.clearTimeout(flushAckTimerRef.current);
     flushAckTimerRef.current = null;
     flushAckRef.current?.(); flushAckRef.current = null;
-    if (transcriptExpiryTimerRef.current !== null) window.clearTimeout(transcriptExpiryTimerRef.current);
-    transcriptExpiryTimerRef.current = null;
     releaseCapture(true);
-    setRecordingState("idle");
+    updateRecordingState("idle");
     setElapsed(0);
-    setTranscript("");
+    setAudioLevel(0);
     setDisclosureOpen(false);
     setError(message);
-  }, [releaseCapture]);
+  }, [releaseCapture, updateRecordingState]);
 
   const cancelRef = useRef(cancel);
   cancelRef.current = cancel;
@@ -116,7 +119,6 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
       unmountingRef.current = true;
       captureSessionRef.current += 1;
       requestRef.current?.abort();
-      if (transcriptExpiryTimerRef.current !== null) window.clearTimeout(transcriptExpiryTimerRef.current);
       releaseCapture(true);
     };
   }, [releaseCapture]);
@@ -132,12 +134,12 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
   useEffect(() => { if (props.disabled && recordingState !== "idle") cancel("Voice activity stopped because the coaching conversation changed."); }, [props.disabled, recordingState, cancel]);
 
   const startRecording = useCallback(async () => {
-    setError(""); setTranscript(""); setElapsed(0); setDisclosureOpen(false);
+    setError(""); setAudioLevel(0); setElapsed(0); setDisclosureOpen(false);
     if (!navigator.mediaDevices?.getUserMedia || !("AudioWorkletNode" in window)) {
       setError("Voice capture is not supported in this browser. You can still type your message.");
       return;
     }
-    setRecordingState("permission");
+    updateRecordingState("permission");
     props.onStart();
     const captureSession = ++captureSessionRef.current;
     try {
@@ -160,6 +162,13 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
         }
         const frame = event.data?.frame;
         if (recordingRef.current && event.data?.type === "pcm" && frame instanceof Int16Array) {
+          const now = performance.now();
+          if (now - lastVisualUpdateRef.current >= 65) {
+            let energy = 0;
+            for (let index = 0; index < frame.length; index += 1) { const sample = frame[index] / 32768; energy += sample * sample; }
+            setAudioLevel(Math.min(1, Math.sqrt(energy / Math.max(1, frame.length)) * 5));
+            lastVisualUpdateRef.current = now;
+          }
           const remaining = Math.max(0, 1_920_000 - recordedSampleCountRef.current);
           if (remaining >= frame.length) { framesRef.current.push(frame); recordedSampleCountRef.current += frame.length; }
           else if (remaining > 0) { framesRef.current.push(frame.slice(0, remaining)); recordedSampleCountRef.current += remaining; frame.fill(0); }
@@ -172,18 +181,18 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
       recordedSampleCountRef.current = 0;
       recordStartedAtRef.current = Date.now();
       recordingRef.current = true;
-      setRecordingState("recording");
+      updateRecordingState("recording");
       timerRef.current = window.setInterval(() => setElapsed(Math.min(120, Math.floor((Date.now() - recordStartedAtRef.current) / 1_000))), 250);
       maximumTimerRef.current = window.setTimeout(() => { if (recordingRef.current) void finishRef.current(); }, MAX_RECORDING_MS);
     } catch (cause) {
       if (captureSession !== captureSessionRef.current) return;
       if (unmountingRef.current) { releaseCapture(true); return; }
-      releaseCapture(true); setRecordingState("idle");
+      releaseCapture(true); updateRecordingState("idle");
       setError(cause instanceof DOMException && cause.name === "NotAllowedError"
         ? "Microphone permission was denied. You can allow access in browser settings or type your message."
         : "The microphone could not be started. You can try again or type your message.");
     }
-  }, [props.onStart, releaseCapture]);
+  }, [props.onStart, releaseCapture, updateRecordingState]);
 
   const beginAfterDisclosure = useCallback(() => {
     try { sessionStorage.setItem(`${DISCLOSURE_PREFIX}${props.disclosureVersion}`, "accepted"); } catch { /* session storage is optional */ }
@@ -210,7 +219,7 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
     if (captureSession !== captureSessionRef.current) return;
     recordingRef.current = false;
     releaseCapture(false);
-    setRecordingState("transcribing");
+    updateRecordingState("transcribing");
     const frames = framesRef.current;
     let wav: Uint8Array;
     try { wav = encodeCoachVoiceWav(frames); }
@@ -225,6 +234,7 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
     const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, CLIENT_TRANSCRIPTION_TIMEOUT_MS);
     try {
       const snapshot = await props.prepareTranscription();
+      if (captureSession !== captureSessionRef.current) return;
       const operationId = crypto.randomUUID();
       const metadata = {
         operationId, expectedGeneration: snapshot.generation, expectedSequence: snapshot.sequence,
@@ -247,13 +257,9 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
         || result.data.sequence !== metadata.expectedSequence || result.data.contextFingerprint !== metadata.contextFingerprint) {
         throw new Error("The conversation changed before the transcript was ready. Record again or type your message.");
       }
-      if (!unmountingRef.current) {
-        setTranscript(result.data.transcript);
-        if (transcriptExpiryTimerRef.current !== null) window.clearTimeout(transcriptExpiryTimerRef.current);
-        transcriptExpiryTimerRef.current = window.setTimeout(() => {
-          setTranscript(""); setError("Transcript expired after five minutes. Record again or type your message.");
-          transcriptExpiryTimerRef.current = null;
-        }, 300_000);
+      if (!unmountingRef.current && captureSession === captureSessionRef.current
+        && !props.onTranscriptReady(result.data.transcript)) {
+        setError("That transcript does not fit in the message. Record a shorter message; your draft was left unchanged.");
       }
     } catch (cause) {
       if (!unmountingRef.current && timedOut) setError("Voice transcription took too long. Record again or type your message.");
@@ -263,56 +269,38 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
       wav.fill(0);
       if (requestRef.current === controller) requestRef.current = null;
       if (!unmountingRef.current) props.onAllowanceChanged();
-      if (!unmountingRef.current) setRecordingState("idle");
+      if (!unmountingRef.current) updateRecordingState("idle");
     }
-  }, [props.prepareTranscription, props.onAllowanceChanged, releaseCapture]);
+  }, [props.prepareTranscription, props.onAllowanceChanged, props.onTranscriptReady, releaseCapture, updateRecordingState]);
 
   const finishRef = useRef(finishRecording);
   finishRef.current = finishRecording;
   // The two-minute timer holds a stable callback without capturing stale render data.
   useEffect(() => { const timer = timerRef.current; return () => { if (timer !== null) window.clearInterval(timer); }; }, []);
 
-  function insertTranscript(replace: boolean) {
-    const insertion = transcript.trim();
-    const next = replace || !props.draft.trim() ? insertion : `${props.draft.trimEnd()}\n${insertion}`;
-    if (next.length > COACH_VOICE_MAX_DRAFT_CHARS) {
-      setError("This transcript does not fit in the 4,000-character draft. Shorten it or replace the current draft.");
-      return;
-    }
-    props.setDraft(next); setTranscript(""); setError("");
-    if (transcriptExpiryTimerRef.current !== null) window.clearTimeout(transcriptExpiryTimerRef.current);
-    transcriptExpiryTimerRef.current = null;
-    requestAnimationFrame(() => document.getElementById("coach-message-input")?.focus({ preventScroll: true }));
-  }
-
   if (!props.available) return null;
-  const draftAppend = props.draft.trim() ? `${props.draft.trimEnd()}\n${transcript.trim()}` : transcript.trim();
   const busy = recordingState !== "idle";
   return <div className="coach-voice-dictation">
-    {recordingState === "idle" && !transcript ? <button type="button" className="coach-voice-record-button" disabled={props.disabled} onClick={() => {
+    {recordingState === "idle" ? <button type="button" className="coach-voice-record-button" aria-label="Start voice dictation" title="Dictate a message" disabled={props.disabled} onClick={() => {
       setError("");
       if (disclosureAccepted) void startRecording(); else setDisclosureOpen(true);
-    }}><span aria-hidden="true">●</span> Dictate</button> : null}
+    }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v4m-4 0h8"/></svg></button> : null}
     {recordingState === "permission" ? <div className="coach-voice-status" role="status" aria-live="polite">Requesting microphone permission… <button type="button" onClick={() => cancel()}>Cancel</button></div> : null}
-    {recordingState === "recording" ? <div className="coach-voice-recording" role="group" aria-label="Voice recording controls"><span className="coach-voice-live-dot" aria-hidden="true" /><span role="timer" aria-live="off">Recording · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} / 2:00</span><button type="button" onClick={() => void finishRef.current()}>Stop and review</button><button type="button" onClick={() => cancel("Recording discarded. Your draft is unchanged.")}>Cancel recording</button></div> : null}
-    {recordingState === "transcribing" ? <div className="coach-voice-status" role="status" aria-live="polite">Preparing your transcript… <button type="button" onClick={() => cancel("Transcription cancelled. Your draft is unchanged.")}>Cancel</button></div> : null}
+    {recordingState === "recording" ? <div className="coach-voice-recording" role="group" aria-label="Voice recording controls">
+      <span className="coach-voice-live-dot" aria-hidden="true" />
+      <div className="coach-voice-waveform" role="img" aria-label="Microphone recording" style={{ "--voice-level": audioLevel } as CSSProperties}>{[0.48, 0.72, 1, 0.62, 0.86, 0.54, 0.78, 0.42, 0.92, 0.58, 0.76, 0.46, 0.88, 0.52, 0.7, 0.4].map((height, index) => <i key={index} style={{ "--bar-height": height } as CSSProperties} />)}</div>
+      <span className="coach-voice-timer" role="timer" aria-live="off">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
+      <button type="button" className="coach-voice-cancel-button" aria-label="Cancel recording" title="Cancel recording" onClick={() => cancel("Recording discarded. Your draft is unchanged.")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      <button type="button" className="coach-voice-finish-button" aria-label="Finish dictation" title="Finish dictation" onClick={() => void finishRef.current()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button>
+    </div> : null}
+    {recordingState === "transcribing" ? <div className="coach-voice-status" role="status" aria-live="polite"><span className="coach-voice-spinner" aria-hidden="true" /> Transcribing… <button type="button" onClick={() => cancel("Transcription cancelled. Your draft is unchanged.")}>Cancel</button></div> : null}
     {disclosureOpen ? <div className="coach-voice-disclosure" role="group" aria-labelledby="coach-voice-disclosure-title">
       <strong id="coach-voice-disclosure-title">Voice data and microphone access</strong>
-      <p>ORBIT will send this recording to OpenAI to create a transcript for you to review. Your audio and transcript are not saved in RacePredictor’s conversation history until you choose to send the draft. OpenAI’s data controls and retention information are <a href={props.providerDataControlsUrl} target="_blank" rel="noreferrer">available here</a>.</p>
+      <p>ORBIT sends this recording to OpenAI to create a transcript. When it is ready, the text goes into your message box; you decide whether to send it. Audio is not stored in RacePredictor. OpenAI’s data controls and retention information are <a href={props.providerDataControlsUrl} target="_blank" rel="noreferrer">available here</a>.</p>
       <div><button type="button" onClick={beginAfterDisclosure}>Continue to microphone permission</button><button type="button" onClick={() => setDisclosureOpen(false)}>Not now</button></div>
     </div> : null}
-    {transcript ? <div className="coach-voice-review">
-      <label htmlFor="coach-voice-transcript">Review and edit transcript</label>
-      <textarea id="coach-voice-transcript" value={transcript} maxLength={COACH_VOICE_MAX_TRANSCRIPT_CHARS} rows={4} onChange={(event) => setTranscript(event.target.value)} />
-      <div className="coach-voice-review-actions"><span>{transcript.length.toLocaleString()}/16,000 characters</span>
-        <button type="button" disabled={draftAppend.length > COACH_VOICE_MAX_DRAFT_CHARS} onClick={() => insertTranscript(false)}>{props.draft.trim() ? "Append to draft" : "Insert into draft"}</button>
-        {props.draft.trim() ? <button type="button" onClick={() => insertTranscript(true)}>Replace draft</button> : null}
-        <button type="button" onClick={() => { setTranscript(""); setError(""); if (transcriptExpiryTimerRef.current !== null) window.clearTimeout(transcriptExpiryTimerRef.current); transcriptExpiryTimerRef.current = null; }}>Discard transcript</button>
-      </div>
-      {draftAppend.length > COACH_VOICE_MAX_DRAFT_CHARS ? <p className="coach-voice-note">Shorten the transcript or replace the draft to fit the 4,000-character limit.</p> : null}
-    </div> : null}
     {error ? <p className="coach-voice-error" role="alert">{error}</p> : null}
-    <p className="coach-voice-budget">Estimated voice allowance · ${(props.remainingAllowanceMicroUsd / 1_000_000).toFixed(2)} of ${(props.monthlyAllowanceMicroUsd / 1_000_000).toFixed(2)} remaining; resets {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(props.resetsAt))}. Tax and hosting are excluded.</p>
+    <p className="coach-voice-budget">${(props.remainingAllowanceMicroUsd / 1_000_000).toFixed(2)} of ${(props.monthlyAllowanceMicroUsd / 1_000_000).toFixed(2)} voice allowance remaining · resets {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(props.resetsAt))}</p>
     {busy && recordingState !== "recording" ? null : <span className="sr-only" aria-live="polite">{busy ? "Voice processing in progress" : "Voice controls ready"}</span>}
   </div>;
 }

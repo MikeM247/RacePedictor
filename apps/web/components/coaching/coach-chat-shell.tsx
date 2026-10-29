@@ -95,6 +95,7 @@ export function CoachChatShell() {
   const [topic, setTopic] = useState<CoachTopic>("general");
   const [selectedRecord, setSelectedRecord] = useState<CoachRecordReference | null>(null);
   const [draft, setDraft] = useState("");
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState(false);
   const [leaseMayHaveExpired, setLeaseMayHaveExpired] = useState(false);
@@ -584,7 +585,29 @@ export function CoachChatShell() {
     return { context: latestContext, generation: latestConversation.generation, sequence: latestConversation.sequence };
   }
 
+  const insertVoiceTranscript = useCallback((transcript: string) => {
+    const composer = document.getElementById("coach-message-input") as HTMLTextAreaElement | null;
+    const current = composer?.value ?? draft;
+    const start = Math.min(composer?.selectionStart ?? current.length, current.length);
+    const end = Math.min(composer?.selectionEnd ?? start, current.length);
+    const next = `${current.slice(0, start)}${transcript}${current.slice(end)}`;
+    if (next.length > 4_000) return false;
+    setDraft(next);
+    requestAnimationFrame(() => {
+      const currentComposer = document.getElementById("coach-message-input") as HTMLTextAreaElement | null;
+      if (!currentComposer) return;
+      const caret = start + transcript.length;
+      currentComposer.focus({ preventScroll: true });
+      currentComposer.setSelectionRange(caret, caret);
+    });
+    return true;
+  }, [draft]);
+
   function onComposerKey(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (voiceBusy) {
+      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) event.preventDefault();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault(); void submitMessage();
     }
@@ -668,25 +691,28 @@ export function CoachChatShell() {
         {pending && leaseMayHaveExpired ? <div className="coach-v2-error coach-turn-error" role="status"><p>The reply may have stopped before it was saved. You can safely recover this message.</p><button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Recovering…" : "Recover reply"}</button></div> : null}
         {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
         {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link className={`coach-action-link coach-action-link--${action.kind}`} id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
-        {voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
-          available={voiceCapabilities.dictation.available}
-          disabled={archiving || sending || pending || loadState !== "ready" || !context.canSend || voiceCapabilities.limits.remainingAllowanceMicroUsd === 0}
-          disclosureVersion={voiceCapabilities.disclosureVersion}
-          providerDataControlsUrl={voiceCapabilities.providerDataControlsUrl}
-          remainingAllowanceMicroUsd={voiceCapabilities.limits.remainingAllowanceMicroUsd}
-          monthlyAllowanceMicroUsd={voiceCapabilities.limits.monthlyAllowanceMicroUsd}
-          resetsAt={voiceCapabilities.limits.resetsAt}
-          scopeKey={[actorId ?? "", conversation.generation, conversation.sequence, topic, selectedRecord?.type ?? "", selectedRecord?.id ?? "", context.fingerprint].join(":")}
-          draft={draft}
-          setDraft={setDraft}
-          prepareTranscription={prepareVoiceTranscription}
-          onStart={() => window.dispatchEvent(new Event("orbit:voice-playback-stop"))}
-          onAllowanceChanged={onVoiceAllowanceChanged}
-        /> : null}
-        <form className="coach-composer" onSubmit={(event) => void submitMessage(event)}>
+        <form className="coach-composer" onSubmit={(event) => { if (voiceBusy) { event.preventDefault(); return; } void submitMessage(event); }}>
           <label className="coach-composer-label" htmlFor="coach-message-input">Message ORBIT</label>
           <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={2} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />
-          <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={archiving || Boolean(archiveError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>
+          <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span></div>
+          <div className="coach-composer-actions">
+            {voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
+              available={voiceCapabilities.dictation.available}
+              disabled={archiving || sending || pending || loadState !== "ready" || !context.canSend || voiceCapabilities.limits.remainingAllowanceMicroUsd === 0}
+              disclosureVersion={voiceCapabilities.disclosureVersion}
+              providerDataControlsUrl={voiceCapabilities.providerDataControlsUrl}
+              remainingAllowanceMicroUsd={voiceCapabilities.limits.remainingAllowanceMicroUsd}
+              monthlyAllowanceMicroUsd={voiceCapabilities.limits.monthlyAllowanceMicroUsd}
+              resetsAt={voiceCapabilities.limits.resetsAt}
+              scopeKey={[actorId ?? "", conversation.generation, conversation.sequence, topic, selectedRecord?.type ?? "", selectedRecord?.id ?? "", context.fingerprint].join(":")}
+              onTranscriptReady={insertVoiceTranscript}
+              onBusyChange={setVoiceBusy}
+              prepareTranscription={prepareVoiceTranscription}
+              onStart={() => window.dispatchEvent(new Event("orbit:voice-playback-stop"))}
+              onAllowanceChanged={onVoiceAllowanceChanged}
+            /> : null}
+            <button className="coach-send-button" type="submit" disabled={voiceBusy || archiving || Boolean(archiveError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button>
+          </div>
         </form>
         {context && !context.canSend ? <p className="coach-chat-paused" role="status">Chat replies are paused. Your conversation remains available, and your training plan is unchanged.</p> : null}
         <p className="coach-chat-boundary">ORBIT offers training guidance. Your plan only changes when you approve an update.</p>

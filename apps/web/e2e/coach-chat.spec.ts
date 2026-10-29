@@ -516,7 +516,7 @@ test("Coach reflows at a 200 percent zoom-equivalent viewport", async ({ page })
   await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
 });
 
-test("voice dictation discloses the provider, reviews audio text, appends to the draft and never auto-sends", async ({ page }) => {
+test("voice dictation shows an audio waveform and inserts the transcript at the latest draft selection without sending", async ({ page }) => {
   await mockSession(page);
   await page.addInitScript(() => {
     (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls = 0;
@@ -533,13 +533,16 @@ test("voice dictation discloses the provider, reviews audio text, appends to the
         postMessage: (message: { type?: string }) => {
           if (message.type !== "flush") return;
           queueMicrotask(() => {
-            this.port.onmessage?.({ data: { type: "pcm", frame: new Int16Array(8_000).fill(240) } });
+            this.port.onmessage?.({ data: { type: "pcm", frame: new Int16Array(7_872).fill(240) } });
             this.port.onmessage?.({ data: { type: "flushed" } });
           });
         },
       };
       constructor(_context: AudioContext, _name: string, _options: AudioWorkletNodeOptions) {}
-      connect() { return this; }
+      connect() {
+        queueMicrotask(() => this.port.onmessage?.({ data: { type: "pcm", frame: new Int16Array(128).fill(2_000) } }));
+        return this;
+      }
       disconnect() {}
     }
     Object.defineProperty(window, "AudioWorkletNode", { configurable: true, value: SyntheticWorkletNode });
@@ -550,6 +553,12 @@ test("voice dictation discloses the provider, reviews audio text, appends to the
   let state = conversation();
   let transcriptionCalls = 0;
   let sendCalls = 0;
+  let requestStarted!: () => void;
+  const requestStartedPromise = new Promise<void>((resolve) => { requestStarted = resolve; });
+  let finishTranscription!: () => void;
+  const firstTranscriptionGate = new Promise<void>((resolve) => { finishTranscription = resolve; });
+  let finishCancelledTranscription!: () => void;
+  const cancelledTranscriptionGate = new Promise<void>((resolve) => { finishCancelledTranscription = resolve; });
   await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
   await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
   await page.route("**/api/v1/coaching/voice/capabilities", (route) => route.fulfill({ json: { data: {
@@ -562,25 +571,96 @@ test("voice dictation discloses the provider, reviews audio text, appends to the
     expect(route.request().headers()["content-type"]).toBe("audio/wav");
     expect(route.request().postDataBuffer()).toHaveLength(16_044);
     const metadata = JSON.parse(route.request().headers()["x-orbit-voice"]!);
-    await route.fulfill({ json: { data: { operationId: metadata.operationId, generation: metadata.expectedGeneration, sequence: metadata.expectedSequence, contextFingerprint: metadata.contextFingerprint, transcript: "The hill felt harder than expected." } } });
+    requestStarted();
+    if (transcriptionCalls === 1) await firstTranscriptionGate;
+    if (transcriptionCalls === 2) await cancelledTranscriptionGate;
+    try {
+      await route.fulfill({ json: { data: { operationId: metadata.operationId, generation: metadata.expectedGeneration, sequence: metadata.expectedSequence, contextFingerprint: metadata.contextFingerprint, transcript: "The hill felt harder than expected." } } });
+    } catch { /* a cancelled browser request may close its route before the fixture responds */ }
   });
   await page.route("**/api/v1/coaching/chat/turns", async (route) => { sendCalls += 1; await route.fulfill({ json: { data: {} } }); });
 
   await page.goto("/dashboard/coach");
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const composerRight = await page.locator(".coach-composer").evaluate((element) => element.getBoundingClientRect().right);
+    expect(composerRight).toBeLessThanOrEqual(width);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("Earlier typed note");
-  await page.getByRole("button", { name: "Dictate" }).click();
+  await composer.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(8, 13));
+  await page.getByRole("button", { name: "Start voice dictation" }).click();
   await expect(page.getByText("Voice data and microphone access", { exact: true })).toBeVisible();
+  await expect(page.getByText(/text goes into your message box/u)).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls)).toBe(0);
   await page.getByRole("button", { name: "Continue to microphone permission" }).click();
-  await expect(page.getByRole("button", { name: "Stop and review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Finish dictation" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Microphone recording" })).toBeVisible();
+  await expect.poll(() => page.locator(".coach-voice-waveform").evaluate((element) => Number.parseFloat(getComputedStyle(element).getPropertyValue("--voice-level")))).toBeGreaterThan(0);
+  await expect.poll(() => page.locator(".coach-voice-live-dot").evaluate((element) => getComputedStyle(element).animationName)).toBe("coach-voice-pulse");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator(".coach-voice-live-dot")).toHaveCSS("animation-name", "none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   expect(await page.evaluate(() => (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls)).toBe(1);
-  await page.getByRole("button", { name: "Stop and review" }).click();
-  const review = page.getByRole("textbox", { name: "Review and edit transcript" });
-  await expect(review).toHaveValue("The hill felt harder than expected.");
-  await expect(composer).toHaveValue("Earlier typed note");
-  await page.getByRole("button", { name: "Append to draft" }).click();
-  await expect(composer).toHaveValue("Earlier typed note\nThe hill felt harder than expected.");
+  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await requestStartedPromise;
+  await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
+  await composer.fill("Keep latest draft here");
+  await composer.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(5, 11));
+  finishTranscription();
+  await expect(composer).toHaveValue("Keep The hill felt harder than expected. draft here");
+  await expect(page.getByRole("textbox", { name: "Review and edit transcript" })).toHaveCount(0);
   expect(transcriptionCalls).toBe(1);
   expect(sendCalls).toBe(0);
+
+  await page.getByRole("button", { name: "Start voice dictation" }).click();
+  await expect(page.getByRole("button", { name: "Finish dictation" })).toBeVisible();
+  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await expect.poll(() => transcriptionCalls).toBe(2);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  finishCancelledTranscription();
+  await expect(composer).toHaveValue("Keep The hill felt harder than expected. draft here");
+  await expect(page.getByText("Transcription cancelled. Your draft is unchanged.")).toBeVisible();
+
+  const savedDraft = "x".repeat(3_990);
+  await composer.fill(savedDraft);
+  await page.getByRole("button", { name: "Start voice dictation" }).click();
+  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await expect(page.getByText(/transcript does not fit in the message/u)).toBeVisible();
+  await expect(composer).toHaveValue(savedDraft);
+
+  await page.getByRole("button", { name: "Start voice dictation" }).click();
+  await page.getByRole("button", { name: "Cancel recording" }).click();
+  await expect(page.getByText("Recording discarded. Your draft is unchanged.")).toBeVisible();
+  expect(transcriptionCalls).toBe(3);
+
+  await composer.fill("");
+  await page.getByRole("button", { name: "Start voice dictation" }).click();
+  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await expect(composer).toHaveValue("The hill felt harder than expected.");
+  expect(sendCalls).toBe(0);
+});
+
+test("voice permission denial explains the issue and keeps typing available", async ({ page }) => {
+  await mockSession(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {
+      getUserMedia: async () => { throw new DOMException("denied", "NotAllowedError"); },
+    } });
+  });
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
+  await page.route("**/api/v1/coaching/voice/capabilities", (route) => route.fulfill({ json: { data: {
+    dictation: { available: true, reason: "available" }, playback: { available: false, reason: "disabled" },
+    limits: { maxRecordingSeconds: 120, maxAudioBytes: 3_840_044, maxDraftChars: 4_000, transcriptionTimeoutMs: 20_000, speechTimeoutMs: 15_000, transientAudioTtlMs: 300_000, monthlyAllowanceMicroUsd: 5_000_000, remainingAllowanceMicroUsd: 5_000_000, resetsAt: "2026-11-01T00:00:00.000Z" },
+    disclosureVersion: 1, providerName: "OpenAI", providerDataControlsUrl: "https://platform.openai.com/docs/guides/your-data",
+  } } }));
+  await page.goto("/dashboard/coach");
+  await page.getByRole("button", { name: "Start voice dictation" }).click();
+  await page.getByRole("button", { name: "Continue to microphone permission" }).click();
+  await expect(page.locator(".coach-voice-error")).toContainText("Microphone permission was denied");
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Typing remains available");
+  await expect(composer).toHaveValue("Typing remains available");
 });

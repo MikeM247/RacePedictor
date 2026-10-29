@@ -29,5 +29,9 @@ try {
   const migration = await prisma.$queryRaw`SELECT migration_name FROM "_prisma_migrations" WHERE migration_name = '20261025180000_coach_conversation_archives' AND finished_at IS NOT NULL AND rolled_back_at IS NULL`;
   if (migration.length !== 1) throw new Error("Archive migration was not recorded as applied");
   await prisma.$queryRaw`SELECT "id" FROM "coach_conversation_archives" LIMIT 0`;
-  console.log("Verified coach archive migration and table on the isolated staging database.");
+  const voiceMigration = await prisma.$queryRaw`SELECT migration_name FROM "_prisma_migrations" WHERE migration_name = '20261028160000_coach_voice_usage' AND finished_at IS NOT NULL AND rolled_back_at IS NULL`;
+  if (voiceMigration.length !== 1) throw new Error("Voice usage migration was not recorded as applied");
+  await prisma.$queryRaw`SELECT "id" FROM "coach_voice_usage_buckets" LIMIT 0`;
+  await prisma.$queryRaw`SELECT "id" FROM "coach_voice_attempts" LIMIT 0`;
+  console.log("Verified coach archive and voice usage migrations on the isolated staging database.");
 } finally { await prisma.$disconnect(); }

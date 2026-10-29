@@ -317,6 +317,10 @@ export class PrismaOperationalUsageRepository {
 export class CoachChatConflictError extends Error {}
 export class CoachChatNotFoundError extends Error {}
 export class CoachChatRateLimitError extends Error { retryAfterSeconds: number; }
+export class CoachVoiceConflictError extends Error {}
+export class CoachVoiceBusyError extends Error {}
+export class CoachVoiceRateLimitError extends Error { retryAfterSeconds: number; }
+export class CoachVoiceBudgetError extends Error {}
 export class PrismaCoachChatRepository {
   archiveConversation(scope: AthleteScope, input: { expectedGeneration: number; expectedSequence: number; requestId: string }): Promise<any>;
   listArchives(scope: AthleteScope, input?: { beforeGeneration?: number | null }): Promise<any>;
@@ -324,6 +328,7 @@ export class PrismaCoachChatRepository {
   constructor(input: { prisma: unknown; now?: () => Date; newLeaseToken?: () => string });
   getConversation(scope: AthleteScope, input?: { beforeSequence?: number | null; limit?: number }): Promise<unknown>;
   getConversationMarker(scope: AthleteScope): Promise<{ id: string | null; generation: number; sequence: number; lastReflectedActivityId: string | null; lastReflectedActivityAt: string | null }>;
+  getCurrentAssistantMessage(scope: AthleteScope, generation: number, messageId: string): Promise<{ id: string; text: string } | null>;
   getCompletedHistory(scope: AthleteScope, limit?: number): Promise<Array<{ role: string; text: string; topic: string | null }>>;
   getTurn(scope: AthleteScope, turnId: string): Promise<any>;
   getTurnReplay(scope: AthleteScope, input: { expectedGeneration: number; clientTurnId?: string; turnId?: string; retryId?: string }): Promise<any>;
@@ -332,6 +337,12 @@ export class PrismaCoachChatRepository {
   completeTurn(scope: AthleteScope, input: any): Promise<any>;
   failTurn(scope: AthleteScope, input: any): Promise<any>;
   clearHistory(scope: AthleteScope, input: { expectedGeneration: number; expectedSequence: number }): Promise<{ generation: number; sequence: number }>;
+}
+export class PrismaCoachVoiceRepository {
+  constructor(input: { prisma: unknown; now?: () => Date; newId?: () => string });
+  reserve(scope: AthleteScope, input: { operationId: string; kind: "transcription" | "speech"; model: string; inputUnits: number; reservedMicroUsd: number; now?: Date }): Promise<unknown>;
+  complete(scope: AthleteScope, operationId: string, input: { state: "completed" | "failed"; latencyMs?: number | null; safeErrorCode?: string | null; now?: Date }): Promise<boolean>;
+  remainingAllowance(scope: AthleteScope, now?: Date): Promise<number>;
 }
 
 export class PrismaReconciliationScopeRepository {

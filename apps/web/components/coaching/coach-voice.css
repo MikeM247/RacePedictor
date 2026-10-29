@@ -1,0 +1,62 @@
+.coach-composer-actions { display: flex; align-items: flex-end; gap: 8px; padding-top: 7px; }
+.coach-voice-dictation { display: grid; flex: 1 1 auto; min-width: 44px; gap: 5px; color: #334966; }
+.coach-voice-record-button,
+.coach-voice-recording button,
+.coach-voice-status button,
+.coach-voice-disclosure button {
+  box-sizing: border-box; min-height: 44px; border: 1px solid #b8cbe6; border-radius: 10px;
+  background: #fff; color: #174d8d; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer;
+}
+.coach-voice-record-button { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; background: #f5f8ff; }
+.coach-voice-record-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.coach-voice-record-button:disabled,
+.coach-voice-recording button:disabled,
+.coach-voice-status button:disabled,
+.coach-voice-player button:disabled { opacity: .55; cursor: not-allowed; }
+.coach-voice-recording,
+.coach-voice-status { display: flex; min-height: 44px; align-items: center; flex-wrap: wrap; gap: 8px; font-size: .78rem; }
+.coach-voice-live-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: #d7435c; box-shadow: 0 0 0 3px #fae7eb; animation: coach-voice-pulse 1.3s ease-in-out infinite; }
+.coach-voice-waveform { display: flex; flex: 1 1 100px; height: 32px; min-width: 80px; align-items: center; justify-content: center; gap: 3px; overflow: hidden; color: #075bd1; }
+.coach-voice-waveform i { display: block; width: 3px; height: calc(4px + var(--bar-height) * var(--voice-level) * 22px); min-height: 4px; border-radius: 4px; background: currentColor; transition: height 70ms linear; }
+.coach-voice-timer { min-width: 34px; color: #465875; font-size: .73rem; font-variant-numeric: tabular-nums; }
+.coach-voice-recording button { display: grid; width: 40px; min-width: 40px; height: 40px; min-height: 40px; place-items: center; padding: 0; }
+.coach-voice-recording button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+.coach-voice-recording .coach-voice-cancel-button { color: #6a778b; }
+.coach-voice-recording .coach-voice-finish-button { border-color: #0c60d3; background: #0c60d3; color: #fff; }
+.coach-voice-status { color: #334966; }
+.coach-voice-status button { min-height: 36px; padding: 5px 10px; }
+.coach-voice-spinner { width: 15px; height: 15px; border: 2px solid #c9d7ec; border-top-color: #1261c9; border-radius: 50%; animation: coach-voice-spin .8s linear infinite; }
+.coach-voice-disclosure { display: grid; grid-column: 1 / -1; gap: 7px; width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #cdd9eb; border-radius: 10px; background: #f8faff; color: #1c2b43; }
+.coach-voice-disclosure strong { font-size: .82rem; font-weight: 750; }
+.coach-voice-disclosure p { margin: 0; color: #53627b; font-size: .75rem; line-height: 1.45; }
+.coach-voice-disclosure a { color: #0759c9; }
+.coach-voice-disclosure > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.coach-voice-disclosure button { min-height: 38px; padding: 6px 10px; font-size: .74rem; }
+.coach-voice-disclosure button:first-child { border-color: #0c60d3; background: #0c60d3; color: #fff; }
+.coach-voice-error { grid-column: 1 / -1; margin: 0; color: #9a2d40; font-size: .74rem; line-height: 1.4; }
+.coach-voice-budget { grid-column: 1 / -1; margin: 0; color: #718097; font-size: .62rem; line-height: 1.3; }
+.coach-voice-player { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.coach-voice-player audio { width: min(300px, 100%); height: 38px; }
+.coach-voice-player > span { color: #53627b; font-size: .74rem; }
+.coach-voice-player-error { color: #9a2d40 !important; }
+.coach-voice-player button { min-height: 36px; padding: 6px 10px; border: 1px solid #bdcbe0; border-radius: 9px; background: #fff; color: #164d91; font: inherit; font-size: .74rem; font-weight: 700; cursor: pointer; }
+.coach-voice-record-button:focus-visible,
+.coach-voice-recording button:focus-visible,
+.coach-voice-status button:focus-visible,
+.coach-voice-disclosure button:focus-visible,
+.coach-voice-player button:focus-visible { outline: 3px solid #71a3f5; outline-offset: 2px; }
+@keyframes coach-voice-pulse { 50% { box-shadow: 0 0 0 6px rgb(250 231 235 / 35%); } }
+@keyframes coach-voice-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) {
+  .coach-composer-actions { gap: 6px; }
+  .coach-voice-recording { gap: 5px; }
+  .coach-voice-waveform { min-width: 24px; gap: 2px; }
+  .coach-voice-recording button { width: 38px; min-width: 38px; }
+  .coach-voice-player { align-items: flex-start; }
+  .coach-voice-player audio { width: 100%; }
+  .coach-voice-disclosure > div button { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-voice-live-dot, .coach-voice-spinner { animation: none; }
+  .coach-voice-waveform i { transition: none; }
+}

@@ -29,7 +29,10 @@ export function createOpenAICoachVoiceProvider(input: { apiKey?: string; fetchIm
           method: "POST", headers: { authorization: `Bearer ${apiKey}` }, body: form, signal,
         });
       } catch (error) { throw asProviderError(error, signal); }
-      if (!response.ok) throw mapProviderStatus(response.status);
+      if (!response.ok) {
+        console.warn("coach.voice.provider_rejected", { operation: "transcription", status: response.status });
+        throw mapProviderStatus(response.status);
+      }
       let payload: unknown;
       try { payload = await response.json(); }
       catch { throw new CoachVoiceProviderError("VOICE_PROVIDER_INVALID_RESPONSE"); }

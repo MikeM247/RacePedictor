@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { CoachContext, CoachConversationMessage } from "../../../../packages/core/src/contracts/coach-chat";
 import { coachVoiceTranscriptionResultSchema } from "../../../../packages/core/src/contracts/coach-voice";
 import { encodeCoachVoiceWav } from "../../../../packages/core/src/services/coach-voice-audio";
@@ -8,6 +8,8 @@ import "./coach-voice.css";
 
 type CaptureContext = { context: CoachContext; generation: number; sequence: number };
 type VoiceDictationProps = {
+  children: ReactNode;
+  footer: ReactNode;
   available: boolean;
   disabled: boolean;
   disclosureVersion: number;
@@ -34,6 +36,8 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
   const [disclosureOpen, setDisclosureOpen] = useState(false);
   const [error, setError] = useState("");
   const [disclosureAccepted, setDisclosureAccepted] = useState(false);
+  const micButtonRef = useRef<HTMLButtonElement | null>(null);
+  const restoreMicFocusRef = useRef(false);
   const framesRef = useRef<Int16Array[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
@@ -56,6 +60,12 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
     setRecordingState(state);
     props.onBusyChange(state !== "idle");
   }, [props.onBusyChange]);
+
+  useEffect(() => {
+    if (!restoreMicFocusRef.current) return;
+    restoreMicFocusRef.current = false;
+    window.requestAnimationFrame(() => micButtonRef.current?.focus());
+  }, [recordingState]);
 
   useEffect(() => {
     try { setDisclosureAccepted(sessionStorage.getItem(`${DISCLOSURE_PREFIX}${props.disclosureVersion}`) === "accepted"); }
@@ -139,6 +149,7 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
       setError("Voice capture is not supported in this browser. You can still type your message.");
       return;
     }
+    restoreMicFocusRef.current = true;
     updateRecordingState("permission");
     props.onStart();
     const captureSession = ++captureSessionRef.current;
@@ -278,30 +289,46 @@ export function CoachVoiceDictation(props: VoiceDictationProps) {
   // The two-minute timer holds a stable callback without capturing stale render data.
   useEffect(() => { const timer = timerRef.current; return () => { if (timer !== null) window.clearInterval(timer); }; }, []);
 
-  if (!props.available) return null;
+  if (!props.available) return <>{props.children}{props.footer}</>;
   const busy = recordingState !== "idle";
+  const locked = props.disabled || recordingState === "permission" || recordingState === "transcribing";
+  const stopOrStart = () => {
+    if (locked) return;
+    if (recordingState === "recording") { void finishRef.current(); return; }
+    setError("");
+    if (disclosureAccepted) void startRecording(); else setDisclosureOpen(true);
+  };
+  const cancelAndRestoreFocus = (message = "") => {
+    restoreMicFocusRef.current = true;
+    cancel(message);
+  };
   return <div className="coach-voice-dictation">
-    {recordingState === "idle" ? <button type="button" className="coach-voice-record-button" aria-label="Start voice dictation" title="Dictate a message" disabled={props.disabled} onClick={() => {
-      setError("");
-      if (disclosureAccepted) void startRecording(); else setDisclosureOpen(true);
-    }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v4m-4 0h8"/></svg></button> : null}
-    {recordingState === "permission" ? <div className="coach-voice-status" role="status" aria-live="polite">Requesting microphone permission… <button type="button" onClick={() => cancel()}>Cancel</button></div> : null}
+    <div className="coach-composer-input-frame">
+      {props.children}
+      {recordingState === "recording" ? <div className="coach-voice-listening-controls">
+        <div className="coach-voice-waveform" role="img" aria-label="Microphone recording volume" style={{ "--voice-level": audioLevel } as CSSProperties}>{[0.58, 0.84, 0.48, 1, 0.66, 0.9, 0.54].map((height, index) => <i key={index} style={{ "--bar-height": height } as CSSProperties} />)}</div>
+      </div> : null}
+      <button ref={micButtonRef} type="button" className={`coach-voice-record-button${recordingState === "recording" ? " coach-voice-record-button--recording" : ""}${recordingState === "permission" || recordingState === "transcribing" ? " coach-voice-record-button--busy" : ""}`} aria-label={recordingState === "recording" ? "Stop dictation" : recordingState === "permission" ? "Requesting microphone permission" : recordingState === "transcribing" ? "Transcribing voice input" : "Start voice dictation"} aria-pressed={recordingState === "recording"} aria-disabled={locked} aria-busy={recordingState === "permission" || recordingState === "transcribing" || undefined} title={recordingState === "recording" ? "Stop dictation" : "Dictate a message"} disabled={props.disabled} onClick={stopOrStart}>
+        {recordingState === "permission" || recordingState === "transcribing" ? <span className="coach-voice-spinner" aria-hidden="true" /> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v4m-4 0h8"/></svg>}
+      </button>
+    </div>
+    {recordingState === "permission" ? <div className="coach-voice-status" role="status" aria-live="polite">Requesting microphone permission… <button type="button" onClick={() => cancelAndRestoreFocus()}>Cancel</button></div> : null}
     {recordingState === "recording" ? <div className="coach-voice-recording" role="group" aria-label="Voice recording controls">
       <span className="coach-voice-live-dot" aria-hidden="true" />
-      <div className="coach-voice-waveform" role="img" aria-label="Microphone recording" style={{ "--voice-level": audioLevel } as CSSProperties}>{[0.48, 0.72, 1, 0.62, 0.86, 0.54, 0.78, 0.42, 0.92, 0.58, 0.76, 0.46, 0.88, 0.52, 0.7, 0.4].map((height, index) => <i key={index} style={{ "--bar-height": height } as CSSProperties} />)}</div>
+      <span className="coach-voice-listening-label" role="status" aria-live="polite">Listening… Click the mic to stop</span>
       <span className="coach-voice-timer" role="timer" aria-live="off">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
-      <button type="button" className="coach-voice-cancel-button" aria-label="Cancel recording" title="Cancel recording" onClick={() => cancel("Recording discarded. Your draft is unchanged.")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-      <button type="button" className="coach-voice-finish-button" aria-label="Finish dictation" title="Finish dictation" onClick={() => void finishRef.current()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button>
+      <button type="button" className="coach-voice-discard-button" aria-label="Discard recording" title="Discard recording" onClick={() => cancelAndRestoreFocus("Recording discarded. Your draft is unchanged.")}>Discard</button>
     </div> : null}
-    {recordingState === "transcribing" ? <div className="coach-voice-status" role="status" aria-live="polite"><span className="coach-voice-spinner" aria-hidden="true" /> Transcribing… <button type="button" onClick={() => cancel("Transcription cancelled. Your draft is unchanged.")}>Cancel</button></div> : null}
+    {recordingState === "transcribing" ? <div className="coach-voice-status" role="status" aria-live="polite"><span className="coach-voice-spinner" aria-hidden="true" /> Transcribing… <button type="button" onClick={() => cancelAndRestoreFocus("Transcription cancelled. Your draft is unchanged.")}>Cancel</button></div> : null}
     {disclosureOpen ? <div className="coach-voice-disclosure" role="group" aria-labelledby="coach-voice-disclosure-title">
       <strong id="coach-voice-disclosure-title">Voice data and microphone access</strong>
       <p>ORBIT sends this recording to OpenAI to create a transcript. When it is ready, the text goes into your message box; you decide whether to send it. Audio is not stored in RacePredictor. OpenAI’s data controls and retention information are <a href={props.providerDataControlsUrl} target="_blank" rel="noreferrer">available here</a>.</p>
       <div><button type="button" onClick={beginAfterDisclosure}>Continue to microphone permission</button><button type="button" onClick={() => setDisclosureOpen(false)}>Not now</button></div>
     </div> : null}
     {error ? <p className="coach-voice-error" role="alert">{error}</p> : null}
+    {props.footer}
     <p className="coach-voice-budget">${(props.remainingAllowanceMicroUsd / 1_000_000).toFixed(2)} of ${(props.monthlyAllowanceMicroUsd / 1_000_000).toFixed(2)} voice allowance remaining · resets {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(props.resetsAt))}</p>
-    {busy && recordingState !== "recording" ? null : <span className="sr-only" aria-live="polite">{busy ? "Voice processing in progress" : "Voice controls ready"}</span>}
+    {busy && recordingState !== "recording" ? <span className="sr-only" aria-live="polite">Voice processing in progress</span> : null}
   </div>;
 }
 

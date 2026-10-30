@@ -7,6 +7,7 @@ import {
   coachContextSchema,
   coachConversationStateSchema,
   coachArchiveResultSchema,
+  coachDiscardResultSchema,
   type CoachContext,
   type CoachConversationMessage,
   type CoachConversationState,
@@ -126,8 +127,11 @@ export function CoachChatShell() {
   const tabIdRef = useRef<string | null>(null);
   const archivingRef = useRef(false);
   const archiveRequestRef = useRef<{ requestId: string; expectedGeneration: number; expectedSequence: number } | null>(null);
+  const discardRequestRef = useRef<{ expectedGeneration: number; expectedSequence: number } | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveError, setArchiveError] = useState("");
+  const [discardError, setDiscardError] = useState("");
+  const [discardConflict, setDiscardConflict] = useState(false);
   const [archiveStatus, setArchiveStatus] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCapabilities, setVoiceCapabilities] = useState<CoachVoiceCapabilities | null>(null);
@@ -187,7 +191,7 @@ export function CoachChatShell() {
     window.visualViewport?.addEventListener("scroll", fit);
     fit();
     return () => { observer.disconnect(); window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit); };
-  }, [loadState, failure, archiveError, archiveStatus, context]);
+  }, [loadState, failure, archiveError, discardError, archiveStatus, context]);
 
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
@@ -365,10 +369,11 @@ export function CoachChatShell() {
     const visibility = () => { if (document.visibilityState === "visible") void loadAll(true); };
     document.addEventListener("visibilitychange", visibility);
     const onCleared = (event: MessageEvent) => {
-      if (!["archived", "cleared"].includes(event.data?.type) || event.data?.athleteId !== actorRef.current || event.data?.sourceId === tabIdRef.current) return;
-      epochRef.current += 1; archiveRequestRef.current = null;
+      if (!["archived", "discarded", "cleared"].includes(event.data?.type) || event.data?.athleteId !== actorRef.current || event.data?.sourceId === tabIdRef.current) return;
+      epochRef.current += 1; archiveRequestRef.current = null; discardRequestRef.current = null; stopAllCoachVoice();
       generationRef.current = Math.max(generationRef.current, Number(event.data.generation) || 1);
-      setArchiveError(""); setArchiveStatus(event.data.type === "archived" ? "Chat saved in another tab. New discussion started." : "Coaching history permanently deleted.");
+      setArchiveError(""); setDiscardError(""); setDiscardConflict(false);
+      setArchiveStatus(event.data.type === "archived" ? "Chat saved in another tab. New discussion started." : event.data.type === "discarded" ? "Chat cleared in another tab. New discussion started." : "Coaching history permanently deleted.");
       setFailure(null); setPending(false); setSending(false); setTopic("general"); setSelectedRecord(null); setHistoryOpen(false);
       if (event.data.type === "cleared") setDraft("");
       try { for (const key of ["topic", "record", "scrollTop"]) sessionStorage.removeItem(`${prefix}${actorRef.current}.${key}`); } catch { /* optional */ }
@@ -389,7 +394,8 @@ export function CoachChatShell() {
       sessionStorage.setItem(`${prefix}${actorId}.topic`, topic);
       if (selectedRecord) sessionStorage.setItem(`${prefix}${actorId}.record`, JSON.stringify(selectedRecord));
       else sessionStorage.removeItem(`${prefix}${actorId}.record`);
-      sessionStorage.setItem(`${prefix}${actorId}.draft`, draft);
+      if (draft) sessionStorage.setItem(`${prefix}${actorId}.draft`, draft);
+      else sessionStorage.removeItem(`${prefix}${actorId}.draft`);
       sessionStorage.setItem(`${prefix}${actorId}.generation`, String(conversation.generation));
     } catch { /* session storage is optional */ }
   }, [actorId, topic, selectedRecord, draft, loadState, conversation.generation]);
@@ -431,7 +437,7 @@ export function CoachChatShell() {
 
   async function submitMessage(event?: FormEvent) {
     event?.preventDefault();
-    if (!draft.trim() || !context || sending || pending || archivingRef.current || archiveError || !context.canSend) return;
+    if (!draft.trim() || !context || sending || pending || archivingRef.current || archiveError || discardError || !context.canSend) return;
     followLatestRef.current = true;
     unreadLatestRef.current = false;
     setShowLatestMessage(false);
@@ -518,6 +524,7 @@ export function CoachChatShell() {
       }));
       if (epoch !== epochRef.current) return;
       acceptConversation(result.conversation); archiveRequestRef.current = null;
+      setDiscardError(""); setDiscardConflict(false);
       setFailure(null); setPending(false); setSending(false); setOlderLoading(false); setTopic("general"); setSelectedRecord(null); setRecoveryReturn(null);
       try {
         sessionStorage.setItem(`${prefix}${actorId}.topic`, "general");
@@ -540,6 +547,56 @@ export function CoachChatShell() {
         await refreshConversation().catch(() => undefined);
         setArchiveError("The discussion changed. Review the latest messages, then choose Clear chat again.");
       } else setArchiveError("The chat could not be saved. Your messages and draft are kept here. Retry saving.");
+    } finally { archivingRef.current = false; setArchiving(false); setSending(false); setOlderLoading(false); }
+  }
+
+  function openClearConfirmation(returnFocus: HTMLElement | null) {
+    archiveReturnFocusRef.current = returnFocus;
+    discardRequestRef.current = null;
+    setDiscardError("");
+    setDiscardConflict(false);
+    setArchiveConfirmOpen(true);
+  }
+
+  async function discardChat(retry = false) {
+    if (archivingRef.current || loadState !== "ready") return false;
+    if (retry && !discardRequestRef.current) return false;
+    archivingRef.current = true; setArchiving(true); setArchiveError(""); setArchiveStatus("");
+    const epoch = ++epochRef.current;
+    discardRequestRef.current ??= { expectedGeneration: conversation.generation, expectedSequence: conversation.sequence };
+    try {
+      const result = coachDiscardResultSchema.parse(await requestJson("/api/v1/coaching/chat/conversation/discard", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(discardRequestRef.current),
+      }));
+      if (epoch !== epochRef.current) return false;
+      acceptConversation(result.conversation); discardRequestRef.current = null;
+      setFailure(null); setPending(false); setSending(false); setOlderLoading(false); setDraft(""); setTopic("general"); setSelectedRecord(null); setRecoveryReturn(null);
+      setDiscardError(""); setDiscardConflict(false);
+      try {
+        sessionStorage.setItem(`${prefix}${actorId}.topic`, "general");
+        sessionStorage.setItem(`${prefix}${actorId}.generation`, String(result.conversation.generation));
+        for (const key of ["record", "draft", "scrollTop"]) sessionStorage.removeItem(`${prefix}${actorId}.${key}`);
+      } catch { /* optional browser storage */ }
+      try {
+        const channel = new BroadcastChannel("racepredictor.coach-history");
+        channel.postMessage({ type: "discarded", athleteId: actorId, generation: result.conversation.generation, sourceId: tabIdRef.current }); channel.close();
+      } catch { /* optional browser messaging */ }
+      setArchiveStatus("Chat cleared without saving.");
+      if (transcriptRef.current) transcriptRef.current.scrollTop = 0;
+      archivingRef.current = false;
+      await refreshContext("general", null).catch(() => { setContext(null); setLoadState("error"); setLoadError("Training context could not be refreshed. Reload before sending."); });
+      requestAnimationFrame(() => document.getElementById("coach-message-input")?.focus({ preventScroll: true }));
+      return true;
+    } catch (error) {
+      if (epoch !== epochRef.current) return false;
+      if ((error as ApiError).status === 409) {
+        discardRequestRef.current = null; archivingRef.current = false;
+        await refreshConversation().catch(() => undefined);
+        setDiscardConflict(true);
+        setDiscardError("The discussion changed. Review the latest messages before choosing again.");
+        setArchiveConfirmOpen(false);
+      } else setDiscardError("Could not confirm the clear. Your draft is still here. Retry to check the request.");
+      return false;
     } finally { archivingRef.current = false; setArchiving(false); setSending(false); setOlderLoading(false); }
   }
 
@@ -622,15 +679,16 @@ export function CoachChatShell() {
       : topic === "reflect" ? context.latestActivity?.title ?? "No recent activity"
         : topic === "prepare" ? context.nextSession?.title ?? "No upcoming session" : "General training"
     : loadState === "error" ? "Training context unavailable" : "Loading training context";
+  const messageInput = <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={2} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />;
+  const composerFooter = <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={voiceBusy || archiving || Boolean(archiveError || discardError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>;
   const showHistoryFromActions = () => {
     historyReturnFocusRef.current = mobileActionsTriggerRef.current;
     setConversationActionsOpen(false);
     window.requestAnimationFrame(() => setHistoryOpen(true));
   };
   const showArchiveFromActions = () => {
-    archiveReturnFocusRef.current = mobileActionsTriggerRef.current;
     setConversationActionsOpen(false);
-    window.requestAnimationFrame(() => setArchiveConfirmOpen(true));
+    window.requestAnimationFrame(() => openClearConfirmation(mobileActionsTriggerRef.current));
   };
   const showWellbeingFromActions = () => {
     wellbeingReturnFocusRef.current = mobileActionsTriggerRef.current;
@@ -653,7 +711,7 @@ export function CoachChatShell() {
           <span className={`orbit-presence orbit-presence--${context?.canSend ? "ready" : context ? "paused" : loadState === "error" ? "unavailable" : "loading"}`}><i aria-hidden="true" />{orbitStatus}</span>
           <div className="coach-history-actions">
             <button type="button" onClick={(event) => { historyReturnFocusRef.current = event.currentTarget; setHistoryOpen(true); }} disabled={archiving}>Previous chats</button>
-            <button type="button" title="Save this discussion and start a new one" disabled={archiving || loadState !== "ready"} onClick={(event) => { archiveReturnFocusRef.current = event.currentTarget; setArchiveConfirmOpen(true); }}>Clear chat</button>
+            <button type="button" title="Choose how to clear this discussion" disabled={archiving || loadState !== "ready"} onClick={(event) => openClearConfirmation(event.currentTarget)}>Clear chat</button>
             <button type="button" onClick={(event) => { wellbeingReturnFocusRef.current = event.currentTarget; setWellbeingOpen(true); }}>Daily check-in</button>
           </div>
         </header>
@@ -663,7 +721,7 @@ export function CoachChatShell() {
         <button ref={contextLauncherRef} className="coach-mobile-context-launcher" type="button" aria-haspopup="dialog" aria-expanded={contextSheetOpen} onClick={() => setContextSheetOpen(true)}><span><strong>{topic === "reflect" ? "Reflect" : topic === "prepare" ? "Prepare" : "Ask ORBIT"}</strong><span>{mobileSubject}</span></span><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
         {context ? <div className="coach-context-row">
           <span className="coach-context-label">{topic === "reflect" ? "REFLECTING ON" : topic === "prepare" ? "GETTING READY FOR" : "TRAINING CONTEXT"}</span>
-          {context.ambiguousSessions.length > 1 && topic === "prepare" && !selectedRecord ? <div className="coach-record-choices" role="group" aria-label="Choose a session to prepare for">{context.ambiguousSessions.map((session) => <button key={session.id} type="button" onClick={() => void selectRecord({ type: "session", id: session.id })}>{session.title} · {session.date}</button>)}</div> : <strong>{recordLabel(context, selectedRecord)}</strong>}
+          {context.ambiguousSessions.length > 1 && topic === "prepare" && !selectedRecord ? <div className="coach-record-choices" role="group" aria-label="Choose a session to prepare for">{context.ambiguousSessions.map((session) => <button key={session.id} type="button" onClick={() => void selectRecord({ type: "session", id: session.id })}>{session.title} · {session.date}</button>)}</div> : <strong title={recordLabel(context, selectedRecord)}>{recordLabel(context, selectedRecord)}</strong>}
           {selectedRecord ? <button className="coach-change-context" type="button" onClick={() => { setSelectedRecord(null); void refreshContext(topic, null); }}>Change</button> : null}
           {context.latestActivity && topic !== "reflect" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "activity", id: context.latestActivity!.id })}>Last activity · {context.latestActivity.title}</button> : null}
           {context.nextSession && topic !== "prepare" ? <button className="coach-context-chip" type="button" onClick={() => void selectRecord({ type: "session", id: context.nextSession!.id })}>Next session · {context.nextSession.title}</button> : null}
@@ -671,6 +729,7 @@ export function CoachChatShell() {
         {loadState === "loading" ? <p className="coach-v2-state" role="status" aria-busy="true">Loading your training context…</p> : null}
         {archiveStatus ? <p className="coach-v2-state" role="status">{archiveStatus}</p> : null}
         {archiveError ? <div className="coach-v2-error" role="alert"><p>{archiveError}</p><button type="button" disabled={archiving} onClick={() => void archiveChat()}>Retry saving</button></div> : null}
+        {discardError ? <div className="coach-v2-error" role="alert"><p>{discardError}</p><button type="button" disabled={archiving} onClick={() => { if (discardConflict) { setArchiveStatus("Review the current chat, then choose Clear chat again."); setDiscardError(""); setDiscardConflict(false); setArchiveConfirmOpen(false); } else void discardChat(true); }}>{discardConflict ? "Review chat" : "Retry clearing"}</button></div> : null}
         {loadState === "error" ? <div className="coach-v2-error" role="alert"><p>{loadError}</p><button type="button" onClick={() => void loadAll(true)}>Retry</button><Link href="/dashboard/calendar">Open Calendar</Link></div> : null}
         {failure && !messages.length ? <div className="coach-v2-error" role="alert"><p>{failure.message}</p></div> : null}
         <div className="coach-transcript-wrap">
@@ -689,11 +748,8 @@ export function CoachChatShell() {
         {failure && messages.length ? <div className="coach-v2-error coach-turn-error" role="alert"><p>{failure.message}</p>{retryable && !(pending && leaseMayHaveExpired) ? <button type="button" disabled={archiving || sending} onClick={() => void retryReply()}>{sending ? "Retrying…" : "Retry reply"}</button> : null}</div> : null}
         {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link className={`coach-action-link coach-action-link--${action.kind}`} id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
         <form className="coach-composer" onSubmit={(event) => { if (voiceBusy) { event.preventDefault(); return; } void submitMessage(event); }}>
-          <label className="coach-composer-label" htmlFor="coach-message-input">Message ORBIT</label>
-          <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={2} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />
-          <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span></div>
-          <div className="coach-composer-actions">
-            {voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
+          <label className="coach-composer-label sr-only" htmlFor="coach-message-input">Message ORBIT</label>
+          {voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
               available={voiceCapabilities.dictation.available}
               disabled={archiving || sending || pending || loadState !== "ready" || !context.canSend || voiceCapabilities.limits.remainingAllowanceMicroUsd === 0}
               disclosureVersion={voiceCapabilities.disclosureVersion}
@@ -707,9 +763,8 @@ export function CoachChatShell() {
               prepareTranscription={prepareVoiceTranscription}
               onStart={() => window.dispatchEvent(new Event("orbit:voice-playback-stop"))}
               onAllowanceChanged={onVoiceAllowanceChanged}
-            /> : null}
-            <button className="coach-send-button" type="submit" disabled={voiceBusy || archiving || Boolean(archiveError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button>
-          </div>
+              footer={composerFooter}
+            >{messageInput}</CoachVoiceDictation> : <><div className="coach-composer-input-frame">{messageInput}</div>{composerFooter}</>}
         </form>
         {context && !context.canSend ? <p className="coach-chat-paused" role="status">Chat replies are paused. Your conversation remains available, and your training plan is unchanged.</p> : null}
         <p className="coach-chat-boundary">ORBIT offers training guidance. Your plan only changes when you approve an update.</p>
@@ -719,7 +774,7 @@ export function CoachChatShell() {
         <header className="coach-overlay-heading"><h2 id="coach-mobile-actions-title">Conversation actions</h2><button type="button" aria-label="Close conversation actions" onClick={() => setConversationActionsOpen(false)}>×</button></header>
         <div className="coach-mobile-action-list">
           <button type="button" onClick={showHistoryFromActions} disabled={archiving}>Previous chats <span>Read saved chats</span></button>
-          <button type="button" onClick={showArchiveFromActions} disabled={archiving || loadState !== "ready"}>Clear chat <span>Save this discussion and start a new one</span></button>
+          <button type="button" onClick={showArchiveFromActions} disabled={archiving || loadState !== "ready"}>Clear chat <span>Choose how to clear this discussion</span></button>
           <button type="button" onClick={showWellbeingFromActions}>Daily check-in <span>{context?.wellbeing?.status === "saved" ? "Review today’s recovery check-in" : "Add an optional recovery check-in"}</span></button>
         </div>
       </NativeModal>
@@ -739,9 +794,10 @@ export function CoachChatShell() {
         </div> : <p role="status">{loadState === "error" ? "Training context is unavailable. Retry to refresh." : "Loading training context…"}</p>}
       </NativeModal>
       <NativeModal open={archiveConfirmOpen} titleId="coach-archive-confirm-title" onClose={() => setArchiveConfirmOpen(false)} busy={archiving} returnFocusRef={archiveReturnFocusRef} className="coach-clear-chat-dialog">
-        <header className="coach-overlay-heading"><h2 id="coach-archive-confirm-title">Start a new discussion?</h2><button type="button" aria-label="Close confirmation" disabled={archiving} onClick={() => setArchiveConfirmOpen(false)}>×</button></header>
-        <p>The current discussion, when it contains messages, is saved to Previous chats. This starts a fresh conversation; it does not delete saved history. Your unsent draft stays in the composer.</p>
-        <div className="coach-confirm-actions"><button type="button" onClick={() => setArchiveConfirmOpen(false)} disabled={archiving}>Cancel</button><button type="button" className="coach-confirm-primary" onClick={async () => { await archiveChat(); archiveReturnFocusRef.current = document.getElementById("coach-message-input"); setArchiveConfirmOpen(false); }} disabled={archiving || loadState !== "ready"}>{archiving ? "Saving…" : "Save and start new"}</button></div>
+        <header className="coach-overlay-heading"><h2 id="coach-archive-confirm-title">Clear this chat?</h2><button type="button" aria-label="Close confirmation" disabled={archiving} onClick={() => setArchiveConfirmOpen(false)}>×</button></header>
+        <p>Save the current discussion to Previous chats and keep your draft, or permanently discard the discussion and clear your unsent draft. Previously saved chats are kept.</p>
+        {discardError ? <p role="alert">{discardError}</p> : null}
+        <div className="coach-confirm-actions"><button type="button" onClick={() => setArchiveConfirmOpen(false)} disabled={archiving}>Cancel</button><button type="button" className="coach-confirm-primary" onClick={async () => { await archiveChat(); archiveReturnFocusRef.current = document.getElementById("coach-message-input"); setArchiveConfirmOpen(false); }} disabled={archiving || loadState !== "ready"}>{archiving ? "Saving…" : "Save and start new"}</button>{discardConflict ? <button type="button" onClick={() => { setArchiveStatus("Review the current chat, then choose Clear chat again."); setDiscardError(""); setDiscardConflict(false); }} disabled={archiving}>Review chat</button> : <button type="button" className="coach-confirm-discard" onClick={async () => { const cleared = await discardChat(Boolean(discardError)); if (cleared) { archiveReturnFocusRef.current = document.getElementById("coach-message-input"); setArchiveConfirmOpen(false); } }} disabled={archiving || loadState !== "ready"}>{archiving ? "Clearing…" : discardError ? "Retry clearing" : "Clear without saving"}</button>}</div>
       </NativeModal>
       <NativeModal open={wellbeingOpen && Boolean(context)} titleId="coach-wellbeing-dialog-title" onClose={() => setWellbeingOpen(false)} returnFocusRef={wellbeingReturnFocusRef} className="coach-wellbeing-dialog">
         <header className="coach-overlay-heading"><div><p className="coach-v2-overline">RECOVERY CONTEXT</p><h2 id="coach-wellbeing-dialog-title">Daily check-in</h2></div><button type="button" aria-label="Close daily check-in" onClick={() => setWellbeingOpen(false)}>×</button></header>

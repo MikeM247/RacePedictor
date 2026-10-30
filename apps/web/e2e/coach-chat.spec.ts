@@ -41,10 +41,17 @@ async function mockSession(page: Page) {
 
 async function confirmAndStartNewChat(page: Page) {
   await page.getByRole("button", { name: "Clear chat", exact: true }).click();
-  const confirmation = page.getByRole("dialog", { name: "Start a new discussion?" });
+  const confirmation = page.getByRole("dialog", { name: "Clear this chat?" });
   await expect(confirmation).toBeVisible();
-  await expect(confirmation.getByText(/saved to Previous chats/i)).toBeVisible();
+  await expect(confirmation.getByText(/save.*Previous chats/i)).toBeVisible();
   await confirmation.getByRole("button", { name: "Save and start new" }).click();
+}
+
+async function confirmDiscardChat(page: Page) {
+  await page.getByRole("button", { name: "Clear chat", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "Clear this chat?" });
+  await expect(confirmation.getByRole("button", { name: "Save and start new" })).toBeVisible();
+  await confirmation.getByRole("button", { name: "Clear without saving" }).click();
 }
 
 test("complete Coach panel fits desktop viewports and bounds long drafts", async ({ page }) => {
@@ -77,6 +84,21 @@ test("desktop and mobile chat screens render without horizontal overflow", async
   await page.goto("/dashboard/coach");
   await expect(page.getByRole("main", { name: "Coach chat" })).toBeVisible();
   await expect(page.getByText("Ready", { exact: true })).toBeVisible();
+  const topicButtons = page.locator(".coach-topic-picker button");
+  const topicHeight = await topicButtons.first().evaluate((button) => button.getBoundingClientRect().height);
+  expect(topicHeight).toBeLessThanOrEqual(32);
+  const selectedTopic = page.locator(".coach-topic-picker button[aria-pressed='true']");
+  await expect(selectedTopic).toHaveCount(1);
+  expect(await selectedTopic.evaluate((button) => getComputedStyle(button).borderBottomWidth)).toBe("2px");
+  await expect(page.getByRole("link", { name: "View race plan" })).toBeVisible();
+  await expect(page.getByLabel("Message ORBIT")).toBeVisible();
+  const composerHeight = await page.locator(".coach-composer textarea").evaluate((input) => input.getBoundingClientRect().height);
+  expect(composerHeight).toBeGreaterThanOrEqual(116);
+  expect(composerHeight).toBeLessThanOrEqual(120);
+  const composerLabel = page.locator(".coach-composer-label");
+  await expect(composerLabel).toHaveText("Message ORBIT");
+  expect(await composerLabel.evaluate((label) => getComputedStyle(label).position)).toBe("absolute");
+  expect(await composerLabel.evaluate((label) => label.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
   await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: path.join(captureDirectory, "orbit-chat-desktop.png"), animations: "disabled" });
@@ -206,6 +228,120 @@ test("Clear chat archives a pending discussion, keeps the draft and opens read-o
   await expect(composer).toHaveValue("Keep this unsent question.");
   await page.reload();
   await expect(composer).toHaveValue("Keep this unsent question.");
+});
+
+test("Clear without saving removes the current discussion and unsent draft but keeps previous chats", async ({ page }) => {
+  await mockSession(page);
+  const original = message("discard_question", 1, "user", "A discussion to discard", "completed");
+  let state = conversation([original]);
+  let discardCount = 0;
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/discard", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ expectedGeneration: 1, expectedSequence: 1 });
+    discardCount++;
+    state = { ...conversation(), generation: 2 };
+    await route.fulfill({ json: { data: { conversation: state } } });
+  });
+  await page.route("**/api/v1/coaching/chat/history", (route) => route.fulfill({ json: { data: { items: [], nextBefore: null } } }));
+  await page.goto("/dashboard/coach");
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Discard this unsent draft");
+  await confirmDiscardChat(page);
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await expect(page.getByRole("list", { name: "Conversation messages" }).getByText(original.text)).toHaveCount(0);
+  await expect.poll(() => discardCount).toBe(1);
+  await page.getByRole("button", { name: "Previous chats", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Previous chats" }).getByText("No previous chats yet.")).toBeVisible();
+});
+
+test("failed discard retains the draft and retries with the same expected state", async ({ page }) => {
+  await mockSession(page);
+  const state = conversation([message("discard_retry", 1, "user", "Keep this until the clear succeeds", "completed")]);
+  let attempts = 0;
+  let requests: unknown[] = [];
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/discard", async (route) => {
+    requests.push(route.request().postDataJSON());
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 503, json: { error: { message: "Synthetic database outage" } } });
+    return route.fulfill({ json: { data: { conversation: { ...conversation(), generation: 2 } } } });
+  });
+  await page.goto("/dashboard/coach");
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  await composer.fill("Do not lose this draft");
+  await confirmDiscardChat(page);
+  const dialog = page.getByRole("dialog", { name: "Clear this chat?" });
+  await expect(dialog.getByRole("alert")).toContainText("Could not confirm the clear");
+  await expect(composer).toHaveValue("Do not lose this draft");
+  await dialog.getByRole("button", { name: "Retry clearing" }).click();
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  await expect(composer).toHaveValue("");
+  expect(requests).toEqual([{ expectedGeneration: 1, expectedSequence: 1 }, { expectedGeneration: 1, expectedSequence: 1 }]);
+});
+
+test("mobile conversation actions open the same save or discard choices", async ({ page }) => {
+  await mockSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: conversation() } }));
+  await page.goto("/dashboard/coach");
+  await page.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("dialog", { name: "Conversation actions" }).getByRole("button", { name: /Clear chat/ }).click();
+  const confirmation = page.getByRole("dialog", { name: "Clear this chat?" });
+  await expect(confirmation.getByRole("button", { name: "Save and start new" })).toBeVisible();
+  await expect(confirmation.getByRole("button", { name: "Clear without saving" })).toBeVisible();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+});
+
+test("a stale discard asks for a fresh choice before clearing the updated discussion", async ({ page }) => {
+  await mockSession(page);
+  let state = conversation([message("old_for_conflict", 1, "user", "The original discussion", "completed")]);
+  const requests: unknown[] = [];
+  await page.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await page.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await page.route("**/api/v1/coaching/chat/conversation/discard", async (route) => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) {
+      state = { ...conversation([{ ...message("new_in_other_tab", 1, "user", "A newer discussion from another tab", "completed"), generation: 2 }]), generation: 2 };
+      return route.fulfill({ status: 409, json: { error: { message: "The conversation changed." } } });
+    }
+    state = { ...conversation(), generation: 2 };
+    return route.fulfill({ json: { data: { conversation: state } } });
+  });
+  await page.goto("/dashboard/coach");
+  await confirmDiscardChat(page);
+  const conflictAlert = page.locator(".coach-v2-main .coach-v2-error[role=\"alert\"]").filter({ hasText: "The discussion changed" });
+  await expect(conflictAlert).toContainText("Review the latest messages before choosing again.");
+  await expect(page.getByRole("list", { name: "Conversation messages" }).getByText("A newer discussion from another tab")).toBeVisible();
+  await conflictAlert.getByRole("button", { name: "Review chat" }).click();
+  await confirmDiscardChat(page);
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  expect(requests).toEqual([{ expectedGeneration: 1, expectedSequence: 1 }, { expectedGeneration: 2, expectedSequence: 1 }]);
+});
+
+test("discard synchronizes tabs while preserving the other tab's draft", async ({ page, context: browserContext }) => {
+  let state = conversation([message("discard_shared", 1, "user", "A shared discussion to discard", "completed")]);
+  await browserContext.route("**/api/v1/auth/session", (route) => route.fulfill({ json: { data: { authenticated: true, actor: { activeAthleteId: "athlete_test", credentialKind: "session" } } } }));
+  await browserContext.route("**/api/v1/coaching/chat/context**", (route) => route.fulfill({ json: { data: context("general") } }));
+  await browserContext.route("**/api/v1/coaching/chat/conversation", (route) => route.fulfill({ json: { data: state } }));
+  await browserContext.route("**/api/v1/coaching/chat/conversation/discard", (route) => {
+    state = { ...conversation(), generation: 2 };
+    return route.fulfill({ json: { data: { conversation: state } } });
+  });
+  await page.goto("/dashboard/coach");
+  const second = await browserContext.newPage();
+  await second.goto("/dashboard/coach");
+  await page.getByRole("textbox", { name: "Message ORBIT" }).fill("Clear this tab's draft");
+  await second.getByRole("textbox", { name: "Message ORBIT" }).fill("Keep this tab's draft");
+  await confirmDiscardChat(page);
+  await expect(page.getByText("Chat cleared without saving.")).toBeVisible();
+  await expect(second.getByText("Chat cleared in another tab. New discussion started.")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("");
+  await expect(second.getByRole("textbox", { name: "Message ORBIT" })).toHaveValue("Keep this tab's draft");
+  await second.close();
 });
 
 test("failed archive retains transcript and draft and retries the same request identity", async ({ page }) => {
@@ -516,14 +652,15 @@ test("Coach reflows at a 200 percent zoom-equivalent viewport", async ({ page })
   await expect(page.getByRole("button", { name: "Send message" })).toBeInViewport();
 });
 
-test("voice dictation shows an audio waveform and inserts the transcript at the latest draft selection without sending", async ({ page }) => {
+test("voice dictation stays in the composer, shows its listening level, and inserts transcripts without sending", async ({ page }, testInfo) => {
   await mockSession(page);
   await page.addInitScript(() => {
     (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls = 0;
+    (window as Window & { __syntheticMicStops?: number }).__syntheticMicStops = 0;
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {
       getUserMedia: async () => {
         (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls! += 1;
-        return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+        return { getTracks: () => [{ stop() { (window as Window & { __syntheticMicStops?: number }).__syntheticMicStops! += 1; } }] } as unknown as MediaStream;
       },
     } });
     class SyntheticWorkletNode {
@@ -581,13 +718,41 @@ test("voice dictation shows an audio waveform and inserts the transcript at the 
   await page.route("**/api/v1/coaching/chat/turns", async (route) => { sendCalls += 1; await route.fulfill({ json: { data: {} } }); });
 
   await page.goto("/dashboard/coach");
-  for (const width of [320, 390, 1280]) {
+  await expect(page.locator(".coach-composer")).toBeVisible();
+  const captureDirectory = process.env.RACEPREDICTOR_UI_CAPTURE_DIR ?? testInfo.outputDir;
+  mkdirSync(captureDirectory, { recursive: true });
+  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  const inputFrame = page.locator(".coach-composer-input-frame");
+  const microphone = page.getByRole("button", { name: "Start voice dictation" });
+  for (const width of [320, 390, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     const composerRight = await page.locator(".coach-composer").evaluate((element) => element.getBoundingClientRect().right);
     expect(composerRight).toBeLessThanOrEqual(width);
+    const frameBounds = await inputFrame.boundingBox();
+    const micBounds = await microphone.boundingBox();
+    expect(frameBounds).not.toBeNull();
+    expect(micBounds).not.toBeNull();
+    expect(micBounds!.width).toBeGreaterThanOrEqual(44);
+    expect(micBounds!.height).toBeGreaterThanOrEqual(44);
+    expect(micBounds!.x).toBeGreaterThan(frameBounds!.x);
+    expect(micBounds!.y).toBeGreaterThan(frameBounds!.y);
+    expect(micBounds!.x + micBounds!.width).toBeLessThanOrEqual(frameBounds!.x + frameBounds!.width);
+    expect(micBounds!.y + micBounds!.height).toBeLessThanOrEqual(frameBounds!.y + frameBounds!.height);
+    const reservedPadding = await composer.evaluate((element) => ({ right: Number.parseFloat(getComputedStyle(element).paddingRight), bottom: Number.parseFloat(getComputedStyle(element).paddingBottom) }));
+    expect(reservedPadding.right).toBeGreaterThanOrEqual(60);
+    expect(reservedPadding.bottom).toBeGreaterThanOrEqual(60);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
-  const composer = page.getByRole("textbox", { name: "Message ORBIT" });
+  const idleMicBounds = await microphone.boundingBox();
+  const frameBounds = await inputFrame.boundingBox();
+  expect(idleMicBounds).not.toBeNull();
+  expect(frameBounds).not.toBeNull();
+  expect(idleMicBounds!.width).toBeGreaterThanOrEqual(44);
+  expect(idleMicBounds!.height).toBeGreaterThanOrEqual(44);
+  expect(idleMicBounds!.x).toBeGreaterThan(frameBounds!.x);
+  expect(idleMicBounds!.y).toBeGreaterThan(frameBounds!.y);
+  expect(await microphone.evaluate((button) => getComputedStyle(button).color)).toBe("rgb(20, 33, 61)");
+  await page.locator(".coach-composer").screenshot({ path: path.join(captureDirectory, "orbit-microphone-idle.png"), animations: "disabled" });
   await composer.fill("Earlier typed note");
   await composer.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(8, 13));
   await page.getByRole("button", { name: "Start voice dictation" }).click();
@@ -595,28 +760,48 @@ test("voice dictation shows an audio waveform and inserts the transcript at the 
   await expect(page.getByText(/text goes into your message box/u)).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls)).toBe(0);
   await page.getByRole("button", { name: "Continue to microphone permission" }).click();
-  await expect(page.getByRole("button", { name: "Finish dictation" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "Microphone recording" })).toBeVisible();
+  const stopButton = page.getByRole("button", { name: "Stop dictation" });
+  await expect(stopButton).toBeVisible();
+  await expect(stopButton).toBeFocused();
+  await expect(stopButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("status").filter({ hasText: "Listening… Click the mic to stop" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Microphone recording volume" })).toBeVisible();
+  await expect(page.locator(".coach-voice-waveform i")).toHaveCount(7);
+  const listeningMicBounds = await stopButton.boundingBox();
+  const listeningFrameBounds = await inputFrame.boundingBox();
+  expect(listeningMicBounds!.x - listeningFrameBounds!.x).toBeCloseTo(idleMicBounds!.x - frameBounds!.x, 0);
+  expect(Math.abs((listeningMicBounds!.y - listeningFrameBounds!.y) - (idleMicBounds!.y - frameBounds!.y))).toBeLessThanOrEqual(4);
+  const waveformBounds = await page.locator(".coach-voice-waveform").boundingBox();
+  expect(waveformBounds!.x + waveformBounds!.width).toBeLessThan(listeningMicBounds!.x);
+  const listeningColor = await stopButton.evaluate((button) => getComputedStyle(button).color.match(/\d+/gu)?.map(Number));
+  expect(listeningColor?.[0]).toBeGreaterThan(180);
+  expect(listeningColor?.[1]).toBeLessThan(100);
+  expect(listeningColor?.[2]).toBeLessThan(100);
+  await page.locator(".coach-composer").screenshot({ path: path.join(captureDirectory, "orbit-microphone-listening.png"), animations: "disabled" });
   await expect.poll(() => page.locator(".coach-voice-waveform").evaluate((element) => Number.parseFloat(getComputedStyle(element).getPropertyValue("--voice-level")))).toBeGreaterThan(0);
   await expect.poll(() => page.locator(".coach-voice-live-dot").evaluate((element) => getComputedStyle(element).animationName)).toBe("coach-voice-pulse");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator(".coach-voice-live-dot")).toHaveCSS("animation-name", "none");
   await page.emulateMedia({ reducedMotion: "no-preference" });
   expect(await page.evaluate(() => (window as Window & { __syntheticMicCalls?: number }).__syntheticMicCalls)).toBe(1);
-  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await stopButton.click();
+  await expect(page.getByRole("button", { name: "Transcribing voice input" })).toHaveAttribute("aria-disabled", "true");
   await requestStartedPromise;
+  await expect(page.getByRole("button", { name: "Transcribing voice input" })).toBeFocused();
   await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
+  expect(await page.evaluate(() => (window as Window & { __syntheticMicStops?: number }).__syntheticMicStops)).toBe(1);
   await composer.fill("Keep latest draft here");
   await composer.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(5, 11));
   finishTranscription();
   await expect(composer).toHaveValue("Keep The hill felt harder than expected. draft here");
+  await expect(composer).toBeFocused();
   await expect(page.getByRole("textbox", { name: "Review and edit transcript" })).toHaveCount(0);
   expect(transcriptionCalls).toBe(1);
   expect(sendCalls).toBe(0);
 
   await page.getByRole("button", { name: "Start voice dictation" }).click();
-  await expect(page.getByRole("button", { name: "Finish dictation" })).toBeVisible();
-  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await expect(page.getByRole("button", { name: "Stop dictation" })).toBeVisible();
+  await page.getByRole("button", { name: "Stop dictation" }).click();
   await expect.poll(() => transcriptionCalls).toBe(2);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   finishCancelledTranscription();
@@ -626,20 +811,28 @@ test("voice dictation shows an audio waveform and inserts the transcript at the 
   const savedDraft = "x".repeat(3_990);
   await composer.fill(savedDraft);
   await page.getByRole("button", { name: "Start voice dictation" }).click();
-  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await page.getByRole("button", { name: "Stop dictation" }).click();
   await expect(page.getByText(/transcript does not fit in the message/u)).toBeVisible();
   await expect(composer).toHaveValue(savedDraft);
 
   await page.getByRole("button", { name: "Start voice dictation" }).click();
-  await page.getByRole("button", { name: "Cancel recording" }).click();
+  await page.getByRole("button", { name: "Discard recording" }).click();
   await expect(page.getByText("Recording discarded. Your draft is unchanged.")).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { __syntheticMicStops?: number }).__syntheticMicStops)).toBe(4);
   expect(transcriptionCalls).toBe(3);
 
   await composer.fill("");
   await page.getByRole("button", { name: "Start voice dictation" }).click();
-  await page.getByRole("button", { name: "Finish dictation" }).click();
+  await page.getByRole("button", { name: "Stop dictation" }).click();
   await expect(composer).toHaveValue("The hill felt harder than expected.");
   expect(sendCalls).toBe(0);
+
+  await page.getByRole("button", { name: "Start voice dictation" }).click();
+  await expect(page.getByRole("button", { name: "Stop dictation" })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("orbit:voice-stop")));
+  await expect(page.getByRole("button", { name: "Start voice dictation" })).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { __syntheticMicStops?: number }).__syntheticMicStops)).toBe(6);
+  expect(transcriptionCalls).toBe(4);
 });
 
 test("voice permission denial explains the issue and keeps typing available", async ({ page }) => {

@@ -323,6 +323,7 @@ export class CoachVoiceRateLimitError extends Error { retryAfterSeconds: number;
 export class CoachVoiceBudgetError extends Error {}
 export class PrismaCoachChatRepository {
   archiveConversation(scope: AthleteScope, input: { expectedGeneration: number; expectedSequence: number; requestId: string }): Promise<any>;
+  discardConversation(scope: AthleteScope, input: { expectedGeneration: number; expectedSequence: number }): Promise<{ conversation: import("../../../core/src/contracts/coach-chat.ts").CoachConversationState }>;
   listArchives(scope: AthleteScope, input?: { beforeGeneration?: number | null }): Promise<any>;
   getArchive(scope: AthleteScope, archiveId: string, input?: { beforeSequence?: number | null }): Promise<any>;
   constructor(input: { prisma: unknown; now?: () => Date; newLeaseToken?: () => string });

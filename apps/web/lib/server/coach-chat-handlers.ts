@@ -3,6 +3,8 @@ import { z } from "zod";
 import { athleteScopeFor } from "../../../../packages/core/src/contracts/auth.ts";
 import {
   coachClearRequestSchema,
+  coachDiscardRequestSchema,
+  coachDiscardResultSchema,
   coachArchiveRequestSchema,
   coachArchiveResultSchema,
   coachHistoryListSchema,
@@ -273,6 +275,17 @@ export async function handleClearCoachHistory(security: SensitiveRouteContext, r
   try {
     const result = await (compositionOverride ?? getChatComposition()).coachChat.clearHistory(scope, parsed.data);
     return success(result);
+  } catch (error) { throw mapChatError(error); }
+}
+
+export async function handleCoachDiscard(security: SensitiveRouteContext, request: Request, compositionOverride?: ChatComposition) {
+  const scope = requireOwnerScope(security);
+  assertSameOrigin(request);
+  const parsed = coachDiscardRequestSchema.safeParse(await readBoundedJson(request));
+  if (!parsed.success) throw validationError(parsed.error);
+  try {
+    const result = await (compositionOverride ?? getChatComposition()).coachChat.discardConversation(scope, parsed.data);
+    return success(coachDiscardResultSchema.parse(result));
   } catch (error) { throw mapChatError(error); }
 }
 

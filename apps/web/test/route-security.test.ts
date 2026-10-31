@@ -132,6 +132,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("coaching/chat/context/route.ts", apiRoot).href,
     new URL("coaching/chat/conversation/route.ts", apiRoot).href,
     new URL("coaching/chat/conversation/archive/route.ts", apiRoot).href,
+    new URL("coaching/chat/conversation/discard/route.ts", apiRoot).href,
     new URL("coaching/chat/history/route.ts", apiRoot).href,
     new URL("coaching/chat/history/[archiveId]/route.ts", apiRoot).href,
     new URL("coaching/chat/turns/route.ts", apiRoot).href,
@@ -150,7 +151,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
   );
   assert.equal(
     routeFiles.length,
-    90,
+    91,
     "route inventory changed; classify every new route explicitly",
   );
 

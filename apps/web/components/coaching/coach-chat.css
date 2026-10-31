@@ -324,6 +324,7 @@
 .coach-confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .coach-confirm-actions button { min-width: 104px; text-align: center; }
 .coach-confirm-actions .coach-confirm-primary { border-color: #075dcc; background: #075dcc; color: white; }
+.coach-confirm-actions .coach-confirm-discard { border-color: #b42318; color: #a11b16; }
 .coach-wellbeing-dialog { width: min(620px, calc(100vw - 32px)); }
 .coach-wellbeing-dialog .coach-context-sheet-intro { margin-bottom: 4px; }
 .coach-wellbeing-dialog .daily-check-in { margin: 0; padding: 12px 0 0; background: white; color: var(--coach-ink); }
@@ -340,7 +341,7 @@
   .coach-history-actions { flex: 1 0 100%; justify-content: flex-end; }
 }
 
-@media (max-height: 520px) and (min-width: 768px) and (max-width: 900px) {
+@media (max-height: 540px) and (min-width: 768px) and (max-width: 900px) {
   .dashboard-main.coach-v2-main { padding: 4px; }
   .coach-chat-panel { border-radius: 14px; }
   .coach-chat-heading { min-height: 0; gap: 8px; padding: 5px 12px; }
@@ -488,4 +489,54 @@
   .coach-composer-label { margin-bottom: 2px; }
   .coach-composer-footer { padding-top: 4px; }
   .coach-chat-boundary { display: none; }
+}
+
+@media (max-height: 540px) and (min-width: 768px) and (max-width: 900px) {
+  .coach-chat-heading { flex-wrap: nowrap; min-width: 0; gap: 8px; padding-inline: 10px; }
+  .coach-chat-heading > div:nth-child(2) { flex: 1 1 auto; min-width: 112px; }
+  .coach-chat-heading h2 span { margin-left: 3px; font-size: .56rem; }
+  .coach-chat-heading p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orbit-presence { flex: 0 0 auto; margin-left: 0; font-size: .68rem; }
+  .coach-history-actions { flex: 0 1 auto; gap: 3px; margin-left: auto; }
+  .coach-history-actions button { min-height: 32px; padding-inline: 5px; font-size: .65rem; }
+}
+
+/* Voice dictation stays anchored inside the resizable message field. */
+.coach-composer-input-frame { position: relative; display: grid; width: 100%; min-width: 0; }
+.coach-composer-input-frame > textarea { grid-area: 1 / 1; box-sizing: border-box; width: 100%; height: 116px; min-height: 110px; max-height: min(40dvh, 360px); padding: 13px 68px 60px 14px; }
+.coach-composer-footer { flex-wrap: wrap; }
+.coach-composer-footer > span { flex: 1 1 170px; min-width: 0; }
+.coach-composer-footer > button { flex: 0 0 auto; margin-left: auto; }
+.coach-voice-dictation .coach-composer-input-frame > textarea { height: 116px; min-height: 110px; }
+
+@media (min-width: 768px) {
+  .coach-chat-heading { min-height: 64px; flex-wrap: nowrap; gap: 12px; padding-block: 8px; }
+  .orbit-portrait-wrap { width: 44px; height: 44px; }
+  .coach-history-actions { gap: 5px; }
+  .coach-history-actions button { min-height: 32px; padding: 4px 9px; font-size: .74rem; }
+  .coach-topic-picker { min-height: 32px; gap: 4px; padding: 0 24px; }
+  .coach-topic-picker button { min-height: 32px; padding: 3px 10px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; font-size: .76rem; }
+  .coach-topic-picker button[aria-pressed="true"] { border-bottom-color: #3264e6; background: #f1f5ff; box-shadow: none; }
+  .coach-context-row { min-height: 32px; flex-wrap: nowrap; gap: 8px; padding: 0 16px; }
+  .coach-context-row > strong { min-width: 0; max-width: min(42vw, 430px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .coach-change-context { min-height: 28px; }
+  .coach-context-chip { min-height: 28px; padding: 3px 9px; border: 0; border-radius: 0; background: transparent; font-size: .7rem; white-space: nowrap; }
+  .coach-action-row { min-height: 28px; align-items: center; gap: 0; padding: 0 16px; }
+  .coach-action-row a { min-height: 28px; padding: 0 10px; border: 0; border-radius: 0; font-size: .72rem; }
+  .coach-action-row a + a { border-left: 1px solid #dce5f0; }
+  .coach-composer-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}
+
+@media (hover: none) and (min-width: 768px) {
+  .coach-history-actions button { min-height: 44px; }
+  .coach-topic-picker { min-height: 44px; }
+  .coach-topic-picker button { min-height: 44px; }
+  .coach-action-row { min-height: 44px; }
+  .coach-action-row a { min-height: 44px; }
+}
+
+@media (max-width: 767px) {
+  .coach-composer-input-frame > textarea,
+  .coach-voice-dictation .coach-composer-input-frame > textarea { height: 116px; min-height: 110px; padding: 11px 64px 60px 12px; }
+  .coach-composer-footer { align-items: center; }
 }

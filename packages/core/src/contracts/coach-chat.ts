@@ -30,6 +30,7 @@ export const coachClearRequestSchema = z.object({
   expectedGeneration: z.number().int().positive(),
   expectedSequence: z.number().int().nonnegative(),
 }).strict();
+export const coachDiscardRequestSchema = coachClearRequestSchema;
 
 export const coachConversationMessageSchema = z.object({
   id: stableId,
@@ -144,6 +145,7 @@ export type CoachRecordReference = z.infer<typeof coachRecordReferenceSchema>;
 export type CoachTurnRequest = z.infer<typeof coachTurnRequestSchema>;
 export type CoachRetryRequest = z.infer<typeof coachRetryRequestSchema>;
 export type CoachClearRequest = z.infer<typeof coachClearRequestSchema>;
+export type CoachDiscardRequest = z.infer<typeof coachDiscardRequestSchema>;
 export type CoachConversationMessage = z.infer<typeof coachConversationMessageSchema>;
 export type CoachConversationState = z.infer<typeof coachConversationStateSchema>;
 export type CoachContext = z.infer<typeof coachContextSchema>;
@@ -161,6 +163,7 @@ export const coachArchiveResultSchema = z.object({
   archive: coachArchiveSummarySchema.nullable(),
   conversation: coachConversationStateSchema,
 }).strict();
+export const coachDiscardResultSchema = z.object({ conversation: coachConversationStateSchema }).strict();
 export const coachHistoryListSchema = z.object({
   items: z.array(coachArchiveSummarySchema).max(20),
   nextBefore: z.number().int().positive().nullable(),

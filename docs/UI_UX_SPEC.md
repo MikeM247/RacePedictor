@@ -1,5 +1,7 @@
 # UI_UX_SPEC
 
+> **31 October 2026 · Milestone Home:** option 09 and Settings image management are implemented behind the default-off `RACEPREDICTOR_MILESTONE_HOME_ENABLED` flag. See [implementation and release handoff](plans/MILESTONE_HOME_IMPLEMENTATION.md). Existing plan approval and Settings timeline authority remain in force; production activation is a separate release step.
+
 ## Scenic startup (27 October 2026)
 
 The shared route/Readiness startup splash uses the default Home road-and-sunrise photograph edge to edge, with proportional responsive cropping and no visible text, logo, spinner, or controls. Existing ready/error transitions and section loading states remain unchanged. See [Scenic loading screen](design/SCENIC_LOADING_SCREEN.md) for framing, accessibility, failure behavior, and local validation.

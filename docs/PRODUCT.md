@@ -1,5 +1,7 @@
 # PRODUCT
 
+> **31 October 2026 · Milestone Home:** option 09 and Settings image management are implemented behind the default-off `RACEPREDICTOR_MILESTONE_HOME_ENABLED` flag. See [implementation and release handoff](plans/MILESTONE_HOME_IMPLEMENTATION.md). Existing plan approval and Settings timeline authority remain in force; production activation is a separate release step.
+
 ## Coach saved discussions (25 October 2026)
 
 Coach keeps its composer, send action, training links and guidance footer within the normal desktop viewport by scrolling the transcript. Clear chat saves the complete discussion before starting a fresh one and carries the unsent draft forward. Previous chats provides read-only access; Settings offers explicit permanent deletion of active and previous discussions. Saved discussions do not become AI memory for new discussions. See [Coach chat history](plans/COACH_CHAT_HISTORY.md).

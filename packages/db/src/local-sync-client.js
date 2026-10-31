@@ -77,6 +77,31 @@ export class RacePredictorSyncClient {
     });
   }
 
+  async getMilestoneImages(token) {
+    const result = await this.#request(token, new URL("/api/v1/sync/device/milestone-images", this.#baseUrl), { method: "GET" });
+    return result.data;
+  }
+  async putMilestoneImages(token, change) {
+    const result = await this.#request(token, new URL("/api/v1/sync/device/milestone-images", this.#baseUrl), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(change) });
+    return result.data;
+  }
+  async putMilestoneImageAsset(token, asset) {
+    await this.#request(token, new URL("/api/v1/sync/device/milestone-images/assets", this.#baseUrl), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...asset, bytes: Buffer.from(asset.bytes).toString("base64") }) });
+  }
+  async getMilestoneImageAsset(token, id) {
+    if (typeof token !== "string" || !token) throw new LocalSyncHttpError("DEVICE_CREDENTIAL_MISSING", 401);
+    if (!/^[a-f0-9]{64}$/u.test(id)) throw new Error("Invalid image identity");
+    let response;
+    try { response = await this.#fetch(new URL(`/api/v1/sync/device/milestone-images/assets/${id}`, this.#baseUrl), { headers: { authorization: `Bearer ${token}` } }); }
+    catch { throw new LocalSyncHttpError("CLOUD_UNREACHABLE", 0); }
+    if (!response.ok) throw new LocalSyncHttpError("IMAGE_UNAVAILABLE", response.status);
+    const reader = response.body?.getReader();
+    if (!reader) throw new LocalSyncHttpError("IMAGE_UNAVAILABLE", 0);
+    const chunks = []; let size = 0;
+    for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > 524288) { await reader.cancel(); throw new Error("Image transfer exceeds limit"); } chunks.push(value); }
+    return { id, bytes: Buffer.concat(chunks), width: Number(response.headers.get("x-image-width")), height: Number(response.headers.get("x-image-height")) };
+  }
+
   async #request(token, url, init) {
     if (typeof token !== "string" || !token) throw new LocalSyncHttpError("DEVICE_CREDENTIAL_MISSING", 401);
     let response;

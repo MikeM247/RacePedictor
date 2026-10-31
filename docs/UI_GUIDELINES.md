@@ -1,5 +1,7 @@
 # UI_GUIDELINES.md
 
+> **31 October 2026 · Milestone Home:** option 09 and Settings image management are implemented behind the default-off `RACEPREDICTOR_MILESTONE_HOME_ENABLED` flag. See [implementation and release handoff](plans/MILESTONE_HOME_IMPLEMENTATION.md). Existing plan approval and Settings timeline authority remain in force; production activation is a separate release step.
+
 ## Coach viewport and history controls (25 October 2026)
 
 Keep the Coach composer, send action, training links and approval-boundary footer outside transcript scrolling. Bound textarea growth and keep scroll regions keyboard-focusable with visible focus. Respect visual viewport changes and mobile navigation/safe areas; allow page scrolling at small heights and enlarged text. Clear chat means save-and-start-fresh; permanent deletion must use distinct wording and confirmation. See [behavior and acceptance details](plans/COACH_CHAT_HISTORY.md).

@@ -8,8 +8,14 @@ import { GET as getDashboardOverview } from "../app/api/v1/dashboard/overview/ro
 import { GET as health } from "../app/api/v1/health/route.ts";
 import { POST as uploadActivity } from "../app/api/v1/imports/upload/route.ts";
 import { GET as session } from "../app/api/v1/auth/session/route.ts";
-import { GET as getRaceHistory, PUT as saveRaceHistory } from "../app/api/v1/coaching/race-history/route.ts";
-import { GET as getAppearance, PUT as saveAppearance } from "../app/api/v1/dashboard/appearance/route.ts";
+import {
+  GET as getRaceHistory,
+  PUT as saveRaceHistory,
+} from "../app/api/v1/coaching/race-history/route.ts";
+import {
+  GET as getAppearance,
+  PUT as saveAppearance,
+} from "../app/api/v1/dashboard/appearance/route.ts";
 import { GET as getPrivateHero } from "../app/api/v1/dashboard/appearance/image/route.ts";
 import { createSyntheticTestActor } from "../lib/server/auth.ts";
 import { readCloudEnvironment } from "../lib/server/cloud-environment.ts";
@@ -41,8 +47,13 @@ const environmentKeys = [
   "RACEPREDICTOR_ACTOR_ID",
 ] as const;
 
-async function withEnvironment(overrides: Record<string, string | undefined>, action: () => Promise<void>) {
-  const previous = new Map(environmentKeys.map((key) => [key, process.env[key]]));
+async function withEnvironment(
+  overrides: Record<string, string | undefined>,
+  action: () => Promise<void>,
+) {
+  const previous = new Map(
+    environmentKeys.map((key) => [key, process.env[key]]),
+  );
   const mutableEnvironment = process.env as Record<string, string | undefined>;
   try {
     for (const key of environmentKeys) {
@@ -68,11 +79,16 @@ async function assertUnauthenticated(response: Response) {
 
 async function findRouteFiles(directory: URL): Promise<URL[]> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const nested = await Promise.all(entries.map(async (entry) => {
-    const url = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
-    if (entry.isDirectory()) return findRouteFiles(url);
-    return entry.name === "route.ts" ? [url] : [];
-  }));
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const url = new URL(
+        `${entry.name}${entry.isDirectory() ? "/" : ""}`,
+        directory,
+      );
+      if (entry.isDirectory()) return findRouteFiles(url);
+      return entry.name === "route.ts" ? [url] : [];
+    }),
+  );
   return nested.flat();
 }
 
@@ -85,6 +101,9 @@ test("every current sensitive API handler uses the route-level security wrapper"
   ]);
   const routeFiles = await findRouteFiles(apiRoot);
   const deviceRoutes = new Set([
+    new URL("sync/device/milestone-images/route.ts", apiRoot).href,
+    new URL("sync/device/milestone-images/assets/route.ts", apiRoot).href,
+    new URL("sync/device/milestone-images/assets/[id]/route.ts", apiRoot).href,
     new URL("sync/device/changes/route.ts", apiRoot).href,
     new URL("sync/device/acknowledge/route.ts", apiRoot).href,
     new URL("sync/device/plans/route.ts", apiRoot).href,
@@ -94,12 +113,21 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("sync/device/activity-reviews/route.ts", apiRoot).href,
     new URL("sync/device/activity-reviews/publish/route.ts", apiRoot).href,
     new URL("sync/device/athlete-feedback/publish/route.ts", apiRoot).href,
-    new URL("sync/device/activities/[activityId]/feedback-context/route.ts", apiRoot).href,
-    new URL("sync/device/activities/[activityId]/pace-comparison-context/route.ts", apiRoot).href,
-    new URL("sync/device/activity-pace-comparisons/publish/route.ts", apiRoot).href,
+    new URL(
+      "sync/device/activities/[activityId]/feedback-context/route.ts",
+      apiRoot,
+    ).href,
+    new URL(
+      "sync/device/activities/[activityId]/pace-comparison-context/route.ts",
+      apiRoot,
+    ).href,
+    new URL("sync/device/activity-pace-comparisons/publish/route.ts", apiRoot)
+      .href,
     new URL("sync/device/wellbeing-check-ins/route.ts", apiRoot).href,
   ]);
-  const internalRoutes = new Set([new URL("internal/reconciliation/route.ts", apiRoot).href]);
+  const internalRoutes = new Set([
+    new URL("internal/reconciliation/route.ts", apiRoot).href,
+  ]);
   const coachRoutes = new Set([
     new URL("coaching/chat/context/route.ts", apiRoot).href,
     new URL("coaching/chat/conversation/route.ts", apiRoot).href,
@@ -113,20 +141,42 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("coaching/voice/transcriptions/route.ts", apiRoot).href,
     new URL("coaching/voice/speech/route.ts", apiRoot).href,
   ]);
-  const backfillResume = new URL("providers/strava/backfill/resume/route.ts", apiRoot).href;
-  assert.ok(routeFiles.some((route) => route.href === backfillResume), "owner-scoped backfill resume route is required");
-  assert.equal(routeFiles.length, 81, "route inventory changed; classify every new route explicitly");
+  const backfillResume = new URL(
+    "providers/strava/backfill/resume/route.ts",
+    apiRoot,
+  ).href;
+  assert.ok(
+    routeFiles.some((route) => route.href === backfillResume),
+    "owner-scoped backfill resume route is required",
+  );
+  assert.equal(
+    routeFiles.length,
+    91,
+    "route inventory changed; classify every new route explicitly",
+  );
 
   for (const routeFile of routeFiles) {
     if (publicRoutes.has(routeFile.href)) continue;
     const source = await readFile(routeFile, "utf8");
     if (internalRoutes.has(routeFile.href)) {
-      assert.match(source, /import \{ withInternalRoute \}/, `${routeFile.pathname} must import withInternalRoute`);
-      assert.match(source, /export const (GET|POST) = withInternalRoute/, `${routeFile.pathname} must enforce its scheduler secret`);
+      assert.match(
+        source,
+        /import \{ withInternalRoute \}/,
+        `${routeFile.pathname} must import withInternalRoute`,
+      );
+      assert.match(
+        source,
+        /export const (GET|POST) = withInternalRoute/,
+        `${routeFile.pathname} must enforce its scheduler secret`,
+      );
       continue;
     }
     if (deviceRoutes.has(routeFile.href)) {
-      assert.match(source, /import \{ withDeviceRoute \}/, `${routeFile.pathname} must import withDeviceRoute`);
+      assert.match(
+        source,
+        /import \{ withDeviceRoute \}/,
+        `${routeFile.pathname} must import withDeviceRoute`,
+      );
       assert.match(
         source,
         /export const (GET|POST|PUT|PATCH|DELETE) = withDeviceRoute/,
@@ -135,11 +185,23 @@ test("every current sensitive API handler uses the route-level security wrapper"
       continue;
     }
     if (coachRoutes.has(routeFile.href)) {
-      assert.match(source, /import \{ handle[^}]+, withCoachRoute \}/u, `${routeFile.pathname} must use the Coach owner boundary`);
-      assert.match(source, /export const (GET|POST|DELETE) = withCoachRoute/u, `${routeFile.pathname} must wrap its exported handler`);
+      assert.match(
+        source,
+        /import \{ handle[^}]+, withCoachRoute \}/u,
+        `${routeFile.pathname} must use the Coach owner boundary`,
+      );
+      assert.match(
+        source,
+        /export const (GET|POST|DELETE) = withCoachRoute/u,
+        `${routeFile.pathname} must wrap its exported handler`,
+      );
       continue;
     }
-    assert.match(source, /import \{ withSensitiveRoute \}/, `${routeFile.pathname} must import withSensitiveRoute`);
+    assert.match(
+      source,
+      /import \{ withSensitiveRoute \}/,
+      `${routeFile.pathname} must import withSensitiveRoute`,
+    );
     assert.match(
       source,
       /export const (GET|POST|PUT|PATCH|DELETE) = withSensitiveRoute/,
@@ -150,7 +212,10 @@ test("every current sensitive API handler uses the route-level security wrapper"
 
 test("milestone management reads and changes require the actor-scoped owner boundary and private responses", async () => {
   for (const route of ["milestones/route.ts", "milestones/changes/route.ts"]) {
-    const source = await readFile(new URL(`../app/api/v1/coaching/${route}`, import.meta.url), "utf8");
+    const source = await readFile(
+      new URL(`../app/api/v1/coaching/${route}`, import.meta.url),
+      "utf8",
+    );
     assert.match(source, /withSensitiveRoute/);
     assert.match(source, /cloudHandling: "actor-scoped"/);
     assert.match(source, /private, no-store/);
@@ -159,11 +224,17 @@ test("milestone management reads and changes require the actor-scoped owner boun
 
 test("future-session amendment routes use authenticated actor-scoped cloud handling", async () => {
   const amendments = await readFile(
-    new URL("../app/api/v1/coaching/calendar/sessions/[sessionId]/amendments/route.ts", import.meta.url),
+    new URL(
+      "../app/api/v1/coaching/calendar/sessions/[sessionId]/amendments/route.ts",
+      import.meta.url,
+    ),
     "utf8",
   );
   const legacyEdits = await readFile(
-    new URL("../app/api/v1/coaching/calendar/sessions/[sessionId]/edits/route.ts", import.meta.url),
+    new URL(
+      "../app/api/v1/coaching/calendar/sessions/[sessionId]/edits/route.ts",
+      import.meta.url,
+    ),
     "utf8",
   );
 
@@ -179,7 +250,10 @@ test("future-session amendment routes use authenticated actor-scoped cloud handl
 
 test("coaching review context uses the sensitive actor-scoped boundary", async () => {
   const source = await readFile(
-    new URL("../app/api/v1/coaching/review-context/current/route.ts", import.meta.url),
+    new URL(
+      "../app/api/v1/coaching/review-context/current/route.ts",
+      import.meta.url,
+    ),
     "utf8",
   );
   assert.match(source, /export const GET = withSensitiveRoute/u);
@@ -187,99 +261,240 @@ test("coaching review context uses the sensitive actor-scoped boundary", async (
   assert.match(source, /cloudHandling: "actor-scoped"/u);
 });
 
-test("representative sensitive reads and writes fail before local operations in production", { concurrency: false }, async () => {
-  await withEnvironment({
-    NODE_ENV: "production",
-    RACEPREDICTOR_CLOUD_MODE: "enabled",
-    RACEPREDICTOR_OWNER_AUTH_CONFIGURED: "false",
-  }, async () => {
-    await assertUnauthenticated(await getActivities(new Request("http://localhost/api/v1/activities")));
-    await assertUnauthenticated(await getRaceHistory(new Request("http://localhost/api/v1/coaching/race-history")));
-    await assertUnauthenticated(await saveRaceHistory(new Request("http://localhost/api/v1/coaching/race-history", { method: "PUT", body: "{}" })));
-    await assertUnauthenticated(await getAppearance(new Request("http://localhost/api/v1/dashboard/appearance")));
-    await assertUnauthenticated(await saveAppearance(new Request("http://localhost/api/v1/dashboard/appearance", { method: "PUT", body: "image" })));
-    await assertUnauthenticated(await getPrivateHero(new Request("http://localhost/api/v1/dashboard/appearance/image")));
-    await assertUnauthenticated(await getDashboardOverview(new Request("http://localhost/api/v1/dashboard/overview")));
-    await assertUnauthenticated(await uploadActivity(new Request("http://localhost/api/v1/imports/upload", { method: "POST" })));
-    await assertUnauthenticated(await putCoachingProfile(new Request("http://localhost/api/v1/coaching/profile", {
-      method: "PUT",
-      body: "not-json",
-    })));
-  });
-});
-
-test("cloud-enabled test mode also fails closed without an actor", { concurrency: false }, async () => {
-  await withEnvironment({ NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled" }, async () => {
-    await assertUnauthenticated(await getActivities(new Request("http://localhost/api/v1/activities")));
-  });
-});
-
-test("request headers and environment declarations cannot synthesize a production actor", { concurrency: false }, async () => {
-  await withEnvironment({
-    NODE_ENV: "production",
-    RACEPREDICTOR_CLOUD_MODE: "enabled",
-    RACEPREDICTOR_OWNER_AUTH_CONFIGURED: "true",
-    RACEPREDICTOR_ACTOR_ID: "attacker-athlete",
-  }, async () => {
-    const request = new Request("http://localhost/api/v1/activities", {
-      headers: {
-        authorization: "Bearer attacker-controlled",
-        "x-racepredictor-actor-id": "attacker-athlete",
-        "x-racepredictor-development-actor": "attacker-athlete",
+test(
+  "representative sensitive reads and writes fail before local operations in production",
+  { concurrency: false },
+  async () => {
+    await withEnvironment(
+      {
+        NODE_ENV: "production",
+        RACEPREDICTOR_CLOUD_MODE: "enabled",
+        RACEPREDICTOR_OWNER_AUTH_CONFIGURED: "false",
       },
-    });
-    await assertUnauthenticated(await getActivities(request));
-  });
-});
+      async () => {
+        await assertUnauthenticated(
+          await getActivities(
+            new Request("http://localhost/api/v1/activities"),
+          ),
+        );
+        await assertUnauthenticated(
+          await getRaceHistory(
+            new Request("http://localhost/api/v1/coaching/race-history"),
+          ),
+        );
+        await assertUnauthenticated(
+          await saveRaceHistory(
+            new Request("http://localhost/api/v1/coaching/race-history", {
+              method: "PUT",
+              body: "{}",
+            }),
+          ),
+        );
+        await assertUnauthenticated(
+          await getAppearance(
+            new Request("http://localhost/api/v1/dashboard/appearance"),
+          ),
+        );
+        await assertUnauthenticated(
+          await saveAppearance(
+            new Request("http://localhost/api/v1/dashboard/appearance", {
+              method: "PUT",
+              body: "image",
+            }),
+          ),
+        );
+        await assertUnauthenticated(
+          await getPrivateHero(
+            new Request("http://localhost/api/v1/dashboard/appearance/image"),
+          ),
+        );
+        await assertUnauthenticated(
+          await getDashboardOverview(
+            new Request("http://localhost/api/v1/dashboard/overview"),
+          ),
+        );
+        await assertUnauthenticated(
+          await uploadActivity(
+            new Request("http://localhost/api/v1/imports/upload", {
+              method: "POST",
+            }),
+          ),
+        );
+        await assertUnauthenticated(
+          await putCoachingProfile(
+            new Request("http://localhost/api/v1/coaching/profile", {
+              method: "PUT",
+              body: "not-json",
+            }),
+          ),
+        );
+      },
+    );
+  },
+);
 
-test("health and session stay public while proxy covers sensitive APIs and dashboard pages", { concurrency: false }, async () => {
-  assert.deepEqual(proxyConfig.matcher, ["/login", "/dashboard/:path*", "/api/v1/:path*"]);
+test(
+  "cloud-enabled test mode also fails closed without an actor",
+  { concurrency: false },
+  async () => {
+    await withEnvironment(
+      { NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled" },
+      async () => {
+        await assertUnauthenticated(
+          await getActivities(
+            new Request("http://localhost/api/v1/activities"),
+          ),
+        );
+      },
+    );
+  },
+);
 
-  await withEnvironment({ NODE_ENV: "production", RACEPREDICTOR_CLOUD_MODE: "enabled" }, async () => {
-    const healthResponse = await health();
-    assert.equal(healthResponse.status, 503, "public health truthfully reports degraded until owner auth is configured");
-    assert.equal((await healthResponse.json()).data.status, "degraded");
-    assert.equal((await session(new Request("http://localhost/api/v1/auth/session"))).status, 200);
+test(
+  "request headers and environment declarations cannot synthesize a production actor",
+  { concurrency: false },
+  async () => {
+    await withEnvironment(
+      {
+        NODE_ENV: "production",
+        RACEPREDICTOR_CLOUD_MODE: "enabled",
+        RACEPREDICTOR_OWNER_AUTH_CONFIGURED: "true",
+        RACEPREDICTOR_ACTOR_ID: "attacker-athlete",
+      },
+      async () => {
+        const request = new Request("http://localhost/api/v1/activities", {
+          headers: {
+            authorization: "Bearer attacker-controlled",
+            "x-racepredictor-actor-id": "attacker-athlete",
+            "x-racepredictor-development-actor": "attacker-athlete",
+          },
+        });
+        await assertUnauthenticated(await getActivities(request));
+      },
+    );
+  },
+);
 
-    const localLogin = await proxy(new NextRequest("http://localhost/login", {
-      headers: { host: "127.0.0.1", "x-forwarded-host": "127.0.0.1" },
-    }));
-    assert.equal(localLogin.headers.get("x-middleware-next"), "1", "without AUTH_URL, login stays on the requested host");
-    const healthBoundary = await proxy(new NextRequest("http://localhost/api/v1/health"));
-    const sessionBoundary = await proxy(new NextRequest("http://localhost/api/v1/auth/session"));
-    const webhookBoundary = await proxy(new NextRequest("http://localhost/api/v1/providers/strava/webhook"));
-    const deviceBoundary = await proxy(new NextRequest("http://localhost/api/v1/sync/device/changes"));
-    const internalBoundary = await proxy(new NextRequest("http://localhost/api/v1/internal/reconciliation"));
-    assert.equal(healthBoundary.status, 200);
-    assert.equal(sessionBoundary.status, 200);
-    assert.equal(webhookBoundary.status, 200);
-    assert.equal(deviceBoundary.status, 200);
-    assert.equal(internalBoundary.status, 200);
-    assert.equal(healthBoundary.headers.get("x-middleware-next"), "1");
-    assert.equal(sessionBoundary.headers.get("x-middleware-next"), "1");
-    assert.equal(webhookBoundary.headers.get("x-middleware-next"), "1");
-    assert.equal(deviceBoundary.headers.get("x-middleware-next"), "1");
-    assert.equal(internalBoundary.headers.get("x-middleware-next"), "1");
+test(
+  "health and session stay public while proxy covers sensitive APIs and dashboard pages",
+  { concurrency: false },
+  async () => {
+    assert.deepEqual(proxyConfig.matcher, [
+      "/login",
+      "/dashboard/:path*",
+      "/api/v1/:path*",
+    ]);
 
-    await assertUnauthenticated(await proxy(new NextRequest("http://localhost/api/v1/activities")));
-    await assertUnauthenticated(await proxy(new NextRequest("http://localhost/api/v1/providers/strava/webhook/probe")));
-    const dashboardResponse = await proxy(new NextRequest("http://localhost/dashboard"));
-    assert.equal(dashboardResponse.status, 307);
-    assert.equal(dashboardResponse.headers.get("location"), "http://localhost/login");
-  });
-});
+    await withEnvironment(
+      { NODE_ENV: "production", RACEPREDICTOR_CLOUD_MODE: "enabled" },
+      async () => {
+        const healthResponse = await health();
+        assert.equal(
+          healthResponse.status,
+          503,
+          "public health truthfully reports degraded until owner auth is configured",
+        );
+        assert.equal((await healthResponse.json()).data.status, "degraded");
+        assert.equal(
+          (await session(new Request("http://localhost/api/v1/auth/session")))
+            .status,
+          200,
+        );
+
+        const localLogin = await proxy(
+          new NextRequest("http://localhost/login", {
+            headers: { host: "127.0.0.1", "x-forwarded-host": "127.0.0.1" },
+          }),
+        );
+        assert.equal(
+          localLogin.headers.get("x-middleware-next"),
+          "1",
+          "without AUTH_URL, login stays on the requested host",
+        );
+        const healthBoundary = await proxy(
+          new NextRequest("http://localhost/api/v1/health"),
+        );
+        const sessionBoundary = await proxy(
+          new NextRequest("http://localhost/api/v1/auth/session"),
+        );
+        const webhookBoundary = await proxy(
+          new NextRequest("http://localhost/api/v1/providers/strava/webhook"),
+        );
+        const deviceBoundary = await proxy(
+          new NextRequest("http://localhost/api/v1/sync/device/changes"),
+        );
+        const internalBoundary = await proxy(
+          new NextRequest("http://localhost/api/v1/internal/reconciliation"),
+        );
+        assert.equal(healthBoundary.status, 200);
+        assert.equal(sessionBoundary.status, 200);
+        assert.equal(webhookBoundary.status, 200);
+        assert.equal(deviceBoundary.status, 200);
+        assert.equal(internalBoundary.status, 200);
+        assert.equal(healthBoundary.headers.get("x-middleware-next"), "1");
+        assert.equal(sessionBoundary.headers.get("x-middleware-next"), "1");
+        assert.equal(webhookBoundary.headers.get("x-middleware-next"), "1");
+        assert.equal(deviceBoundary.headers.get("x-middleware-next"), "1");
+        assert.equal(internalBoundary.headers.get("x-middleware-next"), "1");
+
+        await assertUnauthenticated(
+          await proxy(new NextRequest("http://localhost/api/v1/activities")),
+        );
+        await assertUnauthenticated(
+          await proxy(
+            new NextRequest(
+              "http://localhost/api/v1/providers/strava/webhook/probe",
+            ),
+          ),
+        );
+        const dashboardResponse = await proxy(
+          new NextRequest("http://localhost/dashboard"),
+        );
+        assert.equal(dashboardResponse.status, 307);
+        assert.equal(
+          dashboardResponse.headers.get("location"),
+          "http://localhost/login",
+        );
+      },
+    );
+  },
+);
 
 test("only exact self-authenticated device routes bypass the browser-session boundary", async () => {
-  assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/changes"), true);
-  assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/acknowledge"), true);
+  assert.equal(
+    isDeviceAuthenticatedApiPath("/api/v1/sync/device/changes"),
+    true,
+  );
+  assert.equal(
+    isDeviceAuthenticatedApiPath("/api/v1/sync/device/acknowledge"),
+    true,
+  );
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/plans"), true);
-  assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/plan-goal-context"), true);
-  assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/failure"), true);
-  assert.equal(isDeviceAuthenticatedApiPath("/api/v1/second-brain-context/snapshots"), true);
-  assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/device/changes/probe"), false);
+  assert.equal(
+    isDeviceAuthenticatedApiPath("/api/v1/sync/device/plan-goal-context"),
+    true,
+  );
+  assert.equal(
+    isDeviceAuthenticatedApiPath("/api/v1/sync/device/failure"),
+    true,
+  );
+  assert.equal(
+    isDeviceAuthenticatedApiPath("/api/v1/second-brain-context/snapshots"),
+    true,
+  );
+  assert.equal(
+    isDeviceAuthenticatedApiPath("/api/v1/sync/device/changes/probe"),
+    false,
+  );
   assert.equal(isDeviceAuthenticatedApiPath("/api/v1/sync/devices"), false);
-  assert.equal(isInternalAuthenticatedApiPath("/api/v1/internal/reconciliation"), true);
-  assert.equal(isInternalAuthenticatedApiPath("/api/v1/internal/reconciliation/probe"), false);
+  assert.equal(
+    isInternalAuthenticatedApiPath("/api/v1/internal/reconciliation"),
+    true,
+  );
+  assert.equal(
+    isInternalAuthenticatedApiPath("/api/v1/internal/reconciliation/probe"),
+    false,
+  );
 });
 
 test("authenticated actors cannot execute legacy global handlers or infer another athlete resource", async () => {
@@ -287,8 +502,14 @@ test("authenticated actors cannot execute legacy global handlers or infer anothe
   const actorB = createSyntheticTestActor("owner-b", ["athlete-b"]);
   let operationCalls = 0;
 
-  const makeDependencies = (actor: typeof actorA): RouteSecurityDependencies => ({
-    readEnvironment: () => readCloudEnvironment({ NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled" }),
+  const makeDependencies = (
+    actor: typeof actorA,
+  ): RouteSecurityDependencies => ({
+    readEnvironment: () =>
+      readCloudEnvironment({
+        NODE_ENV: "test",
+        RACEPREDICTOR_CLOUD_MODE: "enabled",
+      }),
     getAuth: () => ({ requireActor: async () => actor }),
   });
   const legacyHandler = async () => {
@@ -296,12 +517,12 @@ test("authenticated actors cannot execute legacy global handlers or infer anothe
     return Response.json({ exists: true, athleteId: "global-athlete" });
   };
 
-  const responseA = await createSensitiveRouteWrapper(makeDependencies(actorA))(legacyHandler)(
-    new Request("http://localhost/api/v1/activities/global-resource"),
-  );
-  const responseB = await createSensitiveRouteWrapper(makeDependencies(actorB))(legacyHandler)(
-    new Request("http://localhost/api/v1/activities/global-resource"),
-  );
+  const responseA = await createSensitiveRouteWrapper(makeDependencies(actorA))(
+    legacyHandler,
+  )(new Request("http://localhost/api/v1/activities/global-resource"));
+  const responseB = await createSensitiveRouteWrapper(makeDependencies(actorB))(
+    legacyHandler,
+  )(new Request("http://localhost/api/v1/activities/global-resource"));
 
   assert.equal(operationCalls, 0);
   assert.equal(responseA.status, 503);
@@ -312,7 +533,11 @@ test("authenticated actors cannot execute legacy global handlers or infer anothe
 test("cloud-safe handlers receive the authenticated actor context for athlete-scoped operations", async () => {
   const actor = createSyntheticTestActor("owner-a", ["athlete-a"]);
   const dependencies: RouteSecurityDependencies = {
-    readEnvironment: () => readCloudEnvironment({ NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled" }),
+    readEnvironment: () =>
+      readCloudEnvironment({
+        NODE_ENV: "test",
+        RACEPREDICTOR_CLOUD_MODE: "enabled",
+      }),
     getAuth: () => ({ requireActor: async () => actor }),
   };
   const handler = createSensitiveRouteWrapper(dependencies)(
@@ -323,7 +548,9 @@ test("cloud-safe handlers receive the authenticated actor context for athlete-sc
     { cloudHandling: "actor-scoped" },
   );
 
-  const response = await handler(new Request("http://localhost/api/v1/cloud-safe"));
+  const response = await handler(
+    new Request("http://localhost/api/v1/cloud-safe"),
+  );
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { athleteId: "athlete-a" });
 });
@@ -331,21 +558,41 @@ test("cloud-safe handlers receive the authenticated actor context for athlete-sc
 test("authenticated dashboard boundary proceeds to actor-scoped cloud pages", async () => {
   const actor = createSyntheticTestActor("owner-a", ["athlete-a"]);
   const dependencies: RouteSecurityDependencies = {
-    readEnvironment: () => readCloudEnvironment({ NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled" }),
+    readEnvironment: () =>
+      readCloudEnvironment({
+        NODE_ENV: "test",
+        RACEPREDICTOR_CLOUD_MODE: "enabled",
+      }),
     getAuth: () => ({ requireActor: async () => actor }),
   };
 
-  const response = await sensitiveBoundaryDenial(new Request("http://localhost/dashboard"), dependencies);
+  const response = await sensitiveBoundaryDenial(
+    new Request("http://localhost/dashboard"),
+    dependencies,
+  );
   assert.equal(response, null);
 });
 
-test("cloud-disabled local mode preserves existing route behavior", { concurrency: false }, async () => {
-  await withEnvironment({ NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "disabled" }, async () => {
-    const activities = await getActivities(new Request("http://localhost/api/v1/activities?limit=1"));
-    assert.notEqual(activities.status, 401);
-    assert.notEqual(activities.status, 503);
+test(
+  "cloud-disabled local mode preserves existing route behavior",
+  { concurrency: false },
+  async () => {
+    await withEnvironment(
+      { NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "disabled" },
+      async () => {
+        const activities = await getActivities(
+          new Request("http://localhost/api/v1/activities?limit=1"),
+        );
+        assert.notEqual(activities.status, 401);
+        assert.notEqual(activities.status, 503);
 
-    const invalidUpload = await uploadActivity(new Request("http://localhost/api/v1/imports/upload", { method: "POST" }));
-    assert.equal(invalidUpload.status, 400);
-  });
-});
+        const invalidUpload = await uploadActivity(
+          new Request("http://localhost/api/v1/imports/upload", {
+            method: "POST",
+          }),
+        );
+        assert.equal(invalidUpload.status, 400);
+      },
+    );
+  },
+);

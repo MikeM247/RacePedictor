@@ -33,5 +33,11 @@ try {
   if (voiceMigration.length !== 1) throw new Error("Voice usage migration was not recorded as applied");
   await prisma.$queryRaw`SELECT "id" FROM "coach_voice_usage_buckets" LIMIT 0`;
   await prisma.$queryRaw`SELECT "id" FROM "coach_voice_attempts" LIMIT 0`;
+  const imageMigration = await prisma.$queryRaw`SELECT migration_name FROM "_prisma_migrations" WHERE migration_name = '20261031090000_milestone_images' AND finished_at IS NOT NULL AND rolled_back_at IS NULL`;
+  if (imageMigration.length !== 1) throw new Error("Milestone image migration was not recorded as applied");
+  await prisma.$queryRaw`SELECT "athleteId", revision FROM milestone_image_state LIMIT 0`;
+  await prisma.$queryRaw`SELECT "athleteId", id FROM milestone_image_assets LIMIT 0`;
+  await prisma.$queryRaw`SELECT "athleteId", id FROM milestone_image_uploads LIMIT 0`;
+  console.log("Verified milestone image migration on the isolated staging database.");
   console.log("Verified coach archive and voice usage migrations on the isolated staging database.");
 } finally { await prisma.$disconnect(); }

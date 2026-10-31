@@ -19,7 +19,8 @@
     "test:e2e:milestones": "playwright test --config playwright.milestones.local.config.ts && playwright test --config playwright.milestones.online.config.ts",
     "coaching:propose-goal-structure": "node --experimental-strip-types scripts/propose-goal-structure.ts",
     "coaching:export-active-plan": "node --experimental-strip-types scripts/export-active-plan.ts",
-    "coaching:today": "node --experimental-strip-types scripts/read-today-coaching.ts"
+    "coaching:today": "node --experimental-strip-types scripts/read-today-coaching.ts",
+    "test:e2e:milestone-home": "playwright test --config playwright.milestone-home.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

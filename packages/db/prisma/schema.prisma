@@ -343,6 +343,9 @@ model Athlete {
   raceAchievements        RaceAchievement[]
   milestoneTimelineState  MilestoneTimelineState?
   dashboardAppearance     DashboardAppearance?
+  milestoneImages         MilestoneImageState?
+  milestoneImageAssets    MilestoneImageAsset[]
+  milestoneImageUploads   MilestoneImageUpload[]
   createdAt               DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime                   @updatedAt @db.Timestamptz(3)
   accesses                AthleteAccess[]
@@ -1102,4 +1105,38 @@ model CoachVoiceAttempt {
   @@index([athleteId, state, leaseExpiresAt])
   @@index([athleteId, createdAt])
   @@map("coach_voice_attempts")
+}
+
+model MilestoneImageState {
+  athleteId String @id
+  revision Int
+  state Json
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  @@map("milestone_image_state")
+}
+model MilestoneImageAsset {
+  athleteId String
+  id String
+  bytes Bytes
+  width Int
+  height Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  @@id([athleteId,id])
+  @@index([createdAt], map: "milestone_image_assets_age")
+  @@map("milestone_image_assets")
+}
+model MilestoneImageUpload {
+  id String @id
+  athleteId String
+  storageKey String @unique
+  byteSize Int
+  checksum String
+  expiresAt DateTime @db.Timestamptz(3)
+  assetId String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  @@index([expiresAt], map: "milestone_image_uploads_expiry")
+  @@map("milestone_image_uploads")
 }

@@ -89,7 +89,7 @@ async function settledSection(
 }
 export async function savedTrainingTimezone(
   active: PromiseSettledResult<{ timezone: string } | null>,
-  readHistory: () => Promise<{ timezone: string }[]>,
+  readHistory: () => Promise<readonly { timezone: string }[]>,
 ): Promise<string | null> {
   if (active.status === "fulfilled" && active.value) return active.value.timezone;
   try { return (await readHistory())[0]?.timezone ?? null; } catch { return null; }

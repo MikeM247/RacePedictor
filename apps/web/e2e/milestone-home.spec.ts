@@ -349,3 +349,17 @@ test('next-session navigation selects the saved session and returns focus to Hom
  await page.clock.setSystemTime(new Date());
  await page.getByRole('link',{name:'View session',exact:true}).click();await expect(page).toHaveURL(/\/dashboard\/calendar\?date=2026-10-31&session=next&recovery=/);await expect(page.getByRole('link',{name:'Return to Home',exact:true})).toBeVisible();await expect(page.locator('p:visible').filter({hasText:'40 minutes at an easy effort'}).first()).toBeVisible();await page.getByRole('button',{name:'Close details',exact:true}).click();await page.getByRole('link',{name:'Return to Home',exact:true}).click();await expect(page.getByRole('link',{name:'View session',exact:true})).toBeFocused();
 });
+
+test("phone viewport navigation and 200 percent reflow remain usable", async ({page}, testInfo) => {
+  await fixture(page);
+  await page.setViewportSize({width:390,height:844});
+  const nav = page.locator(".mobile-nav");
+  await expect(nav).toBeVisible();
+  const box = (await nav.boundingBox())!;
+  expect(Math.abs(box.y + box.height - 844)).toBeLessThanOrEqual(1);
+  await testInfo.attach("phone-viewport", {body:await page.screenshot(),contentType:"image/png"});
+  await page.setViewportSize({width:720,height:450});
+  await expect(page.getByRole("link",{name:"View session",exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await testInfo.attach("200-percent-equivalent-reflow", {body:await page.screenshot(),contentType:"image/png"});
+});

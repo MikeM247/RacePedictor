@@ -4,21 +4,22 @@ import { ApiHttpError, failure } from "./api-response.ts";
 import { readCloudEnvironment } from "./cloud-environment.ts";
 import { getServerAuth } from "./composition.ts";
 import { assertServerRuntime } from "./server-runtime.ts";
-
 assertServerRuntime("route-security");
-
 export type SensitiveRouteContext =
-  | { mode: "local"; actor: null }
-  | { mode: "authenticated"; actor: ActorContext };
-
+  | {
+      mode: "local";
+      actor: null;
+    }
+  | {
+      mode: "authenticated";
+      actor: ActorContext;
+    };
 type MaybePromise<T> = T | Promise<T>;
 type ActorRequirement = Pick<ReturnType<typeof getServerAuth>, "requireActor">;
-
 export interface RouteSecurityDependencies {
   readEnvironment(): CloudEnvironment;
   getAuth(): ActorRequirement;
 }
-
 export interface SensitiveRouteOptions {
   /**
    * Opt in only after the handler uses security.actor.activeAthleteId for all
@@ -26,42 +27,51 @@ export interface SensitiveRouteOptions {
    */
   cloudHandling?: "actor-scoped";
 }
-
 const defaultDependencies: RouteSecurityDependencies = {
   readEnvironment: readCloudEnvironment,
   getAuth: getServerAuth,
 };
-
 export function requiresAuthenticatedActor(environment: CloudEnvironment) {
-  return environment.runtime === "production" || environment.cloudMode === "enabled";
+  return (
+    environment.runtime === "production" || environment.cloudMode === "enabled"
+  );
 }
-
 export function isPublicApiPath(pathname: string) {
-  return pathname === "/api/v1/health"
-    || pathname === "/api/v1/auth/session"
-    || pathname === "/api/v1/providers/strava/webhook";
+  return (
+    pathname === "/api/v1/health" ||
+    pathname === "/api/v1/auth/session" ||
+    pathname === "/api/v1/providers/strava/webhook"
+  );
 }
-
 export function isDeviceAuthenticatedApiPath(pathname: string) {
-  return pathname === "/api/v1/sync/device/changes"
-    || pathname === "/api/v1/sync/device/acknowledge"
-    || pathname === "/api/v1/sync/device/plans"
-    || pathname === "/api/v1/sync/device/plan-goal-context"
-    || pathname === "/api/v1/sync/device/failure"
-    || pathname === "/api/v1/second-brain-context/snapshots"
-    || pathname === "/api/v1/sync/device/activity-reviews"
-    || pathname === "/api/v1/sync/device/activity-reviews/publish"
-    || pathname === "/api/v1/sync/device/athlete-feedback/publish"
-    || pathname === "/api/v1/sync/device/wellbeing-check-ins"
-    || pathname === "/api/v1/sync/device/activity-pace-comparisons/publish"
-    || /^\/api\/v1\/sync\/device\/activities\/[^/]+\/pace-comparison-context$/u.test(pathname)
-    || /^\/api\/v1\/sync\/device\/activities\/[^/]+\/feedback-context$/u.test(pathname);
+  return (
+    pathname === "/api/v1/sync/device/milestone-images" ||
+    pathname === "/api/v1/sync/device/milestone-images/assets" ||
+    /^\/api\/v1\/sync\/device\/milestone-images\/assets\/[a-f0-9]{64}$/u.test(
+      pathname,
+    ) ||
+    pathname === "/api/v1/sync/device/changes" ||
+    pathname === "/api/v1/sync/device/acknowledge" ||
+    pathname === "/api/v1/sync/device/plans" ||
+    pathname === "/api/v1/sync/device/plan-goal-context" ||
+    pathname === "/api/v1/sync/device/failure" ||
+    pathname === "/api/v1/second-brain-context/snapshots" ||
+    pathname === "/api/v1/sync/device/activity-reviews" ||
+    pathname === "/api/v1/sync/device/activity-reviews/publish" ||
+    pathname === "/api/v1/sync/device/athlete-feedback/publish" ||
+    pathname === "/api/v1/sync/device/wellbeing-check-ins" ||
+    pathname === "/api/v1/sync/device/activity-pace-comparisons/publish" ||
+    /^\/api\/v1\/sync\/device\/activities\/[^/]+\/pace-comparison-context$/u.test(
+      pathname,
+    ) ||
+    /^\/api\/v1\/sync\/device\/activities\/[^/]+\/feedback-context$/u.test(
+      pathname,
+    )
+  );
 }
-
 export function isInternalAuthenticatedApiPath(pathname: string) {
   return pathname === "/api/v1/internal/reconciliation";
 }
-
 function cloudUnavailable() {
   return new ApiHttpError(
     503,
@@ -69,7 +79,6 @@ function cloudUnavailable() {
     "This operation is not available in cloud mode",
   );
 }
-
 async function resolveSensitiveRouteContext(
   request: Request,
   dependencies: RouteSecurityDependencies,
@@ -78,12 +87,12 @@ async function resolveSensitiveRouteContext(
   if (!requiresAuthenticatedActor(environment)) {
     return { mode: "local", actor: null };
   }
-
   const actor = await dependencies.getAuth().requireActor(request);
   return { mode: "authenticated", actor };
 }
-
-export function createSensitiveRouteWrapper(dependencies: RouteSecurityDependencies = defaultDependencies) {
+export function createSensitiveRouteWrapper(
+  dependencies: RouteSecurityDependencies = defaultDependencies,
+) {
   return function withSensitiveRoute<TRest extends unknown[]>(
     handler: (
       security: SensitiveRouteContext,
@@ -94,8 +103,14 @@ export function createSensitiveRouteWrapper(dependencies: RouteSecurityDependenc
   ) {
     return async (request: Request, ...rest: TRest): Promise<Response> => {
       try {
-        const security = await resolveSensitiveRouteContext(request, dependencies);
-        if (security.mode === "authenticated" && options.cloudHandling !== "actor-scoped") {
+        const security = await resolveSensitiveRouteContext(
+          request,
+          dependencies,
+        );
+        if (
+          security.mode === "authenticated" &&
+          options.cloudHandling !== "actor-scoped"
+        ) {
           throw cloudUnavailable();
         }
         return await handler(security, request, ...rest);
@@ -105,9 +120,7 @@ export function createSensitiveRouteWrapper(dependencies: RouteSecurityDependenc
     };
   };
 }
-
 export const withSensitiveRoute = createSensitiveRouteWrapper();
-
 /**
  * Front-door check for protected pages and APIs. Route handlers still use
  * withSensitiveRoute so this optimistic boundary is never the only defense.
@@ -117,8 +130,12 @@ export async function sensitiveBoundaryDenial(
   dependencies: RouteSecurityDependencies = defaultDependencies,
 ): Promise<Response | null> {
   const pathname = new URL(request.url).pathname;
-  if (isPublicApiPath(pathname) || isDeviceAuthenticatedApiPath(pathname) || isInternalAuthenticatedApiPath(pathname)) return null;
-
+  if (
+    isPublicApiPath(pathname) ||
+    isDeviceAuthenticatedApiPath(pathname) ||
+    isInternalAuthenticatedApiPath(pathname)
+  )
+    return null;
   try {
     await resolveSensitiveRouteContext(request, dependencies);
     return null;

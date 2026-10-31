@@ -1,0 +1,124 @@
+.milestone-image-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.milestone-image-controls img,
+.milestone-image-preview img {
+  width: 66px;
+  height: 66px;
+  object-fit: contain;
+  background: #102631;
+  border-radius: 50%;
+}
+.milestone-image-preview {
+  width: 100%;
+  padding: 20px;
+  background: #102631;
+  border: 1px solid #3c5764;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+.milestone-image-placeholder {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #3c5764;
+  border-radius: 50%;
+  font-size: 12px;
+}
+.milestone-image-dialog {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  width: min(650px, calc(100% - 32px));
+  padding: 24px;
+  background: var(--rp-surface, #102430);
+  color: var(--rp-text, #edf7fa);
+  border: 1px solid #436573;
+  border-radius: 16px;
+}
+.milestone-image-dialog::backdrop {
+  background: #000a;
+}
+.milestone-image-dialog .road-dialog-content {
+  padding: 0;
+}
+.milestone-image-dialog fieldset {
+  border: 0;
+  margin: 18px 0;
+  padding: 0;
+  min-width: 0;
+}
+.milestone-image-dialog label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.milestone-image-dialog input {
+  max-width: 100%;
+  padding: 10px;
+}
+.milestone-image-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.milestone-image-choices button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid #3c5764;
+  border-radius: 8px;
+  font: inherit;
+}
+.milestone-image-choices button[aria-pressed="true"] {
+  border-color: #c2ee72;
+  outline: 2px solid #c2ee72;
+}
+.milestone-image-choices img {
+  object-fit: contain;
+}
+.milestone-image-dialog button,
+.milestone-image-controls button {
+  min-height: 44px;
+  cursor: pointer;
+}
+.milestone-image-sync {
+  border: 1px solid #cdb65b;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.milestone-image-conflict-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.milestone-image-conflict-row img {
+  width: 50px;
+  height: 50px;
+  object-fit: contain;
+}
+@media (max-width: 600px) {
+  .milestone-image-choices {
+    grid-template-columns: 1fr;
+  }
+  .milestone-image-choices button {
+    flex-direction: row;
+    text-align: left;
+  }
+  .milestone-image-dialog {
+    padding: 20px;
+  }
+}
+
+.milestone-image-dialog input{min-height:44px}

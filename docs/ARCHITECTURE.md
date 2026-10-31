@@ -1,5 +1,7 @@
 # ARCHITECTURE
 
+> **31 October 2026 · Milestone Home:** option 09 and Settings image management are implemented behind the default-off `RACEPREDICTOR_MILESTONE_HOME_ENABLED` flag. See [implementation and release handoff](plans/MILESTONE_HOME_IMPLEMENTATION.md). Existing plan approval and Settings timeline authority remain in force; production activation is a separate release step.
+
 ## Coach discussion archival (25 October 2026)
 
 The V2 Coach reuses its athlete-scoped conversation generation as a discussion boundary. Transactional archive metadata retains original message/turn rows, invalidates pending leases and advances the active generation. Private paginated history reads expose closed generations without sending them to the provider. Core contracts, DB repositories and authenticated web composition preserve existing boundaries. See [Coach chat history](plans/COACH_CHAT_HISTORY.md) and the amendment to ADR 0010.

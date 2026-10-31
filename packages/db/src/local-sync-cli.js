@@ -1,3 +1,4 @@
+import { syncMilestoneImages } from "./local-milestone-image-sync.ts";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -34,8 +35,10 @@ if (command === "enroll") {
       : "RACEPREDICTOR_DATABASE_PATH and RACEPREDICTOR_CLOUD_URL are required");
   }
   const projection = new LocalSyncProjectionRepository({ databasePath });
+  const imageClient = new RacePredictorSyncClient({ baseUrl });
   const agent = new LocalCloudSyncAgent({
     athleteId,
+    imageSync: process.env.RACEPREDICTOR_MILESTONE_HOME_ENABLED === "true" ? (token) => syncMilestoneImages({ databasePath, athleteId, client: imageClient, token }) : null,
     credentialStore,
     client: new RacePredictorSyncClient({ baseUrl }),
     projection,
@@ -44,11 +47,13 @@ if (command === "enroll") {
   if (command === "sync") {
     const result = await agent.sync();
     process.stdout.write(`Local sync complete at cursor ${result.cursor ?? "empty"}; ${result.applied} change(s) applied.\n`);
+    if (result.images) process.stdout.write(`Milestone images: ${result.images.status}. Review conflicts in Settings.\n`);
   } else if (command === "sync-and-publish") {
     const result = await agent.syncAndPublish(() => readSelectedSecondBrainSource({ vaultPath }));
     if (result.sync.status === "fulfilled") {
       process.stdout.write(`Local sync complete at cursor ${result.sync.value.cursor ?? "empty"}; ${result.sync.value.applied} change(s) applied.\n`);
     }
+    if (result.sync.status === "fulfilled" && result.sync.value.images) process.stdout.write(`Milestone images: ${result.sync.value.images.status}. Review conflicts in Settings.\n`);
     if (result.publication.status === "fulfilled") {
       const snapshot = result.publication.value.snapshot;
       process.stdout.write(snapshot

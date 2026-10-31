@@ -1,4 +1,197 @@
-.option-nine-layout{display:block!important;min-height:100vh;background:#08141e!important}.o9{min-height:100vh;width:100%;background:#08141e;color:#edf7fa;font-family:Arial,sans-serif}.o9 *{box-sizing:border-box}.o9 button,.o9 a{font:inherit;color:inherit}.o9-nav{height:80px;padding:0 max(3.3vw,24px);border-bottom:1px solid #293f4d;display:flex;align-items:center;gap:24px;color:#a9bfcb;font-size:12px}.o9-nav nav{display:flex;align-items:center;gap:28px;margin-right:auto}.o9-nav nav a{display:flex;gap:10px;align-items:center;text-decoration:none;height:80px}.o9-nav nav a[aria-current]{border-bottom:2px solid #65dce6;color:#edf7fa}.o9-main{max-width:1600px;margin:auto;padding:34px 48px 25px}.o9-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:25px}.o9-heading h1{font-size:28px;font-weight:400;letter-spacing:-1px;margin:0}.o9-heading p,.o9-heading>span{font-size:11px;color:#a9bfcb;margin-top:8px}.o9-heading>span{margin:0}.o9-top{display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:20px}.o9-hero{position:relative;isolation:isolate;min-height:370px;overflow:hidden;border:1px solid #54626a;border-radius:13px;padding:30px 32px}.o9-hero:before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#071827f0,#07182785 57%,#142e3f18),linear-gradient(0deg,#071827e8,transparent 66%),url('/road-to-comrades-v2.webp') center/cover}.o9-kicker{font-size:10px;color:#d4eeac;letter-spacing:.15em;font-weight:bold;margin:7px 0 0}.o9-hero h2{font-family:Race,Arial,sans-serif;font-size:60px;line-height:1.07;letter-spacing:-2.7px;margin:25px 120px 12px 0}.o9-sub{font-size:12px;color:#c3d5dc}.o9-count{position:absolute;right:25px;top:25px;min-width:106px;text-align:center;border:1px solid #889d9f88;border-radius:8px;background:#0b203380;padding:15px}.o9-count b{font-size:31px;font-weight:400;display:block}.o9-count small{font-size:8px;letter-spacing:.15em}.o9-facts{display:flex;gap:28px;margin:25px 0 24px}.o9-facts div{display:grid;gap:8px}.o9-facts div+div{border-left:1px solid #738894;padding-left:28px}.o9-facts small{font-size:10px;letter-spacing:.12em;color:#b7cbd4}.o9-facts b{font-size:25px;font-weight:500}.o9-green,.o9-coach>a{min-height:46px;padding:12px 20px;border:0;border-radius:7px;background:#c2ee72;color:#08202c!important;font-size:12px}.o9-coach{position:relative;border:1px solid #36505e;border-radius:13px;padding:24px 22px 22px;background:radial-gradient(ellipse at 50% 44%,#244b5b70,transparent 65%),#102430;display:flex;flex-direction:column;align-items:center;text-align:center}.o9-coach>small{align-self:flex-start;color:#9db5c0;font-size:10px;letter-spacing:.18em}.o9-coach h2{align-self:flex-start;margin:8px 0;font-size:21px;font-weight:400;letter-spacing:.05em}.o9-coach img{width:185px;height:172px;object-fit:cover;object-position:top;mask-image:linear-gradient(black 80%,transparent)}.o9-coach p{font-size:13px;line-height:1.5;margin:0}.o9-coach>a{display:grid;place-items:center;width:100%;margin-top:16px;background:#c9ebef;text-decoration:none}.o9-journey{margin-top:24px}.o9-journey>header{display:flex;justify-content:space-between;align-items:center;margin:0 0 14px}.o9-journey h2{font-size:16px;font-weight:400;margin:0}.o9-journey>header a,.o9-link{font-size:11px;color:#b6c9d4}.o9-track{padding:25px 28px 24px;border:1px solid #3c5764;border-radius:12px;background:#102631}.o9-track ol{position:relative;display:flex;justify-content:space-between;list-style:none;margin:0;padding:0}.o9-track ol:before{content:"";position:absolute;top:7px;left:12.5%;right:12.5%;height:1px;background:#587783}.o9-track li{position:relative;display:flex;flex:0 0 22%;min-width:0;flex-direction:column;align-items:center;text-align:center;padding-top:30px;gap:7px}.o9-node{position:absolute;top:0;left:50%;transform:translateX(-50%);width:15px;height:15px;border:2px solid #7296a7;border-radius:50%;background:#102631}.o9-track li.achieved .o9-node{background:#c2ee72;border-color:#c2ee72;color:#19351e}.o9-track li:not(.achieved):first-of-type .o9-node{background:#9edfe3;border-color:#9edfe3}.o9-track li.final .o9-node{background:#e2bc3c;border-color:#e2bc3c}.o9-track li small{font-size:9px;letter-spacing:.12em;color:#a8c3cf}.o9-mark{width:66px;height:66px;object-fit:contain;margin-top:4px}.o9-badge{border:1px solid #71929d;border-radius:50%;display:grid;place-items:center}.o9-track li button{border:0;background:none;cursor:pointer;font-size:17px}.o9-track li>span:not(.o9-node):not(.o9-mark),.o9-track time,.o9-track em{font-size:11px;color:#aec4ce;font-style:normal}.o9-track em{color:#c2ee72}.o9-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:24px}.o9-card{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:17px;min-height:124px;padding:22px 24px;border:1px solid #2e4a59;border-radius:11px;background:#0c1e29}.o9-date{width:46px;height:46px;border:1px solid #3c5866;border-radius:7px;display:grid;place-content:center;text-align:center;background:#0a1923}.o9-date span{font-size:9px;color:#b5cad5}.o9-date b{font-size:18px;font-weight:400}.o9-card small{font-size:10px;letter-spacing:.15em;color:#aec7d3;font-weight:700}.o9-card h3{font-size:17px;font-weight:400;margin:7px 0}.o9-card p{font-size:12px;color:#9fb8c5;margin:0}.o9-card>a{font-size:11px;white-space:nowrap}.o9 main>footer{font-size:9px;color:#829da9;margin-top:20px}.o9-backdrop{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:100}.o9-dialog{background:#102430;border:1px solid #436573;border-radius:16px;padding:30px;width:min(520px,calc(100% - 32px));position:relative}.o9-dialog button{min-height:44px}.o9-dialog button:first-child{float:right}.o9-dialog h2{margin:30px 0 18px}.o9-dialog p{margin:12px 0;color:#b5cbd6}
-@font-face{font-family:Race;src:url('/fonts/DejaVuSansCondensed.ttf')}@font-face{font-family:Race;src:url('/fonts/DejaVuSansCondensed-Bold.ttf');font-weight:700}
-@media(max-width:1100px) and (min-width:761px){.o9-main{padding:30px 30px}.o9-top{grid-template-columns:minmax(0,1fr) 240px;gap:16px}.o9-hero h2{font-size:49px}.o9-coach{padding:23px 17px}.o9-coach img{width:166px}}
-@media(max-width:760px){.o9-nav{height:auto;padding:12px 20px 86px;position:relative;border:0}.o9-nav nav{position:fixed;bottom:0;left:0;right:0;z-index:30;margin:0;height:70px;background:#0b1c28;border-top:1px solid #293f4d;justify-content:space-around}.o9-nav nav a{height:62px;display:grid;justify-items:center;gap:4px;font-size:10px}.o9-nav>span{position:absolute;right:20px;top:15px;font-size:9px}.o9-main{padding:24px 20px 95px}.o9-heading{margin-bottom:23px}.o9-heading h1{font-size:24px}.o9-heading p{font-size:11px}.o9-heading>span{display:none}.o9-top{grid-template-columns:1fr;gap:16px}.o9-hero{padding:26px 23px;min-height:378px}.o9-hero h2{font-size:47px;max-width:250px;margin:46px 80px 14px 0;line-height:1.06}.o9-sub{font-size:11px;max-width:255px}.o9-facts{margin:24px 0;gap:20px}.o9-facts b{font-size:23px}.o9-facts div+div{padding-left:20px}.o9-count{right:20px;top:21px;padding:11px 13px;min-width:auto}.o9-count b{font-size:26px}.o9-coach{padding:16px;min-height:185px}.o9-coach img{width:70px;height:94px;position:absolute;left:35px}.o9-coach h2{margin-left:80px}.o9-coach p{margin-left:80px}.o9-coach>a{margin-top:14px}.o9-track{padding:25px 21px}.o9-track ol{display:block}.o9-track ol:before{display:none}.o9-track li{display:grid;grid-template-columns:56px minmax(0,1fr);gap:0 17px;align-items:start;width:100%;padding:0 0 28px 31px;text-align:left}.o9-track li:before{content:"";position:absolute;left:7px;top:7px;bottom:-7px;width:1px;background:#587783}.o9-track li:last-child{padding-bottom:0}.o9-track li:last-child:before{display:none}.o9-node{left:7px;transform:translateX(-50%)}.o9-track li small{grid-column:2;grid-row:1}.o9-track .o9-mark{grid-column:1;grid-row:1/3;width:56px;height:56px}.o9-track li button,.o9-track li>span:not(.o9-node):not(.o9-mark),.o9-track time,.o9-track em{grid-column:2;text-align:left}.o9-pair{grid-template-columns:1fr;gap:14px;margin-top:23px}.o9-card{grid-template-columns:46px minmax(0,1fr);gap:8px 15px;padding:21px 20px;min-height:0}.o9-card>a{grid-column:2;justify-self:start}.o9-card h3{font-size:16px}.o9-card small{font-size:9px}}
+/* Production-only states and actions. Normal composition comes from option-nine-reference.css. */
+.option-nine-layout {
+  display: block;
+  background: #08141e;
+  min-height: 100vh;
+}
+.option-nine-home {
+  min-height: 100vh;
+  line-height: normal;
+}
+.option-nine-home .home-skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 200;
+  transform: translateY(-200%);
+  background: #102430;
+  padding: 12px;
+}
+.option-nine-home .home-skip-link:focus {
+  transform: none;
+}
+.option-nine-home .home-milestone-name {
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  min-height: 0;
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  position: relative;
+}
+.option-nine-home .home-management-link {
+  font-size: 10px;
+  color: #a9bfcb;
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  white-space: nowrap;
+}
+.option-nine-home .home-management-compact {
+  display: none;
+}
+.option-nine-home .home-management-link:after,
+.option-nine-home .home-milestone-name:after {
+  content: "";
+  position: absolute;
+  inset: -12px 0;
+}
+.option-nine-home .home-neutral-mark {
+  border: 1px solid #7296a7;
+  background: #183e4c;
+  color: #c0f2fa;
+  font-size: 16px;
+}
+.option-nine-home .home-view-all {
+  margin-top: 12px;
+  min-height: 44px;
+}
+.option-nine-home .home-status {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b5cbd6;
+  margin: 8px 0;
+}
+.option-nine-home .home-status button {
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  color: inherit;
+  min-height: 44px;
+}
+.option-nine-home .button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.option-nine-home .home-orbit-fallback {
+  display: grid;
+  place-content: center;
+  font-size: 24px;
+}
+.option-nine-home .mobile-menu button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  position: relative;
+}
+.option-nine-home dialog.app-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  width: min(520px, calc(100% - 32px));
+  color: #f3f8fb;
+  padding: 30px;
+  border: 1px solid #436573;
+  border-radius: 16px;
+  background: #102430;
+}
+.option-nine-home .app-dialog .road-dialog-content {
+  padding: 0;
+}
+.option-nine-home .home-menu-links {
+  display: grid;
+  gap: 12px;
+}
+.option-nine-home .home-menu-links a {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.option-nine-home dialog.home-all-milestones {
+  width: min(620px, calc(100% - 32px));
+}
+.option-nine-home .home-all-milestones .achievement-stops {
+  display: grid;
+  gap: 24px;
+}
+.option-nine-home .home-all-milestones .achievement-stops:before {
+  display: none;
+}
+.option-nine-home .home-all-milestones .achievement-stop {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  gap: 8px 16px;
+  text-align: left;
+  padding: 0 0 0 28px;
+  flex: none;
+}
+.option-nine-home .home-all-milestones .achievement-node {
+  left: 7px;
+  top: 5px;
+}
+.option-nine-home .home-all-milestones .achievement-stop-label {
+  grid-column: 2;
+}
+.option-nine-home .home-all-milestones .race-mark,
+.option-nine-home .home-all-milestones .personal-best-mark {
+  grid-column: 1;
+  grid-row: 1/3;
+}
+.option-nine-home .home-all-milestones .achievement-stop-copy {
+  grid-column: 2;
+}
+@media (max-width: 760px) {
+  .option-nine-home .home-management-link {
+    font-size: 10px;
+    min-height: 0;
+    margin-left: 12px;
+  }
+  .option-nine-home .home-management-full {
+    display: none;
+  }
+  .option-nine-home .home-management-compact {
+    display: inline;
+  }
+  .option-nine-home .milestone-heading {
+    align-items: center;
+  }
+  .option-nine-home .mobile-nav a {
+    min-height: 44px;
+  }
+  .option-nine-home .home-all-milestones .achievement-stop:before {
+    display: none;
+  }
+}
+
+.option-nine-home .mobile-menu button:after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+
+.option-nine-home .home-result-state {
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #a7c0cb;
+  margin-top: 4px;
+}
+
+.option-nine-home .app-dialog .close{width:44px;height:44px}

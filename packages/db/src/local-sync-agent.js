@@ -9,8 +9,9 @@ export class LocalCloudSyncAgent {
   #notePath;
   #noteWriter;
   #now;
+  #imageSync;
 
-  constructor({ athleteId, credentialStore, client, projection, notePath, noteWriter = updateCloudSyncNote, now = () => new Date() }) {
+  constructor({ athleteId, credentialStore, client, projection, notePath, noteWriter = updateCloudSyncNote, imageSync = null, now = () => new Date() }) {
     if (typeof athleteId !== "string" || !athleteId) throw new Error("athleteId is required");
     this.#athleteId = athleteId;
     this.#credentialStore = credentialStore;
@@ -19,6 +20,7 @@ export class LocalCloudSyncAgent {
     this.#notePath = notePath;
     this.#noteWriter = noteWriter;
     this.#now = now;
+    this.#imageSync = imageSync;
   }
 
   async sync({ pageSize = 100, maxPages = 20 } = {}) {
@@ -49,7 +51,8 @@ export class LocalCloudSyncAgent {
         if (!response.data.hasMore) break;
         if (page === maxPages - 1) throw new Error("Cloud sync page limit reached");
       }
-      return { athleteId: this.#athleteId, cursor, applied, status: "current" };
+      const images = this.#imageSync ? await this.#imageSync(token) : null;
+      return { athleteId: this.#athleteId, cursor, applied, status: "current", ...(images ? { images } : {}) };
     } catch (error) {
       const code = diagnosticCode(error);
       this.#projection.recordFailure(this.#athleteId, code);

@@ -3,6 +3,7 @@ import { createContext, useContext, type ReactNode } from "react";
 type DashboardFeatures = {
   coachAvailable: boolean;
   milestoneHomeEnabled?: boolean;
+  calendarMonthSummaryEnabled?: boolean;
 };
 const DashboardFeaturesContext = createContext<DashboardFeatures>({
   coachAvailable: false,
@@ -10,13 +11,14 @@ const DashboardFeaturesContext = createContext<DashboardFeatures>({
 export function DashboardFeaturesProvider({
   coachAvailable,
   milestoneHomeEnabled = false,
+  calendarMonthSummaryEnabled = false,
   children,
 }: DashboardFeatures & {
   children: ReactNode;
 }) {
   return (
     <DashboardFeaturesContext.Provider
-      value={{ coachAvailable, milestoneHomeEnabled }}
+      value={{ coachAvailable, milestoneHomeEnabled, calendarMonthSummaryEnabled }}
     >
       {children}
     </DashboardFeaturesContext.Provider>

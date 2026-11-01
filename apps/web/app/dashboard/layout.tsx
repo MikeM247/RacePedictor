@@ -3,6 +3,8 @@ import { DashboardFeaturesProvider } from "../../components/dashboard/dashboard-
 import { readCloudEnvironment } from "../../lib/server/cloud-environment";
 import { shouldRenderOnlineUi } from "../../lib/server/online-ui-mode";
 import { milestoneHomeEnabled } from "../../lib/server/milestone-home-feature";
+import { calendarMonthSummaryEnabled } from "../../lib/server/calendar-month-summary-feature";
+import "./shared-dashboard-theme.css";
 export const dynamic = "force-dynamic";
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const environment = readCloudEnvironment();
@@ -12,8 +14,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     <DashboardFeaturesProvider
       coachAvailable={coachAvailable}
       milestoneHomeEnabled={milestoneHomeEnabled()}
+      calendarMonthSummaryEnabled={calendarMonthSummaryEnabled()}
     >
-      {children}
+      <div className={calendarMonthSummaryEnabled() ? "shared-dashboard-theme" : undefined}>{children}</div>
     </DashboardFeaturesProvider>
   );
 }

@@ -1,0 +1,302 @@
+[
+  {
+    "option": 1,
+    "width": 320,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 44,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 1,
+    "width": 390,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 50.84375,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 1,
+    "width": 768,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 81.140625,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 1,
+    "width": 1024,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 117.703125,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 1,
+    "width": 1440,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 166,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 2,
+    "width": 320,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 44,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 2,
+    "width": 390,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 50.84375,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 2,
+    "width": 768,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 102.5625,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 2,
+    "width": 1024,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 139.140625,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 2,
+    "width": 1440,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 191.703125,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 3,
+    "width": 320,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 44,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 3,
+    "width": 390,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 50.84375,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 3,
+    "width": 768,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 102.5625,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 3,
+    "width": 1024,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 139.140625,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  },
+  {
+    "option": 3,
+    "width": 1440,
+    "overflow": false,
+    "days": 42,
+    "minDayWidth": 191.703125,
+    "monthly": {
+      "planned": "185",
+      "recorded": "10",
+      "plannedMinutes": "1375",
+      "recordedSeconds": "3563",
+      "days": "30"
+    },
+    "monthText": "November 2026",
+    "weekdays": 7,
+    "weeks": 6,
+    "totals": 6,
+    "background": "rgb(8, 20, 30)",
+    "errors": []
+  }
+]

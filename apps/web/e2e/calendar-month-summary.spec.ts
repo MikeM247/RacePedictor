@@ -74,6 +74,43 @@ test("normal Calendar entry places today under measured sticky controls on phone
   }
 });
 
+test("mobile Calendar shell has no legacy header offset and keeps the Home settings icon", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installCalendarFixtures(page);
+  await page.goto("/dashboard/calendar");
+
+  const settings = page.getByRole("link", { name: "Settings" });
+  const geometry = await page.evaluate(() => {
+    const layout = document.querySelector<HTMLElement>(".dashboard-layout")!;
+    const nav = document.querySelector<HTMLElement>(".shared-topnav")!;
+    const heading = document.querySelector<HTMLElement>(".dashboard-toolbar h1")!;
+    const link = document.querySelector<HTMLElement>(".shared-nav-utility>a")!;
+    const icon = link.querySelector<SVGElement>("svg")!;
+    const navBox = nav.getBoundingClientRect();
+    const headingBox = heading.getBoundingClientRect();
+    const linkBox = link.getBoundingClientRect();
+    const iconBox = icon.getBoundingClientRect();
+    return {
+      layoutPaddingTop: getComputedStyle(layout).paddingTop,
+      navTop: navBox.top,
+      navHeight: navBox.height,
+      titleGap: headingBox.top - navBox.bottom,
+      utilityWidth: linkBox.width,
+      iconCenterOffset: Math.abs((iconBox.left + iconBox.width / 2) - (linkBox.left + linkBox.width / 2)),
+      labelClip: getComputedStyle(link.querySelector("span")!).clip,
+    };
+  });
+
+  await expect(settings).toBeVisible();
+  expect(geometry.layoutPaddingTop).toBe("0px");
+  expect(geometry.navTop).toBe(0);
+  expect(geometry.navHeight).toBeLessThanOrEqual(72);
+  expect(geometry.titleGap).toBeLessThanOrEqual(48);
+  expect(geometry.utilityWidth).toBe(44);
+  expect(geometry.iconCenterOffset).toBeLessThanOrEqual(1);
+  expect(geometry.labelClip).not.toBe("none");
+});
+
 test("session links retain their detail target and browser return reveals today's week", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installCalendarFixtures(page);

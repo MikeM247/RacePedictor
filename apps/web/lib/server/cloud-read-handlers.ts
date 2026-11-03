@@ -430,11 +430,12 @@ export async function handleCloudCalendar(
   if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "Calendar date range is invalid");
   const scope = requireScope(security);
   const composition = getComposition();
-  const sessions = await listCloudActiveCalendarSafely(composition, scope, parsed.data);
-  const { timezone } = await listCloudCalendarPlanContext(composition, scope);
+  const schedule = await listCloudActiveCalendarSafely(composition, scope, parsed.data);
+  const planContext = await listCloudCalendarPlanContext(composition, scope);
+  const { timezone } = planContext;
   const activityRead = await listCloudCalendarActivitiesSafely(composition, scope, parsed.data, timezone);
   try {
-    return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions, historicalSessions: [], activities: activityRead.activities, activitiesReadStatus: activityRead.status, timezone }));
+    return success(calendarRouteDataSchema.parse({ ...parsed.data, sessions: schedule.sessions, historicalSessions: [], activities: activityRead.activities, activitiesReadStatus: activityRead.status, timezone, planReadStatus: planContext.planReadStatus, scheduleReadStatus: schedule.scheduleReadStatus }));
   } catch (error) {
     reportCalendarSupplementFailure("calendar response projection", error);
     return success(calendarRouteDataSchema.parse({
@@ -444,6 +445,8 @@ export async function handleCloudCalendar(
       activities: [],
       activitiesReadStatus: "unavailable",
       timezone,
+      planReadStatus: planContext.planReadStatus,
+      scheduleReadStatus: schedule.scheduleReadStatus,
     }));
   }
 }
@@ -454,10 +457,16 @@ async function listCloudActiveCalendarSafely(
   range: { from: string; to: string },
 ) {
   try {
-    return await safelyReadCoaching(() => composition.calendarSessions.listActiveCalendar(scope, range));
+    return { sessions: await safelyReadCoaching(() => composition.calendarSessions.listActiveCalendar(scope, range)), planReadStatus: "active" as const, scheduleReadStatus: "effective" as const };
   } catch (error) {
     reportCalendarSupplementFailure("effective session projection", error);
-    return approvedPlanCalendarSessions(composition, scope, range);
+    try {
+      const sessions = await approvedPlanCalendarSessions(composition, scope, range);
+      const plan = await safelyReadCoaching(() => composition.coaching.getActivePlan(scope));
+      return { sessions, planReadStatus: plan ? "active" as const : "none" as const, scheduleReadStatus: "approved_fallback" as const };
+    } catch {
+      return { sessions: [], planReadStatus: "unavailable" as const, scheduleReadStatus: "unavailable" as const };
+    }
   }
 }
 
@@ -489,12 +498,14 @@ async function listCloudCalendarPlanContext(
 ) {
   try {
     const plans = await safelyReadCoaching(() => composition.coaching.listHistory(scope));
+    const activePlan = plans.find((plan) => plan.status === "active");
     return {
-      timezone: plans.find((plan) => plan.status === "active")?.timezone ?? "Africa/Johannesburg",
+      timezone: activePlan?.timezone ?? "Africa/Johannesburg",
+      planReadStatus: activePlan ? "active" as const : "none" as const,
     };
   } catch (error) {
     reportCalendarSupplementFailure("plan history", error);
-    return { timezone: "Africa/Johannesburg" };
+    return { timezone: "Africa/Johannesburg", planReadStatus: "unavailable" as const };
   }
 }
 

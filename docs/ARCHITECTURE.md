@@ -1,5 +1,13 @@
 # ARCHITECTURE
 
+## Shared dashboard presentation and Option 08 Calendar (1 November 2026)
+
+The dashboard shell owns the route-aware navigation and shared dark presentation tokens. A rollout-gated `DashboardNavigation` renders desktop and mobile variants from the same route state; Home uses it when `RACEPREDICTOR_CALENDAR_MONTH_SUMMARY_ENABLED=true`. The shell's semantic Arial typography, canvas, panels and controls apply to the dashboard routes behind that flag. Home's condensed Race display face remains scoped to its hero. The existing milestone-Home flag remains independent. See [shared theme and Calendar contract](design/APP_THEME_AND_CALENDAR.md).
+
+The Calendar UI parses `calendarRouteDataSchema` before normalizing any rows. `apps/web/lib/calendar-totals.ts` is the pure aggregation seam for weekly and monthly inclusive ranges: planned sessions and recorded eligible activities remain separate; activity identity deduplication uses the canonical ID; monthly dates exclude adjacent-month days even in boundary weeks. Status metadata distinguishes absent plans, unavailable sources, effective schedules, and approved-source fallback. This is presentation/read-model logic; source authority and mutations remain in existing services and routes. No persistence schema changed.
+
+The Calendar uses document scrolling and a one-shot entry-positioning effect rather than a nested month scroller or continuous scroll correction. Current-date return positioning runs after authoritative timezone/data/layout are available; explicit target links and user month browsing take precedence. The feature flag gates the shared presentation and new composition together. It remains off until preview acceptance. Detailed entry/history cases are in [the implementation plan](plans/CALENDAR_MONTH_SUMMARY_IMPLEMENTATION.md).
+
 > **31 October 2026 · Milestone Home:** option 09 and Settings image management are implemented behind the default-off `RACEPREDICTOR_MILESTONE_HOME_ENABLED` flag. See [implementation and release handoff](plans/MILESTONE_HOME_IMPLEMENTATION.md). Existing plan approval and Settings timeline authority remain in force; production activation is a separate release step.
 
 ## Coach discussion archival (25 October 2026)

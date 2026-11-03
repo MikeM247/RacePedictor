@@ -1,5 +1,43 @@
 # ROADMAP
 
+## Selected Calendar option 08: implementation complete; preview/release validation pending
+
+- [x] Owner selected **08 · Month summary**.
+- [x] Draft Product Owner BRD with packaged desktop/mobile visuals, shared theme requirements, totals semantics, data states, preserved interactions and acceptance criteria.
+- [x] Architect produces a traceable component/data/aggregation, testing and staged rollout plan.
+- [x] Implement selected Calendar, shared dashboard navigation/theme rollout gate, source metadata, totals aggregation, and entry positioning.
+- [ ] Complete flag-enabled browser/viewport/accessibility acceptance and production build review; enable only through the separate release process.
+
+See [Calendar BRD and visuals](product/calendar-month-summary/BRD.md) and [implementation plan](plans/CALENDAR_MONTH_SUMMARY_IMPLEMENTATION.md). It supersedes earlier pending-selection checklist items below.
+
+## Calendar refinement: monthly totals in options 07–09
+
+- [x] Preserve the three accepted visual directions and add a whole-month summary beneath the final week.
+- [x] Separate planned/recorded distance, duration and counts; exclude adjacent-month dates from monthly totals.
+- [ ] Owner selects a final composition; implementation and production release remain pending.
+
+See [monthly-total variants](design/calendar-theme-round-3/README.md).
+
+## Calendar design revision: replacement options 04–06
+
+- [x] Record rejection of the initial designs; full month, explicit dark theme and weekly totals are now required for every option.
+- [x] Create three replacement concepts: totals column, weekly ribbons and separate week cards within the full month.
+- [ ] Owner selects a revised composition; production implementation and release remain pending.
+
+See [revised designs](design/calendar-theme-round-2/README.md).
+
+## 1 November 2026: shared application theme / Calendar implementation
+
+- [x] Inspect option 09 Home, existing Calendar navigation and conflicting Markdown guidance.
+- [x] Document the shared visual authority, token/component migration plan and unchanged domain boundaries.
+- [x] Collaborate with UI/UX design on three responsive Calendar alternatives; deliver interactive local review artifacts.
+- [x] Owner selects Calendar option 08.
+- [x] Extract shared semantic tokens and route-aware dashboard navigation; migrate Home and Calendar together behind the rollout flag.
+- [x] Apply the shared shell to Coach, Readiness, Settings, Plan, Activities and Data Quality routes.
+- [ ] Complete enabled-flag application regression, keyboard/accessibility and viewport acceptance before release.
+
+See [design contract and acceptance](design/APP_THEME_AND_CALENDAR.md) and [implementation plan](plans/CALENDAR_MONTH_SUMMARY_IMPLEMENTATION.md). This implementation is feature-gated and not production-activated.
+
 ## 25 October 2026: Coach panel and saved discussion history
 
 - [x] 26 October: applied the archive migration to the isolated work Preview and deployed the feature to the stable staging URL. [Release and rollback evidence](deployment/coach-chat-history-staging-2026-10-26.md).

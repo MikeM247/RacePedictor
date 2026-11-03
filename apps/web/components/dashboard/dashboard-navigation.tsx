@@ -18,7 +18,7 @@ type NavigationLink = { page: DashboardPage; href: string; label: string };
 
 export function DashboardNavigation({ activePage, mobileIdentity, mobileActions }: DashboardNavigationProps) {
   const pathname = usePathname();
-  const { coachAvailable } = useDashboardFeatures();
+  const { coachAvailable, calendarMonthSummaryEnabled } = useDashboardFeatures();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const primaryLinks: NavigationLink[] = [
@@ -33,8 +33,23 @@ export function DashboardNavigation({ activePage, mobileIdentity, mobileActions 
   const links = [...primaryLinks, ...secondaryLinks];
   const isCurrent = (link: NavigationLink) => isDashboardPageCurrent(link.page, pathname, activePage);
   const pageName = links.find(isCurrent)?.label ?? "Race Predictor";
+  if (calendarMonthSummaryEnabled) {
+    const date = new Intl.DateTimeFormat("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Johannesburg" }).format(new Date());
+    return <>
+      <a className="dashboard-skip-link" href="#dashboard-main-content">Skip to page content</a>
+      <header className="shared-topnav">
+        <button ref={menuTriggerRef} type="button" className="shared-menu-trigger" aria-label="Open navigation" aria-haspopup="dialog" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+        <nav className="shared-nav-links" aria-label="Main navigation">{primaryLinks.map(link => renderLink(link))}</nav>
+        <div className="shared-nav-utility"><time>{date}</time>{secondaryLinks.map(link => renderLink(link))}</div>
+      </header>
+      <nav className="shared-mobile-nav" aria-label="Mobile navigation">{primaryLinks.map(link => renderLink(link))}</nav>
+      <NativeModal open={mobileMenuOpen} titleId="dashboard-mobile-navigation-title" onClose={() => setMobileMenuOpen(false)} returnFocusRef={menuTriggerRef} className="dashboard-mobile-nav-dialog">
+        <h2 id="dashboard-mobile-navigation-title">Navigation</h2><nav className="dashboard-mobile-drawer-links" aria-label="Application navigation">{links.map(link => renderLink(link, true))}</nav>
+      </NativeModal>
+    </>;
+  }
 
-  const renderLink = (link: NavigationLink, drawer = false) => {
+  function renderLink(link: NavigationLink, drawer = false) {
     const current = isCurrent(link);
     const path = link.page === "home"
       ? "M3 10 12 3l9 7v11h-6v-7H9v7H3Z"
@@ -57,7 +72,7 @@ export function DashboardNavigation({ activePage, mobileIdentity, mobileActions 
         <span>{link.label}</span>
       </Link>
     );
-  };
+  }
 
   return (
     <>
@@ -79,12 +94,10 @@ export function DashboardNavigation({ activePage, mobileIdentity, mobileActions 
             {mobileIdentity ?? <strong>{pageName}</strong>}
           </div>
           {mobileActions}
-          <Link className="dashboard-mobile-home" href="/dashboard" aria-label="Race Predictor Home">
-            <Image src="/racepredictor-brand.png" alt="" aria-hidden="true" width={52} height={42} sizes="52px" priority />
-          </Link>
+          <Link className="dashboard-mobile-home" href="/dashboard" aria-label="Race Predictor Home">Home</Link>
         </div>
         <Link className="dashboard-brand" href="/dashboard" aria-label="Race Predictor Home">
-          <Image src="/racepredictor-brand.png" alt="" aria-hidden="true" width={782} height={616} sizes="(max-width: 767px) 160px, 190px" priority />
+          Race Predictor
         </Link>
         <nav className="dashboard-nav-primary" aria-label="Primary navigation">
           {primaryLinks.map((link) => renderLink(link))}

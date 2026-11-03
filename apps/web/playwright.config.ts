@@ -48,7 +48,7 @@ export default defineConfig({
       RACEPREDICTOR_DASHBOARD_SNAPSHOT: e2eSnapshotPath,
       RACEPREDICTOR_COACH_EXCHANGE_PATH: e2eExchangePath,
       RACEPREDICTOR_VAULT_PATH: e2eVaultPath,
-      RACEPREDICTOR_DATA_SOURCE: "local",
+      RACEPREDICTOR_DATA_SOURCE: process.env.RACEPREDICTOR_DATA_SOURCE ?? "local",
       RACEPREDICTOR_UTC_OFFSET: "+02:00",
     },
   },

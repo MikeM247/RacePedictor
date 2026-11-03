@@ -36,6 +36,7 @@ import {
 } from "../../lib/recovery-context.ts";
 import { useDashboardFeatures } from "./dashboard-feature-context";
 import { NativeModal } from "../coaching/native-modal";
+import { DashboardNavigation } from "./dashboard-navigation";
 import { millisecondsUntilLocalMidnight } from "../../lib/home-midnight.ts";
 import "./option-nine-reference.css";
 import "./option-nine-home.css";
@@ -366,7 +367,7 @@ export function OptionNineHome({
   const days = target ? daysUntil(target.date, today) : null;
   return (
     <div className="option-nine-home spotlight hybrid with-achievements with-training">
-      <HomeNavigation date={date} coachAvailable={coachAvailable} />
+      <DashboardNavigation activePage="home" />
       <main className="app-main" id="dashboard-main-content" tabIndex={-1}>
         <header className="page-head">
           <div>

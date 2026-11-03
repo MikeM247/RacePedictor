@@ -1,5 +1,17 @@
 # UI_GUIDELINES.md
 
+## Option 08 implementation status — 1 November 2026
+
+The shared dark canvas, Arial application font, route-aware top navigation and mobile navigation are implemented behind `RACEPREDICTOR_CALENDAR_MONTH_SUMMARY_ENABLED` (default off), together with the responsive Option 08 Calendar. Keep Home's condensed Race face scoped to its hero. Calendar retains seven weekday columns, a weekly ribbon for each Monday–Sunday interval, month-only Planned/Recorded totals, and selected-day details below the month summary. Do not combine planned prescriptions with recorded facts or treat an approved-source fallback as an effective schedule. Preview and full accessibility acceptance remain release gates. See the [BRD](product/calendar-month-summary/BRD.md) and [implementation plan](plans/CALENDAR_MONTH_SUMMARY_IMPLEMENTATION.md).
+
+## Calendar revision: enforce the dark dashboard presentation
+
+Use explicit dark canvas, cell, control and dialog backgrounds with high-contrast text; do not rely on inherited browser/reader colour scheme. Revised Calendar proposals are full-month layouts with clearly separated planned/recorded totals per week. See [replacement concepts 04–06](design/calendar-theme-round-2/README.md). First-round concepts are rejected, not implementation references.
+
+## 1 November 2026: application-wide dashboard visual baseline
+
+[App theme and Calendar contract](design/APP_THEME_AND_CALENDAR.md) governs the new cross-page visual direction. The current option 09 Home is the reference: Arial application typography, softer navy panels, pale cyan selection and the same desktop top menu/mobile navigation across pages. This supersedes older Inter, sidebar, palette, spacing and primary-button prescriptions where they conflict with that contract. The condensed Race font remains limited to Home's race hero. Shared tokens and components must carry the theme; do not copy Home-scoped CSS into each route. Calendar layout variants remain proposals, not implemented behavior. Existing accessibility and domain-state distinctions remain binding.
+
 > **31 October 2026 · Milestone Home:** option 09 and Settings image management are implemented behind the default-off `RACEPREDICTOR_MILESTONE_HOME_ENABLED` flag. See [implementation and release handoff](plans/MILESTONE_HOME_IMPLEMENTATION.md). Existing plan approval and Settings timeline authority remain in force; production activation is a separate release step.
 
 ## Coach viewport and history controls (25 October 2026)

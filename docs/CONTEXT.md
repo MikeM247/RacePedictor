@@ -1,5 +1,17 @@
 # CONTEXT
 
+## 1 November 2026: Option 08 Calendar implementation
+
+The selected dark month-summary Calendar and cohesive dashboard shell are implemented behind `RACEPREDICTOR_CALENDAR_MONTH_SUMMARY_ENABLED` (default off). The rollout gates shared application presentation and Calendar composition together; `RACEPREDICTOR_MILESTONE_HOME_ENABLED` remains independent. Current entry/return to Calendar positions the saved-timezone current week after its date frame is ready, while explicit date/session targets and month browsing retain their requested destination. The API adds defaulted plan/schedule read statuses; weekly and whole-month totals use the shared pure aggregator and never combine planned with recorded volume. Implementation and acceptance evidence: [plan](plans/CALENDAR_MONTH_SUMMARY_IMPLEMENTATION.md), [BRD](product/calendar-month-summary/BRD.md). Preview/build/browser acceptance remains a release gate; the flag is not enabled here.
+
+## 1 November 2026: selected Calendar option 08 and BRD handoff
+
+The owner selected **08 · Month summary**: dark full-month Calendar, weekly totals ribbons and whole-month planned/recorded summary below the calendar, using the Home dashboard's shared font/navigation/theme on desktop and mobile. [The Product Owner BRD](product/calendar-month-summary/BRD.md) defines scope, totals authority/completeness, retained details/actions, visuals and architecture acceptance. Design selection is settled; architecture and implementation are pending. This supersedes earlier pending-selection wording, without changing approved-plan, activity or authentication authority. This delivery is requirements/documentation only.
+
+## 1 November 2026: dashboard theme across the application
+
+The owner requests that the recently created option 09 dashboard visual identity persist across all pages: matching typography, palette, navigation, controls and spacing, with desktop and mobile support. This extends the 31 October Home-only visual scope. Calendar is the first migration target. This delivery records the shared design contract and three reviewable Calendar concepts; it does not select a Calendar layout, change production UI, activate a feature flag, or alter athlete data. See [shared theme contract](design/APP_THEME_AND_CALENDAR.md). Existing authentication, approved-plan, effective-calendar, activity-review and Settings authority remain binding.
+
 ## 25 October 2026 scope amendment: saved Coach discussions
 
 The owner approved viewport-aware Coach panel sizing, archive-before-clear, draft preservation, and read-only Previous chats. Clear chat preserves the current generation's database records and starts a fresh discussion; Settings alone permanently deletes current and archived history. Authoritative training approval boundaries remain unchanged. See [implementation and release contract](plans/COACH_CHAT_HISTORY.md).

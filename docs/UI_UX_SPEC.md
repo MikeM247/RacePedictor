@@ -1,5 +1,21 @@
 # UI_UX_SPEC
 
+## Selected Calendar: option 08 · Month summary
+
+The owner selected and implemented option 08 behind `RACEPREDICTOR_CALENDAR_MONTH_SUMMARY_ENABLED` (default off). Follow [the Product Owner BRD and packaged visuals](product/calendar-month-summary/BRD.md) and [implementation plan](plans/CALENDAR_MONTH_SUMMARY_IMPLEMENTATION.md): full-width dark month grid, ribbon below every week, whole-month summary after the final ribbon, then selected-day summary. Month totals exclude adjacent-month dates; weeks retain all seven dates. Shared Home typography/navigation and compact Day details/Activity detail remain required. The rollout flag gates the shared theme and Calendar composition together; full preview/accessibility acceptance and production activation remain separate release gates. Earlier alternatives/pending selection below are historical.
+
+## Calendar refinement: whole-month footer
+
+The owner likes options 04–06 and requests three further variants with whole-month totals at the bottom. [Options 07–09](design/calendar-theme-round-3/README.md) retain the dark full-month layouts and weekly totals, adding planned/recorded distance, duration and counts below the calendar. Month figures exclude adjacent-month dates even when those dates contribute to a boundary-week total. See [the calculation and design contract](design/APP_THEME_AND_CALENDAR.md). Production behavior remains unchanged.
+
+## Calendar design revision: dark full month and weekly totals
+
+The owner rejected the initial Calendar designs. All three replacement proposals must use explicit dashboard-dark backgrounds and readable text, show a full month, and display planned/recorded weekly totals for every Monday–Sunday row on desktop and mobile. A one-week-only view is excluded. See [revised previews 04–06](design/calendar-theme-round-2/README.md) and [updated design contract](design/APP_THEME_AND_CALENDAR.md). Production implementation remains pending.
+
+## 1 November 2026: cohesive dashboard theme and Calendar proposals
+
+The owner extends option 09 Home's visual direction to the entire app. All routes must eventually share its navigation, application font, palette and controls; Calendar is first. [The dated contract](design/APP_THEME_AND_CALENDAR.md) records current implementation gaps, shared-component migration, and desktop/mobile acceptance. The [interactive Calendar concepts](design/calendar-theme-2026-11-01/index.html) present exactly three alternatives. Each retains Monday–Sunday headings and seven-column weeks at desktop and mobile widths; full phone detail appears below the grid. This is design work, not a shipped Calendar replacement. Current month/day dialogs, activity details, timezone, deep links and permitted session actions remain the implemented behavior until a selected layout is delivered. These later visual requirements supersede conflicting historical rail/font guidance below.
+
 > **31 October 2026 · Milestone Home:** option 09 and Settings image management are implemented behind the default-off `RACEPREDICTOR_MILESTONE_HOME_ENABLED` flag. See [implementation and release handoff](plans/MILESTONE_HOME_IMPLEMENTATION.md). Existing plan approval and Settings timeline authority remain in force; production activation is a separate release step.
 
 ## Scenic startup (27 October 2026)

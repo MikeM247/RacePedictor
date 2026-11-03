@@ -1,5 +1,7 @@
 # Race Predictor Design System Rules
 
+> **1 November 2026 visual amendment:** [APP_THEME_AND_CALENDAR.md](APP_THEME_AND_CALENDAR.md) supersedes this document's older palette, Inter typography, desktop rail, content geometry and button-colour rules for the new app-wide visual direction. Use option 09 Home's Arial UI, navy surfaces, pale cyan navigation and shared shell. Preserve the compatible accessibility, state, data and interaction rules below. Application migration is planned; Calendar concepts are not implementation evidence.
+
 Implementation guide · 12 September 2026
 
 This document expands [DESIGN_INTENT_CONTRACT.md](DESIGN_INTENT_CONTRACT.md) and [SCREEN_SPECIFICATIONS.md](SCREEN_SPECIFICATIONS.md). It is binding for visual and component implementation. It preserves the dark, matte Night Ops direction and does not introduce a new visual identity.

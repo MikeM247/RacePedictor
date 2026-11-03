@@ -1,5 +1,14 @@
 # API_CONTRACT
 
+## Calendar month-summary response metadata (1 November 2026)
+
+`GET /api/v1/coaching/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD` retains its existing inclusive date-range contract and adds two defaulted response fields in `calendarRouteDataSchema`:
+
+- `planReadStatus`: `active`, `none`, or `unavailable`. `none` is a successful determination that no active plan exists; `unavailable` means authoritative plan context could not be read.
+- `scheduleReadStatus`: `effective`, `approved_fallback`, or `unavailable`. An approved-plan fallback is reference content and must not be represented as verified effective-schedule totals.
+
+`activitiesReadStatus` remains unchanged. Local and cloud responses populate all three statuses. Calendar requests the Monday–Sunday frame around the selected month; totals are derived only after parsing the response with the shared Zod contract. No endpoint or database migration is introduced. See [Option 08 implementation](plans/CALENDAR_MONTH_SUMMARY_IMPLEMENTATION.md).
+
 ## Coach saved discussions (25 October 2026)
 
 The additive archive command and paginated history reads are specified in [Coach chat history](plans/COACH_CHAT_HISTORY.md#interfaces). All require an authenticated owner session and athlete scope; mutations require same origin. Existing permanent-history deletion now includes archived generations. Responses remain private/no-store.

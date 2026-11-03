@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../../packages/core/src/contracts/activity";
 import { readActivityDetailResponse } from "../../lib/activities-api-client";
 import { ActivityRecordContent } from "../activities/activities-shell";
 import { ActivityDetailDialog } from "../activities/activity-detail-dialog";
 import { TrainingTools } from "../dashboard/training-tools";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
+import { useDashboardFeatures } from "../dashboard/dashboard-feature-context";
 import {
   canAmendFutureSession,
   canRecordPastSessionSkip,
@@ -37,8 +38,10 @@ import { ActivePlanOverview } from "./active-plan-overview";
 import { DailyWellbeingHistory } from "./daily-wellbeing-history";
 import { CalendarDaySummary } from "./calendar-day-summary";
 import { calendarDayRecords, compactCalendarMetric } from "../../lib/calendar-display";
+import { calculateCalendarTotals } from "../../lib/calendar-totals";
 import { useModalKeyboard } from "./use-modal-keyboard";
 import {
+  calendarRouteDataSchema,
   activePlanApiResponseSchema,
   currentContextApiResponseSchema,
   latestProposalApiResponseSchema,
@@ -405,12 +408,13 @@ export function PlanPage({ onlineMode = false }: { onlineMode?: boolean }) {
   useEffect(() => {
     const open = Boolean(confirmation);
     const content = document.querySelector<HTMLElement>(".coaching-content--plan");
-    const nav = document.querySelector<HTMLElement>(".dashboard-nav");
+    const navigation = Array.from(document.querySelectorAll<HTMLElement>(".dashboard-nav, .shared-topnav, .shared-mobile-nav, .dashboard-skip-link"));
     if (!open || !content) return;
     const background = Array.from(content.children).filter((element) => !element.classList.contains("coach-dialog-backdrop")) as HTMLElement[];
+    const priorInert = new Map<HTMLElement, boolean>([...background, ...navigation].map((element) => [element, element.inert]));
     background.forEach((element) => { element.inert = true; });
-    if (nav) nav.inert = true;
-    return () => { background.forEach((element) => { element.inert = false; }); if (nav) nav.inert = false; };
+    navigation.forEach((element) => { element.inert = true; });
+    return () => { priorInert.forEach((wasInert, element) => { element.inert = wasInert; }); };
   }, [confirmation]);
 
   useEffect(() => {
@@ -946,6 +950,7 @@ function formatPace(secondsPerKm: number) {
 }
 
 export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }: { initialDate?: string; focusSessionId?: string; onlineMode?: boolean }) {
+  const { calendarMonthSummaryEnabled } = useDashboardFeatures();
   const [compactCalendar, setCompactCalendar] = useState(false);
   const [planTimezone, setPlanTimezone] = useState(timezoneDefault);
   const today = localDateInTimezone(planTimezone);
@@ -956,9 +961,15 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const [, setDateTick] = useState(0);
   const [activityDetailRetry, setActivityDetailRetry] = useState(0);
   const focusedRecordRef = useRef<string | null>(null);
+  const entryPositioned = useRef(false);
+  const entryPositioningCancelled = useRef(false);
+  const requestedPositionDate = useRef<string | null>(null);
+  const dateChangedByUser = useRef(false);
   const [sessions, setSessions] = useState<CalendarSessionView[]>([]);
   const [activities, setActivities] = useState<CalendarActivityView[]>([]);
   const [activitiesReadStatus, setActivitiesReadStatus] = useState<"available" | "unavailable">("available");
+  const [planReadStatus, setPlanReadStatus] = useState<"active" | "none" | "unavailable">("unavailable");
+  const [scheduleReadStatus, setScheduleReadStatus] = useState<"effective" | "approved_fallback" | "unavailable">("unavailable");
   const [rangeAnnouncement, setRangeAnnouncement] = useState("");
   const [activityDetails, setActivityDetails] = useState<Record<string, ActivityDetailState>>({});
   const activityDetailsRef = useRef(activityDetails);
@@ -998,6 +1009,64 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   const range = calendarMonthRange(anchorDate, planTimezone);
 
   useEffect(() => {
+    if (focusSessionId || !initialDate || window.history.state?.racePredictorCalendarDate !== "automatic") return;
+    initialDateResolved.current = true;
+    setAnchorDate(today);
+    setSelectedDate(today);
+  }, []);
+
+  useEffect(() => {
+    const restoreCalendarEntry = (event: PageTransitionEvent) => {
+      if (!event.persisted || focusSessionId || window.history.state?.racePredictorCalendarDate !== "automatic") return;
+      initialDateResolved.current = true;
+      entryPositioned.current = false;
+      entryPositioningCancelled.current = false;
+      requestedPositionDate.current = null;
+      setAnchorDate(today);
+      setSelectedDate(today);
+    };
+    window.addEventListener("pageshow", restoreCalendarEntry);
+    return () => window.removeEventListener("pageshow", restoreCalendarEntry);
+  }, [focusSessionId, today]);
+
+  useEffect(() => {
+    const cancelEntryPositioning = () => { entryPositioningCancelled.current = true; };
+    window.addEventListener("wheel", cancelEntryPositioning, { passive: true });
+    window.addEventListener("touchstart", cancelEntryPositioning, { passive: true });
+    window.addEventListener("pointerdown", cancelEntryPositioning, { passive: true });
+    window.addEventListener("keydown", cancelEntryPositioning);
+    return () => {
+      window.removeEventListener("wheel", cancelEntryPositioning);
+      window.removeEventListener("touchstart", cancelEntryPositioning);
+      window.removeEventListener("pointerdown", cancelEntryPositioning);
+      window.removeEventListener("keydown", cancelEntryPositioning);
+    };
+  }, []);
+
+  useEffect(() => {
+    const updateStickyHeights = () => {
+      const topnav = document.querySelector<HTMLElement>(".shared-topnav");
+      const controls = document.querySelector<HTMLElement>(".calendar-controls");
+      const style = document.documentElement.style;
+      style.setProperty("--calendar-nav-height", `${topnav?.getBoundingClientRect().height ?? 0}px`);
+      style.setProperty("--calendar-controls-height", `${controls?.getBoundingClientRect().height ?? 0}px`);
+    };
+    updateStickyHeights();
+    const observer = new ResizeObserver(updateStickyHeights);
+    const topnav = document.querySelector<HTMLElement>(".shared-topnav");
+    const controls = document.querySelector<HTMLElement>(".calendar-controls");
+    if (topnav) observer.observe(topnav);
+    if (controls) observer.observe(controls);
+    window.addEventListener("resize", updateStickyHeights);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateStickyHeights);
+      document.documentElement.style.removeProperty("--calendar-nav-height");
+      document.documentElement.style.removeProperty("--calendar-controls-height");
+    };
+  }, []);
+
+  useEffect(() => {
     const media = window.matchMedia("(max-width: 1199px)");
     const update = () => {
       setCompactCalendar(media.matches);
@@ -1014,7 +1083,8 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     const params = new URLSearchParams(window.location.search);
     params.set("date", selectedDate);
     if (!selectedDetail) params.delete("session");
-    window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+    const state = { ...(window.history.state ?? {}), ...(dateChangedByUser.current ? { racePredictorCalendarDate: "automatic" } : {}) };
+    window.history.replaceState(state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }, [selectedDate, selectedDetail]);
 
   async function loadCalendar(successMessage?: string) {
@@ -1030,10 +1100,14 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
         apiRequest("/api/v1/coaching/today", { signal: request.signal }).catch(() => null),
       ]);
       if (calendarRequestRef.current !== request) return;
+      const calendarData = calendarRouteDataSchema.parse(response);
+      if (calendarData.from !== range.from || calendarData.to !== range.to) {
+        throw new Error("Calendar response did not match the requested date range.");
+      }
       const activeRecord = asRecord(active);
       const startsOn = String(activeRecord.startsOn ?? "");
       const endsOn = String(activeRecord.endsOn ?? "");
-      const timezone = String(response.timezone ?? activeRecord.timezone ?? timezoneDefault);
+      const timezone = String(calendarData.timezone ?? activeRecord.timezone ?? timezoneDefault);
       setPlanTimezone(timezone);
       if (!loadedOnce.current && !initialDateResolved.current) {
         initialDateResolved.current = true;
@@ -1046,11 +1120,13 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       setPlanRange(/^\d{4}-\d{2}-\d{2}$/.test(startsOn) && /^\d{4}-\d{2}-\d{2}$/.test(endsOn) ? { startsOn, endsOn } : null);
       const stale = asRecord(asRecord(todayContext).stale);
       setStaleMessage(stale.isStale === true ? String(stale.reason ?? "The approved schedule was built from older activity history.") : undefined);
-      const normalizedSessions = normalizeCalendarSessions(response);
-      const normalizedActivities = normalizeCalendarActivities(response);
+      const normalizedSessions = normalizeCalendarSessions(calendarData);
+      const normalizedActivities = normalizeCalendarActivities(calendarData);
       setSessions(normalizedSessions);
       setActivities(normalizedActivities);
-      setActivitiesReadStatus(calendarActivitiesReadStatus(response));
+      setActivitiesReadStatus(calendarActivitiesReadStatus(calendarData));
+      setPlanReadStatus(calendarData.planReadStatus);
+      setScheduleReadStatus(calendarData.scheduleReadStatus);
       setSelectedDetail((current) => {
         if (current?.kind === "session" && normalizedSessions.some((session) => session.id === current.id)) return current;
         if (current?.kind === "activity" && normalizedActivities.some((activity) => activity.id === current.id)) return current;
@@ -1098,14 +1174,14 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   useEffect(() => {
     const open = Boolean(selectedDetail || pending || amendDraft);
     const content = document.querySelector<HTMLElement>(".coaching-content--calendar");
-    const nav = document.querySelector<HTMLElement>(".dashboard-nav");
+    const navigation = Array.from(document.querySelectorAll<HTMLElement>(".dashboard-nav, .shared-topnav, .shared-mobile-nav, .dashboard-skip-link"));
     if (!open || !content) return;
     const background = Array.from(content.children).filter((element) => !element.classList.contains("coach-dialog-backdrop")) as HTMLElement[];
+    const priorInert = new Map<HTMLElement, boolean>([...background, ...navigation].map((element) => [element, element.inert]));
     background.forEach((element) => { element.inert = true; });
-    if (nav) nav.inert = true;
+    navigation.forEach((element) => { element.inert = true; });
     return () => {
-      background.forEach((element) => { element.inert = false; });
-      if (nav) nav.inert = false;
+      priorInert.forEach((wasInert, element) => { element.inert = wasInert; });
     };
   }, [selectedDetail, pending, amendDraft]);
 
@@ -1126,6 +1202,40 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     setFocusMessage("The linked session was not found in this calendar view. Check that the link date matches the approved session.");
     focusHandled.current = focusKey;
   }, [focusSessionId, range.from, sessions, state]);
+
+  useEffect(() => {
+    if (state !== "success" || (entryPositioned.current && !requestedPositionDate.current) || entryPositioningCancelled.current) return;
+    const requestedDate = requestedPositionDate.current;
+    const explicitDate = initialDate && window.history.state?.racePredictorCalendarDate !== "automatic";
+    if (!requestedDate && !explicitDate && (planReadStatus === "unavailable" || focusSessionId)) return;
+    const positionDate = requestedDate ?? (explicitDate ? initialDate : today);
+    if (!positionDate.startsWith(range.month)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const day = document.getElementById(`calendar-day-${positionDate}`);
+      const week = day?.closest<HTMLElement>(".calendar-week-row");
+      if (week) {
+        const dateCell = document.getElementById(`calendar-day-${positionDate}`);
+        const navHeight = document.querySelector<HTMLElement>(".shared-topnav")?.getBoundingClientRect().height ?? 0;
+        const controlsHeight = document.querySelector<HTMLElement>(".calendar-controls")?.getBoundingClientRect().height ?? 0;
+        const weekdayHeight = document.querySelector<HTMLElement>(".calendar-weekday-headings")?.getBoundingClientRect().height ?? 0;
+        const bottomNavHeight = document.querySelector<HTMLElement>(".shared-mobile-nav")?.getBoundingClientRect().height ?? 0;
+        const topInset = navHeight + controlsHeight + weekdayHeight;
+        const bottomInset = bottomNavHeight + 12;
+        const rowRect = week.getBoundingClientRect();
+        const dateRect = dateCell?.getBoundingClientRect();
+        let delta = 0;
+        if (rowRect.top < topInset || rowRect.bottom > window.innerHeight - bottomInset) {
+          if (rowRect.height <= window.innerHeight - topInset - bottomInset) delta = rowRect.top - topInset;
+          else if (dateRect && dateRect.top < topInset) delta = dateRect.top - topInset;
+          else if (dateRect && dateRect.bottom > window.innerHeight - bottomInset) delta = dateRect.bottom - (window.innerHeight - bottomInset);
+        }
+        if (delta !== 0) window.scrollBy({ top: delta, behavior: "instant" });
+        entryPositioned.current = true;
+        requestedPositionDate.current = null;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [state, planReadStatus, focusSessionId, initialDate, today, range.month, selectedDate]);
 
   useEffect(() => {
     if (!selectedCalendarActivity) return;
@@ -1156,8 +1266,13 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     return () => window.cancelAnimationFrame(frame);
   }, [selectedDetail, activityDetails, sessions]);
 
-  function chooseDate(date: string) {
+  function chooseDate(date: string, positionWeek = false) {
+    dateChangedByUser.current = true;
     initialDateResolved.current = true;
+    if (positionWeek) {
+      requestedPositionDate.current = date;
+      entryPositioningCancelled.current = false;
+    }
     setSelectedDate(date);
     setAnchorDate(date);
     setFocusMessage(undefined);
@@ -1180,9 +1295,13 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   function moveMonth(offset: number) {
     if (selectedDetail) return;
     initialDateResolved.current = true;
+    dateChangedByUser.current = true;
     const date = new Date(Date.UTC(Number(anchorDate.slice(0, 4)), Number(anchorDate.slice(5, 7)) - 1 + offset, 1));
-    setAnchorDate(date.toISOString().slice(0, 10));
-    setSelectedDate(date.toISOString().slice(0, 10));
+    const firstDate = date.toISOString().slice(0, 10);
+    requestedPositionDate.current = firstDate;
+    entryPositioningCancelled.current = false;
+    setAnchorDate(firstDate);
+    setSelectedDate(firstDate);
     setFocusMessage(undefined);
     setSelectedDetail(null);
   }
@@ -1393,43 +1512,19 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   }
 
   function weekTotals(week: { from: string; to: string }) {
-    const weekActivities = activities.filter((activity) => activity.localDate >= week.from && activity.localDate <= week.to);
-    const weekSessions = sessions.filter((session) => session.effectiveDate >= week.from && session.effectiveDate <= week.to && session.kind === "run" && session.status !== "skipped");
-    const calories = weekActivities.filter((activity) => activity.calories !== null).reduce((sum, activity) => sum + (activity.calories ?? 0), 0);
-    return {
-      activities: weekActivities.length,
-      distance: weekActivities.reduce((sum, activity) => sum + activity.distanceMeters, 0),
-      time: weekActivities.reduce((sum, activity) => sum + activity.elapsedTimeSeconds, 0),
-      calories,
-      caloriesKnown: weekActivities.some((activity) => activity.calories !== null),
-      plannedDistance: weekSessions.reduce((sum, session) => sum + (session.distanceMeters ?? 0), 0),
-      plannedDistanceKnown: weekSessions.every((session) => session.distanceMeters !== undefined),
-      plannedTime: weekSessions.reduce((sum, session) => sum + session.durationMinutes * 60, 0),
-      plannedSessions: weekSessions.length,
-    };
+    return calculateCalendarTotals({ from: week.from, to: week.to, sessions, activities, planReadStatus, scheduleReadStatus, activitiesReadStatus });
   }
 
-  const monthActivities = activities.filter((activity) => activity.localDate.startsWith(`${range.month}-`));
-  const monthSessions = sessions.filter((session) => session.effectiveDate.startsWith(`${range.month}-`) && session.kind === "run" && session.status !== "skipped");
-  const monthTotals = {
-    distance: monthActivities.reduce((sum, activity) => sum + activity.distanceMeters, 0),
-    time: monthActivities.reduce((sum, activity) => sum + activity.elapsedTimeSeconds, 0),
-    calories: monthActivities.filter((activity) => activity.calories !== null).reduce((sum, activity) => sum + (activity.calories ?? 0), 0),
-    caloriesKnown: monthActivities.some((activity) => activity.calories !== null),
-    plannedDistance: monthSessions.reduce((sum, session) => sum + (session.distanceMeters ?? 0), 0),
-    plannedDistanceKnown: monthSessions.every((session) => session.distanceMeters !== undefined),
-    plannedTime: monthSessions.reduce((sum, session) => sum + session.durationMinutes * 60, 0),
-    plannedSessions: monthSessions.length,
-  };
+  const lastMonthDay = new Date(Date.UTC(Number(range.month.slice(0, 4)), Number(range.month.slice(5, 7)), 0)).getUTCDate();
+  const monthTotals = calculateCalendarTotals({ from: `${range.month}-01`, to: `${range.month}-${String(lastMonthDay).padStart(2, "0")}`, sessions, activities, planReadStatus, scheduleReadStatus, activitiesReadStatus });
   const formatDistance = (meters: number) => `${Number((meters / 1000).toFixed(1))} km`;
   const formatMinutes = (seconds: number) => `${Math.floor(seconds / 60)}m`;
   const renderWeekTotal = (week: { from: string; to: string }) => {
     const totals = weekTotals(week);
     return <aside className="calendar-week-total" aria-label={`Totals for week of ${formatCoachingDate(week.from, planTimezone)}`}>
-      <span>Week of {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: planTimezone }).format(new Date(`${week.from}T12:00:00.000Z`))}</span>
-      <strong>{formatDistance(totals.distance)}</strong>
-      <small>{formatMinutes(totals.time)} · {totals.activities} {totals.activities === 1 ? "run" : "runs"}</small>
-      <em>Plan: {totals.plannedDistanceKnown ? formatDistance(totals.plannedDistance) : "distance n/a"} · {formatMinutes(totals.plannedTime)}</em>
+      <time>Week of {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: planTimezone }).format(new Date(`${week.from}T12:00:00.000Z`))}</time>
+      <div className="calendar-week-total-fact calendar-week-total-fact--recorded"><span>Recorded</span><strong>{totals.recorded.complete ? formatDistance(totals.recorded.distanceMeters) : "Unavailable"}<small> distance</small></strong><details><summary>Duration and count</summary><span>{totals.recorded.complete ? `${formatMinutes(totals.recorded.durationSeconds)} · ${totals.recorded.activityCount} ${totals.recorded.activityCount === 1 ? "activity" : "activities"}` : "Recorded totals unavailable"}</span></details></div>
+      <div className="calendar-week-total-fact calendar-week-total-fact--planned"><span>{scheduleReadStatus === "approved_fallback" ? "Approved source" : "Planned"}</span><strong>{planReadStatus === "none" ? "No active plan" : planReadStatus === "unavailable" || scheduleReadStatus === "unavailable" ? "Unavailable" : totals.planned.missingRecordCount > 0 ? "Incomplete" : formatDistance(totals.planned.distanceMeters)}{planReadStatus === "active" && scheduleReadStatus === "effective" && totals.planned.missingRecordCount === 0 ? <small> distance</small> : null}</strong><details><summary>Duration and count</summary><span>{planReadStatus === "none" ? "No active plan" : planReadStatus === "unavailable" || scheduleReadStatus === "unavailable" ? "Plan totals unavailable" : `${formatMinutes(totals.planned.durationSeconds)} · ${totals.planned.sessionCount} ${totals.planned.sessionCount === 1 ? "session" : "sessions"}${scheduleReadStatus === "approved_fallback" ? " · reference only" : ""}`}</span></details></div>
     </aside>;
   };
 
@@ -1439,7 +1534,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
   };
 
   return <CoachShell page="calendar" title="Calendar" subtitle="Your planned sessions and recorded activities" meta={planTimezone}>
-    <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="calendar-month-toolbar"><button className="button button-secondary" type="button" onClick={() => moveMonth(-1)} aria-label="Previous month">‹</button><label className="calendar-month-picker"><span className="sr-only">Choose month</span><select value={range.month} onChange={(event) => chooseDate(`${event.target.value}-01`)} aria-label="Choose month and year">{Array.from({ length: 36 }, (_, index) => { const year = Number(range.month.slice(0, 4)) - 1 + Math.floor(index / 12); const month = String((index % 12) + 1).padStart(2, "0"); return <option value={`${year}-${month}`} key={`${year}-${month}`}>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(`${year}-${month}-01T12:00:00.000Z`))}</option>; })}</select></label><button className="button button-secondary" type="button" onClick={() => moveMonth(1)} aria-label="Next month">›</button><button className="button button-secondary" type="button" onClick={() => chooseDate(today)}>Today</button></div><div className="calendar-legend"><span>● Planned</span><span>● Recorded</span></div><p id="calendar-scroll-help" className="sr-only">Select a date, then open any planned session or recorded activity.</p></section>
+      <section className="coach-panel calendar-controls" aria-label="Calendar controls"><div className="calendar-month-toolbar"><button className="button button-secondary" type="button" onClick={() => moveMonth(-1)} aria-label="Previous month">‹</button><label className="calendar-month-picker"><span className="sr-only">Choose month</span><select value={range.month} onChange={(event) => chooseDate(`${event.target.value}-01`, true)} aria-label="Choose month and year">{Array.from({ length: 36 }, (_, index) => { const year = Number(range.month.slice(0, 4)) - 1 + Math.floor(index / 12); const month = String((index % 12) + 1).padStart(2, "0"); return <option value={`${year}-${month}`} key={`${year}-${month}`}>{new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(`${year}-${month}-01T12:00:00.000Z`))}</option>; })}</select></label><button className="button button-secondary" type="button" onClick={() => moveMonth(1)} aria-label="Next month">›</button><button className="button button-secondary" type="button" onClick={() => { entryPositioned.current = false; entryPositioningCancelled.current = false; chooseDate(today, true); }}>Today</button></div><div className="calendar-legend"><span>● Planned</span><span>● Recorded</span></div><p id="calendar-scroll-help" className="sr-only">Select a date, then open any planned session or recorded activity.</p></section>
     {state === "loading" ? <StatusLine state="loading" message={message} /> : null}
     {state === "error" ? <section className="coach-panel calendar-state-panel calendar-state-panel--error" role="alert"><h2>Calendar could not be loaded</h2><p>{message ?? "The approved schedule is temporarily unavailable."}</p><button className="button button-primary" type="button" onClick={() => void loadCalendar()}>Retry calendar</button></section> : null}
     {state === "success" && message ? <StatusLine state="success" message={message} /> : null}
@@ -1450,18 +1545,16 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     {state === "success" ? <><div className="calendar-presentation"><section className="calendar-month-region" aria-label={`${range.monthLabel} training calendar`} aria-describedby="calendar-scroll-help" tabIndex={0} onKeyDown={handleCalendarKeyDown}>
     <section className="calendar-weeks">
       <div className="calendar-weekday-headings">{weekdays.map((weekday) => <strong key={weekday}>{weekday.slice(0, 3)}</strong>)}</div>
-      {range.weeks.map((week) => <section className="calendar-week-row" aria-label={`Week of ${formatCoachingDate(week.from, planTimezone)}`} key={week.from}>
+      {range.weeks.map((week) => <Fragment key={week.from}><section className="calendar-week-row" aria-label={`Week of ${formatCoachingDate(week.from, planTimezone)}`}>
         {Array.from({ length: 7 }, (_, index) => {
           const day = new Date(`${week.from}T00:00:00.000Z`);
           day.setUTCDate(day.getUTCDate() + index);
           return day.toISOString().slice(0, 10);
         }).map((date) => renderCalendarDay(date, range.month))}
-      </section>)}
+      </section>{calendarMonthSummaryEnabled ? renderWeekTotal(week) : null}</Fragment>)}
     </section>
-    </section><aside className="calendar-selected-day" aria-label="Selected day">{daySummary(selectedDate)}</aside></div>
-    <details className="calendar-totals"><summary>Training totals and timezone</summary><p className="quiet-copy">Dates use {planTimezone}. Planned totals and recorded totals are separate.</p><div className="calendar-week-totals-list">{range.weeks.map((week) => <div key={week.from}>{renderWeekTotal(week)}</div>)}</div>
-    <section className="calendar-month-summary" aria-label={`${range.monthLabel} at a glance`}><div><span className="eyebrow">{range.monthLabel} at a glance</span><strong>{monthActivities.length}</strong><small>recorded runs</small></div><div><strong>{formatDistance(monthTotals.distance)}</strong><small>recorded distance</small></div><div><strong>{formatMinutes(monthTotals.time)}</strong><small>recorded time</small></div><div><strong>{monthTotals.caloriesKnown ? monthTotals.calories.toLocaleString() : "Unavailable"}</strong><small>calories</small></div><div className="calendar-planned-summary"><strong>{monthTotals.plannedDistanceKnown ? formatDistance(monthTotals.plannedDistance) : "Distance n/a"}</strong><small>planned · {monthTotals.plannedSessions} sessions · {formatMinutes(monthTotals.plannedTime)}</small></div></section>
-    </details></> : null}
+    </section>{calendarMonthSummaryEnabled ? null : <aside className="calendar-selected-day" aria-label="Selected day">{daySummary(selectedDate)}</aside>}</div>
+    {calendarMonthSummaryEnabled ? <><section className="calendar-month-summary-option-08" aria-label={`${range.monthLabel} whole-month totals`}><header><div><p className="eyebrow">Whole-month totals</p><h2>{range.monthLabel}</h2></div><p>1–{lastMonthDay} {range.monthLabel} · Dates use {planTimezone}</p></header><div className="summary-groups"><section className="summary-group summary-group--planned" aria-label="Planned month totals"><h3>{scheduleReadStatus === "approved_fallback" ? "Planned · approved source reference" : "Planned"}</h3>{scheduleReadStatus === "approved_fallback" ? <p className="calendar-summary-source-note">Approved plan reference only; not verified effective-schedule totals.</p> : null}<dl><div><dt>Distance</dt><dd>{planReadStatus === "unavailable" || scheduleReadStatus === "unavailable" ? "Unavailable" : planReadStatus === "none" ? "No active plan" : monthTotals.planned.missingRecordCount === 0 ? formatDistance(monthTotals.planned.distanceMeters) : "Incomplete"}</dd></div><div><dt>Duration</dt><dd>{planReadStatus === "active" ? formatMinutes(monthTotals.planned.durationSeconds) : planReadStatus === "none" ? "No active plan" : "Unavailable"}</dd></div><div><dt>Sessions</dt><dd>{planReadStatus === "active" ? monthTotals.planned.sessionCount : "—"}</dd></div></dl></section><section className="summary-group summary-group--recorded" aria-label="Recorded month totals"><h3>Recorded</h3><dl><div><dt>Distance</dt><dd>{monthTotals.recorded.complete ? formatDistance(monthTotals.recorded.distanceMeters) : "Unavailable"}</dd></div><div><dt>Duration</dt><dd>{monthTotals.recorded.complete ? formatMinutes(monthTotals.recorded.durationSeconds) : "Unavailable"}</dd></div><div><dt>Activities</dt><dd>{monthTotals.recorded.complete ? monthTotals.recorded.activityCount : "Unavailable"}</dd></div></dl></section></div></section><aside className="calendar-selected-day" aria-label="Selected day">{daySummary(selectedDate)}</aside></> : <details className="calendar-totals"><summary>Training totals and timezone</summary><p className="quiet-copy">Dates use {planTimezone}. Planned totals and recorded totals are separate.</p><div className="calendar-week-totals-list">{range.weeks.map((week) => <div key={week.from}>{renderWeekTotal(week)}</div>)}</div></details>}</> : null}
     {renderCalendarDetail()}
     {selectedCalendarActivity ? (() => {
       const record = activityDetails[selectedCalendarActivity];

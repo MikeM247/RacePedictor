@@ -837,6 +837,8 @@ export const calendarRouteDataSchema = z.object({
   activities: z.array(calendarActivitySchema).default([]),
   activitiesReadStatus: z.enum(["available", "unavailable"]).default("available"),
   timezone: ianaTimezoneSchema.optional(),
+  planReadStatus: z.enum(["active", "none", "unavailable"]).default("unavailable"),
+  scheduleReadStatus: z.enum(["effective", "approved_fallback", "unavailable"]).default("unavailable"),
 }).strict();
 export const calendarEditHttpRequestSchema = z.discriminatedUnion("operation", [
   z.object({

@@ -186,6 +186,18 @@ test("durable turns deduplicate by client identity, single-flight, and persist c
   ]);
 });
 
+test("repository persists and reloads a 30,000-character user message without truncation", async () => {
+  const { repository } = setup();
+  const text = "x".repeat(30_000);
+  const started = await repository.beginTurn(scope, turnInput(0, "long_reflection", text));
+  assert.equal(started.userMessage.text, text);
+  assert.equal((await complete(repository, started)).kind, "completed");
+  const state = await repository.getConversation(scope);
+  assert.equal(state.messages[0].text.length, 30_000);
+  assert.equal(state.messages[0].text, text);
+  assert.equal((await repository.getCompletedHistory(scope))[0].text, text);
+});
+
 test("spoken reply lookup is limited to completed messages in the active generation", async () => {
   const { repository } = setup();
   const pending = await repository.beginTurn(scope, turnInput(0, "voice_lookup"));

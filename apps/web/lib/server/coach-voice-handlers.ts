@@ -5,15 +5,25 @@ import {
   coachVoiceSpeechRequestSchema,
   coachVoiceTranscriptionMetadataSchema,
   coachVoiceTranscriptionResultSchema,
+  coachProgressiveSessionRequestSchema,
+  coachProgressiveSessionResponseSchema,
+  coachProgressiveChunkMetadataSchema,
+  coachProgressiveChunkResponseSchema,
+  coachProgressiveCloseRequestSchema,
+  COACH_PROGRESSIVE_MAX_CHUNK_BYTES,
+  COACH_PROGRESSIVE_MAX_DURATION_SECONDS,
   COACH_VOICE_MAX_AUDIO_BYTES,
   COACH_VOICE_MONTHLY_ALLOWANCE_MICRO_USD,
 } from "../../../../packages/core/src/contracts/coach-voice.ts";
-import { inspectCoachVoiceWav } from "../../../../packages/core/src/services/coach-voice-audio.ts";
+import { inspectCoachVoiceWav, inspectProgressiveCoachVoiceWav } from "../../../../packages/core/src/services/coach-voice-audio.ts";
 import {
   CoachVoiceBudgetError,
   CoachVoiceBusyError,
   CoachVoiceConflictError,
   CoachVoiceRateLimitError,
+  CoachProgressiveBudgetError,
+  CoachProgressiveConflictError,
+  CoachProgressiveLimitError,
 } from "../../../../packages/db/src/cloud/index.js";
 import { ApiHttpError, success } from "./api-response.ts";
 import { readCloudEnvironment } from "./cloud-environment.ts";
@@ -28,6 +38,7 @@ const DISCLOSURE_VERSION = 1 as const;
 const OPENAI_DATA_CONTROLS_URL = "https://platform.openai.com/docs/guides/your-data" as const;
 const CLIENT_TRANSCRIPTION_TIMEOUT_MS = 20_000;
 const SERVER_TRANSCRIPTION_TIMEOUT_MS = 18_000;
+const PROGRESSIVE_PROVIDER_TIMEOUT_MS = 60_000;
 const SPEECH_TIMEOUT_MS = 15_000;
 const AUDIO_TTL_MS = 300_000;
 const MAX_METADATA_HEADER_CHARS = 4_096;
@@ -51,14 +62,101 @@ export async function handleCoachVoiceCapabilities(security: SensitiveRouteConte
   const resetsAt = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1)).toISOString();
   return success(coachVoiceCapabilitiesSchema.parse({
     dictation: { available: dictationEnabled && keyAvailable, reason: dictationEnabled && keyAvailable ? "available" : !environment.features.coachChat ? "chat_paused" : !environment.features.coachUi || !environment.features.coachDictation ? "disabled" : "provider_unavailable" },
+    progressiveDictation: { available: environment.features.coachProgressiveDictation && dictationEnabled && keyAvailable },
     playback: { available: playbackEnabled && keyAvailable, reason: playbackEnabled && keyAvailable ? "available" : !environment.features.coachUi || !environment.features.coachPlayback ? "disabled" : "provider_unavailable" },
     limits: {
-      maxRecordingSeconds: 120, maxAudioBytes: COACH_VOICE_MAX_AUDIO_BYTES, maxDraftChars: 4_000,
+      maxRecordingSeconds: 120, maxAudioBytes: COACH_VOICE_MAX_AUDIO_BYTES, maxDraftChars: 30_000,
       transcriptionTimeoutMs: CLIENT_TRANSCRIPTION_TIMEOUT_MS, speechTimeoutMs: SPEECH_TIMEOUT_MS, transientAudioTtlMs: AUDIO_TTL_MS,
       monthlyAllowanceMicroUsd: Number(COACH_VOICE_MONTHLY_ALLOWANCE_MICRO_USD), remainingAllowanceMicroUsd, resetsAt,
     },
     disclosureVersion: DISCLOSURE_VERSION, providerName: "OpenAI", providerDataControlsUrl: OPENAI_DATA_CONTROLS_URL,
   }));
+}
+
+type ProgressiveProvider = { transcribeWithTimestamps(audio: Uint8Array, signal: AbortSignal): Promise<{ text: string; words: Array<{ text: string; startSeconds: number; endSeconds: number }> }> };
+
+export async function handleCoachProgressiveSessionCreate(security: SensitiveRouteContext, request: Request, compositionOverride?: VoiceComposition) {
+  const scope = requireOwnerScope(security); assertSameOrigin(request);
+  const composition = compositionOverride ?? getCloudReadComposition();
+  const env = readCloudEnvironment(); assertProgressiveEnabled(env.features, Boolean(process.env.OPENAI_API_KEY));
+  const parsed = coachProgressiveSessionRequestSchema.safeParse(await boundedJson(request));
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "The dictation session request is invalid");
+  const context = parsed.data;
+  await assertCurrentContext(composition, scope, context);
+  const marker = await composition.coachChat.getConversationMarker(scope);
+  const session = await composition.coachProgressiveDictation.createSession(scope, {
+    conversationId: marker.id, generation: context.expectedGeneration, sequence: context.expectedSequence,
+    topic: context.topic, selectedRecord: context.selectedRecord, contextFingerprint: context.contextFingerprint,
+  });
+  return privateSuccess(coachProgressiveSessionResponseSchema.parse({
+    sessionId: session.id, expiresAt: session.expiresAt.toISOString(), leaseExpiresAt: session.leaseExpiresAt.toISOString(),
+    limits: { maxDurationSeconds: COACH_PROGRESSIVE_MAX_DURATION_SECONDS, maxChunkSeconds: 30, maxChunkBytes: COACH_PROGRESSIVE_MAX_CHUNK_BYTES, maxChunks: 90 },
+  }), 201);
+}
+
+export async function handleCoachProgressiveChunk(security: SensitiveRouteContext, request: Request, sessionId: string, compositionOverride?: VoiceComposition, providerOverride?: ProgressiveProvider) {
+  const scope = requireOwnerScope(security); assertSameOrigin(request);
+  const composition = compositionOverride ?? getCloudReadComposition();
+  const env = readCloudEnvironment(); assertProgressiveEnabled(env.features, Boolean(process.env.OPENAI_API_KEY));
+  const raw = request.headers.get("x-orbit-dictation-chunk");
+  if (!raw || raw.length > MAX_METADATA_HEADER_CHARS) throw new ApiHttpError(400, "VALIDATION_ERROR", "The audio chunk request is invalid");
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch { throw new ApiHttpError(400, "VALIDATION_ERROR", "The audio chunk request is invalid"); }
+  const parsed = coachProgressiveChunkMetadataSchema.safeParse(value);
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "The audio chunk request is invalid");
+  if (request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "audio/wav") throw new ApiHttpError(415, "VOICE_INVALID_AUDIO", "This browser recording format is not supported.");
+  const session = await composition.coachProgressiveDictation.getActiveSession(scope, sessionId);
+  await assertProgressiveSessionContext(composition, scope, session);
+  const audio = await readProgressiveBody(request);
+  let facts: ReturnType<typeof inspectCoachVoiceWav>;
+  try { facts = inspectProgressiveCoachVoiceWav(audio, COACH_PROGRESSIVE_MAX_CHUNK_BYTES); }
+  catch (error) { audio.fill(0); throw toVoiceApiError(error); }
+  if (facts.isDigitalSilence) { audio.fill(0); throw new ApiHttpError(422, "VOICE_NO_SPEECH", "No speech was detected in that section."); }
+  if (facts.durationSeconds > 31 || parsed.data.capturedEndSeconds > COACH_PROGRESSIVE_MAX_DURATION_SECONDS) { audio.fill(0); throw new ApiHttpError(413, "VOICE_INVALID_AUDIO", "That audio chunk exceeds the supported limit."); }
+  const expectedAudioSeconds = parsed.data.capturedEndSeconds - parsed.data.capturedStartSeconds + parsed.data.overlapSeconds;
+  if (Math.abs(facts.durationSeconds - expectedAudioSeconds) > 0.15) { audio.fill(0); throw new ApiHttpError(422, "VOICE_INVALID_AUDIO", "The audio duration does not match its capture interval."); }
+  const startedAt = Date.now(); let admitted = false;
+  try {
+    await composition.coachProgressiveDictation.admitChunk(scope, sessionId, { ...parsed.data, audioDurationSeconds: facts.durationSeconds });
+    admitted = true;
+    const provider = providerOverride ?? voiceProvider();
+    const result = await withProviderDeadline(request, PROGRESSIVE_PROVIDER_TIMEOUT_MS, (signal) => provider.transcribeWithTimestamps(audio, signal));
+    if (result.text.trim() && !result.words.length) throw new CoachVoiceProviderError("VOICE_PROVIDER_INVALID_RESPONSE");
+    const currentSession = await composition.coachProgressiveDictation.getActiveSession(scope, sessionId);
+    await assertProgressiveSessionContext(composition, scope, currentSession);
+    const completed = await composition.coachProgressiveDictation.completeChunk(scope, parsed.data.attemptId, { state: "completed", latencyMs: Date.now() - startedAt });
+    admitted = false;
+    if (!completed) throw new ApiHttpError(409, "VOICE_ATTEMPT_EXPIRED", "That audio section expired before it completed.");
+    const words = result.words.flatMap((word) => {
+      const startSeconds = Math.max(0, parsed.data.capturedStartSeconds + word.startSeconds - parsed.data.overlapSeconds);
+      const endSeconds = Math.max(startSeconds, parsed.data.capturedStartSeconds + word.endSeconds - parsed.data.overlapSeconds);
+      const midpoint = (startSeconds + endSeconds) / 2;
+      return midpoint >= parsed.data.capturedStartSeconds && midpoint < parsed.data.capturedEndSeconds ? [{ text: word.text, startSeconds, endSeconds }] : [];
+    });
+    const text = result.words.length ? joinProgressiveWords(words.map((word) => word.text)) : result.text;
+    return privateSuccess(coachProgressiveChunkResponseSchema.parse({ sessionId, chunkIndex: parsed.data.chunkIndex, capturedStartSeconds: parsed.data.capturedStartSeconds, capturedEndSeconds: parsed.data.capturedEndSeconds, text, words }));
+  } catch (error) {
+    if (admitted) await composition.coachProgressiveDictation.completeChunk(scope, parsed.data.attemptId, { state: "failed", latencyMs: Date.now() - startedAt, safeErrorCode: voiceFailureCode(error) }).catch(() => false);
+    throw toVoiceApiError(error);
+  } finally { audio.fill(0); }
+}
+
+export async function handleCoachProgressiveHeartbeat(security: SensitiveRouteContext, request: Request, sessionId: string, compositionOverride?: VoiceComposition) {
+  const scope = requireOwnerScope(security); assertSameOrigin(request);
+  const composition = compositionOverride ?? getCloudReadComposition();
+  const env = readCloudEnvironment(); assertProgressiveEnabled(env.features, Boolean(process.env.OPENAI_API_KEY));
+  const session = await composition.coachProgressiveDictation.getActiveSession(scope, sessionId);
+  await assertProgressiveSessionContext(composition, scope, session);
+  const renewed = await composition.coachProgressiveDictation.heartbeat(scope, sessionId);
+  return privateSuccess({ sessionId, expiresAt: renewed.expiresAt.toISOString(), leaseExpiresAt: renewed.leaseExpiresAt.toISOString() });
+}
+
+export async function handleCoachProgressiveClose(security: SensitiveRouteContext, request: Request, sessionId: string, compositionOverride?: VoiceComposition) {
+  const scope = requireOwnerScope(security); assertSameOrigin(request);
+  const composition = compositionOverride ?? getCloudReadComposition();
+  const parsed = coachProgressiveCloseRequestSchema.safeParse(await boundedJson(request));
+  if (!parsed.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "The dictation close request is invalid");
+  return privateSuccess(await composition.coachProgressiveDictation.closeSession(scope, sessionId, parsed.data));
 }
 
 export async function handleCoachVoiceTranscription(security: SensitiveRouteContext, request: Request, compositionOverride?: VoiceComposition) {
@@ -195,13 +293,58 @@ async function readBoundedBody(request: Request) {
   } finally { reader.releaseLock(); }
 }
 
-async function assertCurrentContext(composition: VoiceComposition, scope: ReturnType<typeof athleteScopeFor>, input: ReturnType<typeof coachVoiceTranscriptionMetadataSchema.parse>) {
+async function assertCurrentContext(composition: VoiceComposition, scope: ReturnType<typeof athleteScopeFor>, input: { expectedGeneration: number; expectedSequence: number; topic: "prepare" | "reflect" | "general"; selectedRecord: { type: "activity" | "session"; id: string } | null; contextFingerprint: string }) {
   const context = await resolveCoachContext(composition, scope, { topic: input.topic, selectedRecord: input.selectedRecord, canSend: true });
   const marker = await composition.coachChat.getConversationMarker(scope);
   if (context.fingerprint !== input.contextFingerprint || marker.generation !== input.expectedGeneration || marker.sequence !== input.expectedSequence
     || context.selectedTopic !== input.topic || JSON.stringify(context.selectedRecord) !== JSON.stringify(input.selectedRecord)) {
     throw new ApiHttpError(409, "VOICE_CONTEXT_CHANGED", "Training context changed. Review it before recording a new message.");
   }
+}
+
+async function assertProgressiveSessionContext(composition: VoiceComposition, scope: ReturnType<typeof athleteScopeFor>, session: any) {
+  const selectedRecord = session.selectedRecordType && session.selectedRecordId ? { type: session.selectedRecordType, id: session.selectedRecordId } : null;
+  await assertCurrentContext(composition, scope, { expectedGeneration: session.generation, expectedSequence: session.sequence, topic: session.topic, selectedRecord, contextFingerprint: session.contextFingerprint });
+  const marker = await composition.coachChat.getConversationMarker(scope);
+  if (session.conversationId && marker.id !== session.conversationId) throw new ApiHttpError(409, "VOICE_CONTEXT_CHANGED", "The coaching conversation changed. Start a new dictation session.");
+}
+
+function assertProgressiveEnabled(features: ReturnType<typeof readCloudEnvironment>["features"], keyAvailable: boolean) {
+  assertDictationEnabled(features, keyAvailable);
+  if (!features.coachProgressiveDictation) throw new ApiHttpError(503, "VOICE_UNAVAILABLE", "Progressive dictation is not available right now. You can still type to ORBIT.");
+}
+
+function privateSuccess(data: unknown, status = 200) {
+  const response = success(data, status);
+  response.headers.set("cache-control", "private, no-store, max-age=0");
+  response.headers.set("pragma", "no-cache"); response.headers.set("expires", "0");
+  return response;
+}
+
+function joinProgressiveWords(words: string[]) {
+  return words.reduce((text, word) => {
+    if (!text || /^\s/u.test(word) || /^[,.;:!?)}\]]/u.test(word)) return `${text}${word}`;
+    return `${text} ${word}`;
+  }, "").trim();
+}
+
+async function readProgressiveBody(request: Request) {
+  const length = request.headers.get("content-length");
+  if (length !== null && (!/^\d+$/u.test(length) || Number(length) > COACH_PROGRESSIVE_MAX_CHUNK_BYTES)) throw new ApiHttpError(413, "VOICE_INVALID_AUDIO", "That audio chunk exceeds the supported limit.");
+  if (!request.body) throw new ApiHttpError(400, "VOICE_INVALID_AUDIO", "No audio chunk was received.");
+  const reader = request.body.getReader(); const chunks: Uint8Array[] = []; let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      total += value.byteLength;
+      if (total > COACH_PROGRESSIVE_MAX_CHUNK_BYTES) { await reader.cancel(); value.fill(0); throw new ApiHttpError(413, "VOICE_INVALID_AUDIO", "That audio chunk exceeds the supported limit."); }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); chunk.fill(0); offset += chunk.byteLength; }
+    return bytes;
+  } catch (error) { for (const chunk of chunks) chunk.fill(0); throw error; }
+  finally { reader.releaseLock(); }
 }
 
 async function withProviderDeadline<T>(request: Request, timeoutMs: number, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -252,6 +395,7 @@ function voiceFailureCode(error: unknown) {
   if (error instanceof CoachContextRecordNotFoundError) return "VOICE_CONTEXT_CHANGED";
   if (error instanceof CoachVoiceBudgetError) return "VOICE_BUDGET_EXHAUSTED";
   if (error instanceof CoachVoiceRateLimitError) return "VOICE_RATE_LIMITED";
+  if (error instanceof CoachProgressiveBudgetError || error instanceof CoachProgressiveConflictError || error instanceof CoachProgressiveLimitError) return error.code;
   if (error instanceof CoachVoiceBusyError) return "VOICE_OPERATION_BUSY";
   if (error instanceof CoachVoiceConflictError) return "VOICE_OPERATION_CONFLICT";
   if (error instanceof CoachVoiceProviderError) return error.safeCode;
@@ -263,6 +407,9 @@ function toVoiceApiError(error: unknown): ApiHttpError {
   if (error instanceof CoachVoiceBudgetError) return new ApiHttpError(429, "VOICE_BUDGET_EXHAUSTED", error.message, [], { "retry-after": String(Math.ceil((Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1) - Date.now()) / 1_000)) });
   if (error instanceof CoachVoiceRateLimitError) return new ApiHttpError(429, "VOICE_RATE_LIMITED", error.message, [], { "retry-after": String(error.retryAfterSeconds) });
   if (error instanceof CoachVoiceBusyError) return new ApiHttpError(409, "VOICE_OPERATION_BUSY", error.message);
+  if (error instanceof CoachProgressiveConflictError) return new ApiHttpError(409, error.code as ApiHttpError["code"], error.message);
+  if (error instanceof CoachProgressiveLimitError) return new ApiHttpError(429, error.code as ApiHttpError["code"], error.message, [], { "retry-after": String(error.retryAfterSeconds) });
+  if (error instanceof CoachProgressiveBudgetError) return new ApiHttpError(429, "VOICE_BUDGET_EXHAUSTED", error.message);
   if (error instanceof CoachVoiceConflictError) return new ApiHttpError(409, "VOICE_OPERATION_CONFLICT", error.message);
   if (error instanceof CoachVoiceProviderError) {
     const code = error.safeCode;

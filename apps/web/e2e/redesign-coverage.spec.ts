@@ -1,3 +1,4 @@
+import { expectDashboardNavigationAvailable } from "./test-helpers.ts";
 import { expect, test, type Page } from "@playwright/test";
 
 const overview = {
@@ -49,6 +50,7 @@ test("Readiness keeps navigation during loading and reports an error instead of 
 
 test("redesign import flow protects schema-valid partial-result messaging and recovery", async ({ page }) => {
   await page.route("**/api/v1/providers/strava/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { connection: { displayStatus: "disconnected" } } }) }));
+  await page.route("**/api/v1/imports/upload/initiate", (route) => route.fulfill({ status: 503, json: { error: { code: "UNAVAILABLE", message: "Synthetic multipart fallback" } } }));
   await page.route("**/api/v1/imports/upload", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { importId: "import_partial_1", status: "completed", sourceType: "gpx", stagedCount: 3, normalizedCount: 2, duplicateCount: 0, rejectedCount: 1, parseWarnings: ["Source row 3 was missing a timestamp."] } }) }));
   await page.goto("/dashboard/data-quality");
   await expect(page.getByRole("heading", { name: "Choose one source" })).toBeVisible();
@@ -64,10 +66,7 @@ test("mobile activity filters stay usable beside the shared dashboard navigation
   for (const width of [320, 768]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/dashboard/activities");
-    const primary = page.getByRole("navigation", { name: "Primary navigation" });
-    await expect(primary.getByRole("link", { name: "Home", exact: true })).toBeVisible();
-    await expect(primary.getByRole("link", { name: "Readiness", exact: true })).toBeVisible();
-    await expect(primary.getByRole("link", { name: "Calendar", exact: true })).toBeVisible();
+    await expectDashboardNavigationAvailable(page);
     await page.locator(".activity-filter-disclosure summary").click();
     const dateInputs = page.locator('.activity-filters input[type="date"]');
     const firstDate = await dateInputs.nth(0).boundingBox();

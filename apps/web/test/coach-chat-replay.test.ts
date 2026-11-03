@@ -36,6 +36,26 @@ test("new-turn replay returns the persisted result before rereading changed trai
   } finally { if (previous === undefined) delete process.env.RACEPREDICTOR_COACH_CHAT_ENABLED; else process.env.RACEPREDICTOR_COACH_CHAT_ENABLED = previous; delete process.env.RACEPREDICTOR_CLOUD_MODE; }
 });
 
+test("new-turn replay validates and returns a persisted 30,000-character user message intact", async () => {
+  const previous = process.env.RACEPREDICTOR_COACH_CHAT_ENABLED;
+  process.env.RACEPREDICTOR_CLOUD_MODE = "enabled";
+  process.env.RACEPREDICTOR_COACH_CHAT_ENABLED = "true";
+  try {
+    // Multi-byte text exceeds the old 32 KiB JSON body limit despite fitting the character contract.
+    const text = "é".repeat(30_000);
+    assert.equal(text.length, 30_000);
+    const request = { ...original, text };
+    const requestHash = hash({ text, topic: request.topic, selectedRecord: null, contextFingerprint: fingerprint });
+    const response = await handleCoachNewTurn(security, post(request), composition({ requestHash }, { text }));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.userMessage.text, text);
+  } finally {
+    if (previous === undefined) delete process.env.RACEPREDICTOR_COACH_CHAT_ENABLED;
+    else process.env.RACEPREDICTOR_COACH_CHAT_ENABLED = previous;
+    delete process.env.RACEPREDICTOR_CLOUD_MODE;
+  }
+});
+
 test("retry replay uses the original fingerprint and rejects a changed retry payload", async () => {
   process.env.RACEPREDICTOR_CLOUD_MODE = "enabled";
   process.env.RACEPREDICTOR_COACH_CHAT_ENABLED = "true";

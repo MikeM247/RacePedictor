@@ -140,6 +140,10 @@ test("every current sensitive API handler uses the route-level security wrapper"
     new URL("coaching/voice/capabilities/route.ts", apiRoot).href,
     new URL("coaching/voice/transcriptions/route.ts", apiRoot).href,
     new URL("coaching/voice/speech/route.ts", apiRoot).href,
+    new URL("coaching/voice/dictation-sessions/route.ts", apiRoot).href,
+    new URL("coaching/voice/dictation-sessions/[id]/chunks/route.ts", apiRoot).href,
+    new URL("coaching/voice/dictation-sessions/[id]/heartbeat/route.ts", apiRoot).href,
+    new URL("coaching/voice/dictation-sessions/[id]/close/route.ts", apiRoot).href,
   ]);
   const backfillResume = new URL(
     "providers/strava/backfill/resume/route.ts",
@@ -151,7 +155,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
   );
   assert.equal(
     routeFiles.length,
-    91,
+    95,
     "route inventory changed; classify every new route explicitly",
   );
 

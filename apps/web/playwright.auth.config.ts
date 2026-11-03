@@ -29,6 +29,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
+      RACEPREDICTOR_MILESTONE_HOME_ENABLED: "false",
       RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-auth-${process.env.RACEPREDICTOR_E2E_RUN_ID}`,
       // Dummy credentials only; OAuth requests are intercepted by the browser tests.
       AUTH_SECRET: "owner-auth-e2e-secret-with-at-least-32-characters",

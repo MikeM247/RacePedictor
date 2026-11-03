@@ -25,6 +25,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
+      RACEPREDICTOR_MILESTONE_HOME_ENABLED: "false",
       RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-coach-${process.env.RACEPREDICTOR_E2E_RUN_ID ?? "local"}`,
       RACEPREDICTOR_DATA_SOURCE: "online-fixture",
       DATABASE_URL: "postgresql://e2e:e2e@127.0.0.1:1/e2e?connect_timeout=1",

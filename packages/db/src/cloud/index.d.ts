@@ -319,6 +319,19 @@ export class CoachChatNotFoundError extends Error {}
 export class CoachChatRateLimitError extends Error { retryAfterSeconds: number; }
 export class CoachVoiceConflictError extends Error {}
 export class CoachVoiceBusyError extends Error {}
+export class CoachProgressiveBudgetError extends Error { readonly code: "VOICE_BUDGET_EXHAUSTED" }
+export class CoachProgressiveConflictError extends Error { readonly code: "VOICE_CONTEXT_CHANGED" | "VOICE_OPERATION_BUSY" | "VOICE_OPERATION_CONFLICT" | "VOICE_SESSION_EXPIRED" | "VOICE_CAPTURE_INTERVAL_INVALID" | "VOICE_RETRY_NOT_ALLOWED" }
+export class CoachProgressiveLimitError extends Error { readonly code: "VOICE_RATE_LIMITED" | "VOICE_CHUNK_LIMIT" | "VOICE_CHUNK_RATE_LIMITED"; readonly retryAfterSeconds: number }
+export class PrismaCoachProgressiveDictationRepository {
+  constructor(input: { prisma: any; now?: () => Date; newId?: () => string });
+  createSession(scope: any, binding: any): Promise<any>;
+  getActiveSession(scope: any, sessionId: string, now?: Date): Promise<any>;
+  heartbeat(scope: any, sessionId: string, now?: Date): Promise<any>;
+  admitChunk(scope: any, sessionId: string, input: any): Promise<any>;
+  completeChunk(scope: any, attemptId: string, input: any): Promise<boolean>;
+  closeSession(scope: any, sessionId: string, input?: { cancel?: boolean; now?: Date }): Promise<any>;
+  remainingAllowance(scope: any, now?: Date): Promise<number>;
+}
 export class CoachVoiceRateLimitError extends Error { retryAfterSeconds: number; }
 export class CoachVoiceBudgetError extends Error {}
 export class PrismaCoachChatRepository {

@@ -1,3 +1,4 @@
+import { expectDashboardNavigationAvailable } from "./test-helpers.ts";
 import { expect, test, type Page } from "@playwright/test";
 import { expectAxeClean, expectNoApplicationWrites, openDetailDisclosures, recordApplicationWrites } from "./test-helpers.ts";
 
@@ -47,7 +48,7 @@ test("F04 opens an in-page selected detail and preserves its list context when r
   const detail = page.getByRole("dialog", { name: "F04 selected beyond page one" });
   await expect(detail).toBeVisible();
   await expect(detail).toHaveClass(/activity-detail-inline/);
-  await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" })).toBeVisible();
+  await expectDashboardNavigationAvailable(page);
   expect(await page.locator(".activities-layout").evaluate(element => Boolean(element.closest("[inert]")))).toBe(false);
   await page.getByRole("button", { name: "← Back to Training" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

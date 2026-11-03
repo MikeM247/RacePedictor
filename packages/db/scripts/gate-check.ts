@@ -110,6 +110,7 @@ const run = async () => {
   const commandEnv: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: disposableDatabaseUrl,
+    DATABASE_URL_UNPOOLED: disposableDatabaseUrl,
     DIRECT_URL: disposableDatabaseUrl,
   };
 

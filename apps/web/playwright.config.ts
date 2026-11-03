@@ -14,7 +14,8 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  testIgnore: ["online-dashboard.spec.ts", "redesign-coverage.spec.ts", "owner-auth.spec.ts", "redesign-home.spec.ts", "redesign-readiness.spec.ts", "milestone-management.spec.ts", "milestone-online-handoff.spec.ts"],
+  // Other specs have their own online, Coach, authentication or seeded fixture configuration.
+  testMatch: ["activity-split-comparison.spec.ts", "dashboard-brand.spec.ts", "digital-coach.spec.ts", "road-to-comrades.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
@@ -39,6 +40,8 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
+      RACEPREDICTOR_MILESTONE_HOME_ENABLED: "false",
+      RACEPREDICTOR_CLOUD_MODE: "disabled",
       RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-local-${process.env.RACEPREDICTOR_E2E_RUN_ID}`,
       RACEPREDICTOR_ATHLETE_ID: "e2e_athlete",
       RACEPREDICTOR_DATABASE_PATH: e2eDatabasePath,

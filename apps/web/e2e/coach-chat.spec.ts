@@ -808,7 +808,7 @@ test("voice dictation stays in the composer, shows its listening level, and inse
   await expect(composer).toHaveValue("Keep The hill felt harder than expected. draft here");
   await expect(page.getByText("Transcription cancelled. Your draft is unchanged.")).toBeVisible();
 
-  const savedDraft = "x".repeat(3_990);
+  const savedDraft = "x".repeat(29_990);
   await composer.fill(savedDraft);
   await page.getByRole("button", { name: "Start voice dictation" }).click();
   await page.getByRole("button", { name: "Stop dictation" }).click();
@@ -856,4 +856,181 @@ test("voice permission denial explains the issue and keeps typing available", as
   const composer = page.getByRole("textbox", { name: "Message ORBIT" });
   await composer.fill("Typing remains available");
   await expect(composer).toHaveValue("Typing remains available");
+});
+
+async function progressiveFixture(page: Page, pendingPermission = false) {
+  await mockSession(page);
+  await page.addInitScript(({ pendingPermission }) => {
+    const fixture = window as any;
+    fixture.__micStops = 0;
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+      getUserMedia: async () => {
+        if (pendingPermission) await new Promise<void>((resolve) => { fixture.__allowMic = resolve; });
+        return { getTracks: () => [{ stop() { fixture.__micStops += 1; } }] };
+      },
+    } });
+    class Worklet {
+      port = { onmessage: null as any, close() {}, postMessage: (message: any) => {
+        if (message.type === 'flush') queueMicrotask(() => this.port.onmessage?.({ data: { type: 'flushed' } }));
+      } };
+      connect() { fixture.__emitSeconds = (seconds: number) => this.port.onmessage?.({ data: { type: 'pcm', frame: new Int16Array(16_000 * seconds).fill(1000) } }); return this; }
+      disconnect() {}
+    }
+    Object.defineProperty(window, 'AudioWorkletNode', { configurable: true, value: Worklet });
+    Object.defineProperty(AudioContext.prototype, 'createMediaStreamSource', { configurable: true, value: () => ({ connect() {}, disconnect() {} }) });
+    Object.defineProperty(AudioContext.prototype, 'createGain', { configurable: true, value: () => ({ gain: { value: 0 }, connect() {}, disconnect() {} }) });
+  }, { pendingPermission });
+  await page.route('**/api/v1/coaching/chat/context**', (route) => route.fulfill({ json: { data: context('general') } }));
+  await page.route('**/api/v1/coaching/chat/conversation', (route) => route.fulfill({ json: { data: conversation() } }));
+  await page.route('**/api/v1/coaching/voice/capabilities', (route) => route.fulfill({ json: { data: {
+    dictation: { available: true, reason: 'available' }, progressiveDictation: { available: true }, playback: { available: false, reason: 'disabled' },
+    limits: { maxRecordingSeconds: 120, maxAudioBytes: 3_840_044, maxDraftChars: 30_000, transcriptionTimeoutMs: 20_000, speechTimeoutMs: 15_000, transientAudioTtlMs: 300_000, monthlyAllowanceMicroUsd: 5_000_000, remainingAllowanceMicroUsd: 5_000_000, resetsAt: '2026-12-01T00:00:00.000Z' },
+    disclosureVersion: 1, providerName: 'OpenAI', providerDataControlsUrl: 'https://platform.openai.com/docs/guides/your-data',
+  } } }));
+  let starts = 0, sends = 0, chunks = 0;
+  await page.route('**/api/v1/coaching/voice/dictation-sessions', (route) => {
+    starts += 1;
+    return route.fulfill({ json: { data: { sessionId: 'browser_session', expiresAt: '2099-01-01T00:30:00.000Z', leaseExpiresAt: '2099-01-01T00:01:30.000Z', limits: { maxDurationSeconds: 900, maxChunkSeconds: 30, maxChunkBytes: 992_044, maxChunks: 90 } } } });
+  });
+  await page.route('**/dictation-sessions/browser_session/close', (route) => route.fulfill({ json: { data: { closed: true } } }));
+  await page.route('**/dictation-sessions/browser_session/heartbeat', (route) => route.fulfill({ json: { data: {} } }));
+  await page.route('**/dictation-sessions/browser_session/chunks', (route) => {
+    chunks += 1;
+    const metadata = JSON.parse(route.request().headers()['x-orbit-dictation-chunk']!);
+    expect(route.request().postDataBuffer()!.length).toBeLessThanOrEqual(992_044);
+    return route.fulfill({ json: { data: { sessionId: 'browser_session', chunkIndex: metadata.chunkIndex, capturedStartSeconds: metadata.capturedStartSeconds, capturedEndSeconds: metadata.capturedEndSeconds, text: `Section ${metadata.chunkIndex + 1}.`, words: [] } } });
+  });
+  await page.route('**/api/v1/coaching/chat/turns', (route) => { sends += 1; return route.fulfill({ json: { data: {} } }); });
+  await page.goto('/dashboard/coach');
+  await expect(page.getByRole('button', { name: 'Start dictation', exact: true })).toBeVisible();
+  return { counts: () => ({ starts, sends, chunks }) };
+}
+
+async function beginProgressive(page: Page) {
+  await page.getByRole('button', { name: 'Start dictation', exact: true }).click();
+  const disclosure = page.getByRole('button', { name: 'Continue to microphone permission' });
+  if (await disclosure.isVisible()) await disclosure.click();
+}
+
+test('progressive 15-minute capture preserves the typed draft and requires explicit reviewed insertion', async ({ page }) => {
+  const fixture = await progressiveFixture(page);
+  const composer = page.getByRole('textbox', { name: 'Message ORBIT' });
+  await composer.fill('Typed training notes');
+  await beginProgressive(page);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  for (let index = 0; index < 30; index += 1) {
+    await page.evaluate(() => (window as any).__emitSeconds(30));
+    await expect.poll(() => fixture.counts().chunks).toBe(index + 1);
+    await expect(page.locator('.coach-progressive-section-list li[data-state=complete]')).toHaveCount(index + 1);
+  }
+  await expect(page.getByRole('heading', { name: 'Review dictation' })).toBeVisible();
+  await expect(composer).toHaveValue('Typed training notes');
+  expect(fixture.counts().sends).toBe(0);
+  const review = page.getByRole('textbox', { name: 'Editable transcript' });
+  await review.fill('x'.repeat(30_001));
+  await expect(page.getByRole('button', { name: 'Add to draft', exact: true })).toBeDisabled();
+  await expect(review).toHaveValue('x'.repeat(30_001));
+  await review.fill('Corrected reflection');
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click();
+  await expect(composer).toHaveValue('Typed training notes\n\nCorrected reflection');
+  expect(fixture.counts()).toEqual({ starts: 1, sends: 0, chunks: 30 });
+  expect(await page.evaluate(() => (window as any).__micStops)).toBe(1);
+});
+
+test('progressive pause stops the microphone, resumes explicitly and confirms replacement', async ({ page }) => {
+  await progressiveFixture(page);
+  const composer = page.getByRole('textbox', { name: 'Message ORBIT' });
+  await composer.fill('Keep this draft');
+  await beginProgressive(page);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).__emitSeconds(1));
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__micStops)).toBe(1);
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).__emitSeconds(1));
+  await page.getByRole('button', { name: 'Stop and review', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Review dictation' })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Editable transcript' }).fill('Replacement reflection');
+  await page.getByRole('button', { name: 'Replace draft', exact: true }).click();
+  await expect(composer).toHaveValue('Keep this draft');
+  await page.getByRole('button', { name: 'Confirm replace', exact: true }).click();
+  await expect(composer).toHaveValue('Replacement reflection');
+});
+
+test('progressive cancellation during permission prevents late microphone activation', async ({ page }) => {
+  const fixture = await progressiveFixture(page, true);
+  await beginProgressive(page);
+  await expect(page.getByText(/Preparing microphone and private dictation/u)).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.evaluate(() => (window as any).__allowMic());
+  await expect(page.getByRole('button', { name: 'Start dictation', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).__micStops)).toBe(1);
+  expect(fixture.counts().starts).toBe(0);
+});
+
+test('progressive retry preserves review edits and requires explicit recovered-text inclusion', async ({ page }) => {
+  await progressiveFixture(page);
+  let attempts = 0;
+  await page.route('**/dictation-sessions/browser_session/chunks', (route) => {
+    attempts += 1;
+    if (attempts === 1) return route.fulfill({ status: 503, json: { error: { message: 'Temporary provider failure' } } });
+    const metadata = JSON.parse(route.request().headers()['x-orbit-dictation-chunk']!);
+    return route.fulfill({ json: { data: { sessionId: 'browser_session', chunkIndex: metadata.chunkIndex, capturedStartSeconds: metadata.capturedStartSeconds, capturedEndSeconds: metadata.capturedEndSeconds, text: 'Recovered running words.', words: [] } } });
+  });
+  await beginProgressive(page);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).__emitSeconds(30));
+  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+  expect(attempts).toBe(1);
+  await page.getByRole('button', { name: 'Stop and review', exact: true }).click();
+  const review = page.getByRole('textbox', { name: 'Editable transcript' });
+  await review.fill('My corrected opening.');
+  await page.getByRole('button', { name: 'Retry chunk', exact: true }).click();
+  await expect(page.getByRole('group', { name: 'Recovered section 1' })).toContainText('Recovered running words.');
+  await expect(review).toHaveValue('My corrected opening.');
+  await expect(page.getByRole('button', { name: 'Add to draft', exact: true })).toBeDisabled();
+  await review.fill('My corrected opening. Recovered running words.');
+  await page.getByRole('button', { name: 'Confirm included in review', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Message ORBIT' })).toHaveValue('My corrected opening. Recovered running words.');
+  expect(attempts).toBe(2);
+});
+
+test('backgrounding during a retry keeps edited review text editable and rejects the late result', async ({ page }) => {
+  await progressiveFixture(page);
+  let attempts = 0;
+  let finish!: () => void;
+  const retryGate = new Promise<void>((resolve) => { finish = resolve; });
+  await page.route('**/dictation-sessions/browser_session/chunks', async (route) => {
+    attempts += 1;
+    if (attempts === 1) return route.fulfill({ status: 503, json: { error: { message: 'Temporary failure' } } });
+    const metadata = JSON.parse(route.request().headers()['x-orbit-dictation-chunk']!);
+    await retryGate;
+    try { await route.fulfill({ json: { data: { sessionId: 'browser_session', chunkIndex: metadata.chunkIndex, capturedStartSeconds: metadata.capturedStartSeconds, capturedEndSeconds: metadata.capturedEndSeconds, text: 'Late recovered text.', words: [] } } }); } catch { /* request was aborted on hiding */ }
+  });
+  try {
+    await beginProgressive(page);
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await page.evaluate(() => (window as any).__emitSeconds(30));
+    await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Stop and review', exact: true }).click();
+    const review = page.getByRole('textbox', { name: 'Editable transcript' });
+    await review.fill('Keep my corrected reflection.');
+    await page.getByRole('button', { name: 'Retry chunk', exact: true }).click();
+    await expect.poll(() => attempts).toBe(2);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    finish();
+    await expect(review).not.toHaveAttribute('readonly', '');
+    await expect(review).toHaveValue('Keep my corrected reflection.');
+    await expect(page.getByText('Late recovered text.', { exact: true })).toHaveCount(0);
+    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange')); });
+    await page.getByRole('button', { name: 'Acknowledge omission', exact: true }).click();
+    await page.getByRole('button', { name: 'Add to draft', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Message ORBIT' })).toHaveValue('Keep my corrected reflection.');
+  } finally { finish(); }
 });

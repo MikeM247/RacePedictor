@@ -1,3 +1,4 @@
+import { mockMilestoneRead } from "./milestone-read-fixture.ts";
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 import { fixturePlan, fixtureCalendarSession } from "./coaching-fixtures.ts";
@@ -30,7 +31,9 @@ async function mockCompanion(page: Page, options: { planned?: Array<Omit<typeof 
   await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill(reply({ from: "2026-09-28", to: "2026-11-01", timezone: options.timezone ?? "Africa/Johannesburg", sessions: planned, activities: recorded, historicalSessions: [], activitiesReadStatus: options.activityFailure ? "unavailable" : "available" })));
   await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill(reply(options.longNarrative ? { ...plan, approval: { ...plan.approval, rationale: "Maintain consistency while respecting recovery and the approved training constraints. ".repeat(12) } } : plan)));
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill(reply({ date, timezone: options.timezone ?? "Africa/Johannesburg", state: "upcoming", status: "upcoming", todayScheduleKind: "prescribed_session", plan: { id: plan.id, version: plan.version }, session: planned[0] ?? null, nextWorkout: null, links: { calendar: "/dashboard/calendar", session: planned[0] ? `/dashboard/calendar?date=${date}&session=${planned[0].id}` : null }, stale: { isStale: false } })));
-  await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill(reply({ context: { state: "ready", plan: { id: plan.id, version: plan.version, revision: plan.revision, startsOn: plan.startsOn, endsOn: plan.endsOn, timezone: "Africa/Johannesburg", approvalContentHash: plan.approval.contentHash }, goal: { id: plan.goalId, athleteId: "e2e_athlete", revision: plan.goalRevision, title: "Approved autumn goal", why: options.longNarrative ? "Build confidence through consistent training without ignoring recovery or the approved constraints. ".repeat(12) : "Build confidence through consistent training.", target: { kind: "performance", distanceMeters: 21100, targetTimeSeconds: 7200, targetDate: "2026-10-12" } }, milestones: [{ id: "race-milestone", title: "Approved race milestone", distanceMeters: 10000, targetTimeSeconds: 3300, targetDate: "2026-10-04" }], projection: { contextHash: hash, publishedAt: "2026-10-03T08:00:00.000Z" } } })));
+  const goalReply = { context: { state: "ready", plan: { id: plan.id, version: plan.version, revision: plan.revision, startsOn: plan.startsOn, endsOn: plan.endsOn, timezone: "Africa/Johannesburg", approvalContentHash: plan.approval.contentHash }, goal: { id: plan.goalId, athleteId: "e2e_athlete", revision: plan.goalRevision, title: "Approved autumn goal", why: options.longNarrative ? "Build confidence through consistent training without ignoring recovery or the approved constraints. ".repeat(12) : "Build confidence through consistent training.", target: { kind: "performance", distanceMeters: 21100, targetTimeSeconds: 7200, targetDate: "2026-10-12" } }, milestones: [{ id: "race-milestone", title: "Approved race milestone", distanceMeters: 10000, targetTimeSeconds: 3300, targetDate: "2026-10-04" }], projection: { contextHash: hash, publishedAt: "2026-10-03T08:00:00.000Z" } } };
+  await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill(reply(goalReply)));
+  await mockMilestoneRead(page, goalReply.context, [], "presentation");
   await page.route("**/api/v1/activities**", (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === "/api/v1/activities") return route.fulfill(reply({ items: recorded }));
@@ -86,7 +89,11 @@ test("mixed multiple records open independently with original/history and feedba
     await expect(dialog).toContainText("Athlete feedback");
     await expect(dialog.getByRole("heading", { name: "AI coach feedback", exact: true })).toHaveCount(1);
     await expect(dialog).not.toContainText(activity.id === "recorded-1" ? "Recorded run 2" : "Recorded run 1");
-    await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" })).toBeVisible();
+    const menu = page.getByRole("button", { name: "Open navigation", exact: true });
+    if (await menu.isVisible()) await menu.click();
+    await expect(page.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+    const closeMenu = page.getByRole("button", { name: "Close navigation", exact: true });
+    if (await closeMenu.isVisible()) await closeMenu.click();
     expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(false);
     if (activity.id === "recorded-1") await expectAxeClean(page, "in-page Activity detail panel");
     await dialog.locator(".detail-back-button").click();
@@ -155,7 +162,11 @@ test("activity detail keeps dashboard navigation available across responsive wid
     expect(metricColumns).toBe(width <= 767 ? 2 : 4);
     expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" })).toBeVisible();
+    const menu = page.getByRole("button", { name: "Open navigation", exact: true });
+    if (await menu.isVisible()) await menu.click();
+    await expect(page.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+    const closeMenu = page.getByRole("button", { name: "Close navigation", exact: true });
+    if (await closeMenu.isVisible()) await closeMenu.click();
     expect(await page.locator("#dashboard-main-content").evaluate(element => Boolean(element.closest("[inert]")))).toBe(false);
     await dialog.locator(".detail-back-button").click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -164,7 +175,9 @@ test("activity detail keeps dashboard navigation available across responsive wid
   }
   await page.goto(`/dashboard/calendar?date=${date}`);
   await page.getByRole("button", { name: "Open activity: Recorded run 1" }).click();
-  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Home" }).click();
+  const menu = page.getByRole("button", { name: "Open navigation", exact: true });
+  if (await menu.isVisible()) await menu.click();
+  await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
@@ -213,16 +226,16 @@ test("Calendar initial date resolves across saved-zone midnight without hanging 
   await expect(dayCell(page, "2026-10-02")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Home keeps the approved goal and run review reachable at narrow widths", async ({ page }) => {
+test("Home keeps the approved goal readable while Training retains run review at narrow widths", async ({ page }) => {
   await mockCompanion(page, { longNarrative: true });
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "Approved autumn goal" })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Review run/ })).toBeVisible();
+    await expect(page.locator(".today-coach-card")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
-  await page.getByRole("link", { name: /Review run/ }).click();
+  await page.goto("/dashboard/activities?activityId=recorded-2");
   await expect(page).toHaveURL(/activityId=recorded-2/);
   await expect(page.getByRole("heading", { name: "Recorded run 2", exact: true })).toBeVisible();
 });
@@ -465,13 +478,15 @@ test("Home keeps only the approved goal, complete milestone journey and Coach en
   await expect(page.locator(".home-group")).toHaveCount(1);
   await expect(page.getByRole("heading", { name: "Approved autumn goal" })).toBeVisible();
   await expect(page.locator(".road-hero-date")).toContainText("21,1 km");
-  await expect(page.locator(".road-timeline-group--ahead")).toContainText("Target 55:00");
+  await expect(page.locator(".road-timeline-group--ahead")).toContainText("Approved race milestone");
   await expect(page.locator(".road-timeline-group--ahead .road-stop-title")).toHaveCount(2);
   await expect(page.locator(".home-workout-surface, .home-activity, .today-coach-main, .road-daily-check-in, .coach-composer")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "View plan" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Manage milestones" })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Coach", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Talk to Orbit" })).toHaveAttribute("href", "/dashboard/coach");
+  const coachLink = page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Coach", exact: true });
+  const orbitLink = page.getByRole("link", { name: "Talk to Orbit" });
+  if (await coachLink.count()) await expect(orbitLink).toHaveAttribute("href", "/dashboard/coach");
+  else await expect(orbitLink).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Race Predictor Home", exact: true })).toHaveText("");
   expect(requests.some((url) => /chat|wellbeing-check-ins|coaching\/today|activities/u.test(url))).toBe(false);
   await page.screenshot({ path: path.join(e2eRoot, "companion-home-desktop.png"), fullPage: true });

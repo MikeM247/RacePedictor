@@ -382,6 +382,7 @@ model Athlete {
   coachUsageBuckets       CoachUsageBucket[]
   coachVoiceUsageBuckets  CoachVoiceUsageBucket[]
   coachVoiceAttempts      CoachVoiceAttempt[]
+  coachProgressiveDictationSessions CoachProgressiveDictationSession[]
   @@map("athletes")
 }
 
@@ -1096,15 +1097,50 @@ model CoachVoiceAttempt {
   latencyMs        Int?
   safeErrorCode    String?
   leaseExpiresAt   DateTime? @db.Timestamptz(3)
+  sessionId        String?
+  chunkIndex       Int?
+  retryOrdinal     Int?
   createdAt        DateTime  @default(now()) @db.Timestamptz(3)
   completedAt      DateTime? @db.Timestamptz(3)
   updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
   athlete          Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  session          CoachProgressiveDictationSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([athleteId, operationId])
   @@index([athleteId, state, leaseExpiresAt])
   @@index([athleteId, createdAt])
+  @@unique([athleteId, sessionId, chunkIndex, retryOrdinal])
+  @@index([athleteId, sessionId, chunkIndex])
   @@map("coach_voice_attempts")
+}
+
+model CoachProgressiveDictationSession {
+  id                  String   @id @default(cuid())
+  athleteId           String
+  conversationId      String?
+  generation          Int
+  sequence            Int
+  topic               String
+  selectedRecordType  String?
+  selectedRecordId    String?
+  contextFingerprint  String
+  state               String   @default("active")
+  expiresAt           DateTime @db.Timestamptz(3)
+  leaseExpiresAt      DateTime @db.Timestamptz(3)
+  admissionMonthStart DateTime @db.Timestamptz(3)
+  reservedMicroUsd    BigInt
+  chargedMicroUsd     BigInt   @default(0)
+  capturedSeconds     Float    @default(0)
+  admittedChunks      Int      @default(0)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+  completedAt         DateTime? @db.Timestamptz(3)
+  athlete             Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  attempts            CoachVoiceAttempt[]
+
+  @@index([athleteId, state, leaseExpiresAt])
+  @@index([athleteId, admissionMonthStart])
+  @@map("coach_progressive_dictation_sessions")
 }
 
 model MilestoneImageState {

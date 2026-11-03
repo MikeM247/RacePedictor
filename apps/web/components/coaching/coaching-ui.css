@@ -183,6 +183,7 @@
 .summary-list{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
 .summary-list div{min-width:0;padding:4px 10px;border-left:1px solid var(--rp-border,#293b4e)}
 .text-link{color:var(--rp-cyan,#20c7f5)}
+.coaching-layout button.text-link{min-height:44px;padding:6px 0;border:0;background:transparent;font:inherit;cursor:pointer}
 .coaching-layout .button,.today-coach-card .button{min-height:38px;border-radius:7px;transition:border-color 150ms,color 150ms,background-color 150ms,opacity 150ms}
 .coaching-layout .button,.coaching-layout .calendar-info-button,.today-coach-card .button{min-height:44px}
 .local-plan-switch{display:flex;gap:8px;margin-bottom:12px}.local-plan-switch a{display:inline-flex;min-height:44px;align-items:center;padding:8px 14px;border:1px solid var(--rp-border-strong);border-radius:7px;color:var(--rp-text);text-decoration:none}.local-plan-switch a[aria-current="page"]{border-color:var(--rp-cyan);background:var(--rp-surface-raised)}

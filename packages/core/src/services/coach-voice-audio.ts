@@ -11,8 +11,17 @@ const MAX_PCM_SAMPLES = SAMPLE_RATE * COACH_VOICE_MAX_DURATION_SECONDS;
 
 /** Encodes transferred worklet frames without retaining or normalizing the raw recording. */
 export function encodeCoachVoiceWav(frames: readonly Int16Array[]) {
+  return encodeWav(frames, SAMPLE_RATE * COACH_VOICE_MAX_DURATION_SECONDS, SAMPLE_RATE / 2);
+}
+
+/** Encodes a short progressive chunk, including valid terminal chunks below 500 ms. */
+export function encodeProgressiveCoachVoiceWav(samples: Int16Array) {
+  return encodeWav([samples], SAMPLE_RATE * 31, 1);
+}
+
+function encodeWav(frames: readonly Int16Array[], maxSamples: number, minSamples: number) {
   const totalSamples = frames.reduce((total, frame) => total + frame.length, 0);
-  if (!Number.isSafeInteger(totalSamples) || totalSamples < SAMPLE_RATE / 2 || totalSamples > MAX_PCM_SAMPLES) throw new CoachVoiceAudioFormatError();
+  if (!Number.isSafeInteger(totalSamples) || totalSamples < minSamples || totalSamples > maxSamples) throw new CoachVoiceAudioFormatError();
   const output = new Uint8Array(WAV_HEADER_BYTES + totalSamples * 2);
   const view = new DataView(output.buffer);
   writeAscii(view, 0, "RIFF"); view.setUint32(4, output.length - 8, true);
@@ -28,7 +37,15 @@ export function encodeCoachVoiceWav(frames: readonly Int16Array[]) {
 }
 
 export function inspectCoachVoiceWav(bytes: Uint8Array) {
-  if (bytes.byteLength < WAV_HEADER_BYTES + SAMPLE_RATE || bytes.byteLength > COACH_VOICE_MAX_AUDIO_BYTES) throw new CoachVoiceAudioFormatError();
+  return inspectWav(bytes, COACH_VOICE_MAX_AUDIO_BYTES, SAMPLE_RATE / 2, MAX_PCM_SAMPLES);
+}
+
+export function inspectProgressiveCoachVoiceWav(bytes: Uint8Array, maxBytes: number) {
+  return inspectWav(bytes, maxBytes, 1, SAMPLE_RATE * 31);
+}
+
+function inspectWav(bytes: Uint8Array, maxBytes: number, minSamples: number, maxSamples: number) {
+  if (bytes.byteLength < WAV_HEADER_BYTES + minSamples * 2 || bytes.byteLength > maxBytes) throw new CoachVoiceAudioFormatError();
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (ascii(view, 0, 4) !== "RIFF" || view.getUint32(4, true) !== bytes.byteLength - 8
     || ascii(view, 8, 4) !== "WAVE" || ascii(view, 12, 4) !== "fmt "
@@ -37,7 +54,7 @@ export function inspectCoachVoiceWav(bytes: Uint8Array) {
     || view.getUint32(28, true) !== SAMPLE_RATE * 2 || view.getUint16(32, true) !== 2
     || view.getUint16(34, true) !== 16 || ascii(view, 36, 4) !== "data") throw new CoachVoiceAudioFormatError();
   const dataBytes = view.getUint32(40, true);
-  if (dataBytes !== bytes.byteLength - WAV_HEADER_BYTES || dataBytes % 2 !== 0 || dataBytes / 2 > MAX_PCM_SAMPLES) throw new CoachVoiceAudioFormatError();
+  if (dataBytes !== bytes.byteLength - WAV_HEADER_BYTES || dataBytes % 2 !== 0 || dataBytes / 2 < minSamples || dataBytes / 2 > maxSamples) throw new CoachVoiceAudioFormatError();
   const sampleCount = dataBytes / 2;
   let maxAmplitude = 0;
   for (let offset = WAV_HEADER_BYTES; offset < bytes.byteLength; offset += 2) maxAmplitude = Math.max(maxAmplitude, Math.abs(view.getInt16(offset, true)));

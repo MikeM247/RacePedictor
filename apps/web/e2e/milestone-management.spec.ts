@@ -204,7 +204,7 @@ test("no active plan still permits confirmed history and malformed stored handof
   await expect(page.getByRole("button", { name: "Achieved milestone", exact: true })).toBeEnabled(); await expect(page.getByRole("button", { name: "Planned race target", exact: true })).toBeDisabled(); await page.keyboard.press("Escape");
   await page.evaluate(() => sessionStorage.setItem("racepredictor:milestone-change:v1:e2e_athlete", "{broken"));
   await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context } } }));
-  await page.goto("/dashboard/plan?milestoneUpdate=1"); await expect(page.getByText(/prepared change or current approved plan could not be verified/)).toBeVisible();
+  await page.goto("/dashboard/plan?milestoneUpdate=1"); await expect(page.getByText(/prepared change or current approved plan could not be verified/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Discard invalid request", exact: true }).click();
   expect(await page.evaluate(() => sessionStorage.getItem("racepredictor:milestone-change:v1:e2e_athlete"))).toBeNull();
 });

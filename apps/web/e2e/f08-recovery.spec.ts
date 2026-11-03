@@ -14,6 +14,7 @@ async function mockDataQuality(page: Page, onUpload: () => void) {
   const initialReads = new Promise<void>((resolve) => { resolveInitialReads = resolve; });
   let reads = 0;
   const completeRead = () => { reads += 1; if (reads === 2) resolveInitialReads(); };
+  await page.route("**/api/v1/imports/upload/initiate", (route) => route.fulfill({ status: 503, json: { error: { code: "UNAVAILABLE", message: "Synthetic private storage unavailable; use multipart fallback" } } }));
   await page.route("**/api/v1/providers/strava/status", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { connection: { displayStatus: "connected" } } }) });
     completeRead();

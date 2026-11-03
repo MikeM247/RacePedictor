@@ -13,6 +13,7 @@ import {
   PrismaAthleteJournalRepository,
   PrismaCoachChatRepository,
   PrismaCoachVoiceRepository,
+  PrismaCoachProgressiveDictationRepository,
   createTrainingPlanGoalContextReader,
 } from "../../../../packages/db/src/cloud/index.js";
 import { assertServerRuntime } from "./server-runtime.ts";
@@ -37,6 +38,7 @@ function buildComposition() {
     journal: new PrismaAthleteJournalRepository({ prisma }),
     coachChat: new PrismaCoachChatRepository({ prisma }),
     coachVoice: new PrismaCoachVoiceRepository({ prisma }),
+    coachProgressiveDictation: new PrismaCoachProgressiveDictationRepository({ prisma }),
   });
 }
 

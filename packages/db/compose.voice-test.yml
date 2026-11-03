@@ -1,0 +1,17 @@
+name: racepredictor-voice-test
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "127.0.0.1:55432:5432"
+    environment:
+      POSTGRES_USER: voice_test
+      POSTGRES_PASSWORD: local-voice-test
+      POSTGRES_DB: racepredictor_voice_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voice_test -d racepredictor_voice_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

@@ -614,6 +614,7 @@ export async function seedDatabase(prisma = new PrismaClient()) {
     }),
   ]);
 
+  await prisma.athlete.upsert({ where: { id: SEED_ATHLETE_ID }, create: { id: SEED_ATHLETE_ID }, update: {} });
   await ensureImports(prisma, summary);
   await ensureRawFiles(prisma, summary);
 

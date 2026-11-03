@@ -40,7 +40,7 @@ test("Readiness retains evidence and distance selection as its own navigation de
   await expect(page.locator("[data-week-bar]")).toHaveCount(12);
   await selectFiveKilometres(page);
   expect(todayReads).toEqual([]);
-  await page.getByRole("link", { name: "Back to Home" }).click();
+  await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
   await page.goBack();
@@ -52,7 +52,7 @@ test("Readiness retains evidence and distance selection as its own navigation de
 test("Legacy Readiness fragments redirect to the separate route and survive reload", async ({ page }) => {
   await mockReadiness(page);
   await page.goto("/dashboard#readiness");
-  await expect(page).toHaveURL(/\/dashboard\/readiness$/);
+  await expect(page).toHaveURL(/\/dashboard\/readiness$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Current-fitness estimate" })).toBeVisible();

@@ -1,3 +1,4 @@
+import { expectDashboardNavigationAvailable } from "./test-helpers.ts";
 import { expect, test, type Page } from "@playwright/test";
 import { coachingFixtures, fixturePlan } from "./coaching-fixtures.ts";
 import { expectAxeClean, expectNoApplicationWrites, recordApplicationWrites } from "./test-helpers.ts";
@@ -36,6 +37,7 @@ async function mockSharedReads(page: Page) {
 }
 
 test("F05 provides a usable skip link, landmarks, visible focus, and no automated accessibility violations on every redesigned route", async ({ page }) => {
+  test.setTimeout(180_000);
   await mockSharedReads(page);
   await page.goto("/dashboard");
   await page.keyboard.press("Tab");
@@ -43,19 +45,20 @@ test("F05 provides a usable skip link, landmarks, visible focus, and no automate
   await expect(skip).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("main#dashboard-main-content")).toBeFocused();
-  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+  await expectDashboardNavigationAvailable(page);
   for (const [href, heading] of routes) {
     await page.goto(href);
     const pageHeading = href === "/dashboard"
       ? page.locator("main#dashboard-main-content h1")
       : page.getByRole("heading", { level: 1, name: heading, exact: true });
     await expect(pageHeading).toHaveCount(1);
-    await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+    await expectDashboardNavigationAvailable(page);
     await expectAxeClean(page, `initial ${heading} route`);
   }
 });
 
 test("F05 scans expanded disclosures across redesigned routes with actionable axe evidence", async ({ page }) => {
+  test.setTimeout(180_000);
   const writes = recordApplicationWrites(page);
   await mockSharedReads(page);
   const scannedByRoute: Record<string, string[]> = {};

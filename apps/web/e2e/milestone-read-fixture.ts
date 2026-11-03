@@ -5,6 +5,7 @@ import { composeMilestoneTimeline } from "../../../packages/core/src/services/mi
 import { readLocalMilestoneState } from "../../../packages/db/src/milestone-timeline.ts";
 import { e2eDatabasePath } from "./fixture-paths.ts";
 import { DatabaseSync } from "node:sqlite";
+import { emptyMilestoneState } from "../../../packages/core/src/contracts/milestone-timeline.ts";
 
 export function resetMilestoneFixtureState() {
   const db = new DatabaseSync(e2eDatabasePath);
@@ -13,8 +14,15 @@ export function resetMilestoneFixtureState() {
 }
 
 /** Presentation fixtures override source content; CAS/source tokens still come from the real API. */
-export async function mockMilestoneRead(page: Page, context: unknown, history?: unknown[]) {
+export async function mockMilestoneRead(page: Page, context: unknown, history?: unknown[], mode: "api" | "presentation" = "api") {
   await page.route(/\/api\/v1\/coaching\/milestones(?:\?.*)?$/u, async (route) => {
+    if (mode === "presentation") {
+      const current = goalContextRouteDataSchema.parse(context);
+      const records = raceHistorySchema.parse(history ?? []);
+      const today = await page.evaluate(() => new Date().toISOString().slice(0, 10));
+      return route.fulfill({ json: { data: { context: current, history: records, revision: 0, sourceVersion: "presentation-fixture", today,
+        availability: { goal: true, history: true }, ...composeMilestoneTimeline(current, records, emptyMilestoneState(), today) } } });
+    }
     const response = await route.fetch();
     if (!response.ok()) return route.fulfill({ response });
     const { data } = await response.json();

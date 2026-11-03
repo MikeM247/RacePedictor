@@ -40,6 +40,16 @@ export async function expectAxeClean(page: Page, state: string) {
   expect(violations, `Accessibility violations in ${state}`).toEqual([]);
 }
 
+/** Mobile keeps route links in an explicit navigation drawer. */
+export async function expectDashboardNavigationAvailable(page: Page) {
+  const menu = page.getByRole("button", { name: "Open navigation", exact: true });
+  const mobile = await menu.isVisible();
+  if (mobile) await menu.click();
+  const navigation = page.getByRole("navigation", { name: mobile ? "Mobile navigation" : "Primary navigation", exact: true });
+  for (const name of ["Home", "Calendar", "Readiness"]) await expect(navigation.getByRole("link", { name, exact: true })).toBeVisible();
+  if (mobile) await page.getByRole("button", { name: "Close navigation", exact: true }).click();
+}
+
 /**
  * Initial local Training rows are server rendered. Focused browser tests must
  * deliberately request their intercepted client fixture instead of relying on

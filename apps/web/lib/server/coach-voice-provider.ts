@@ -14,6 +14,9 @@ export function createOpenAICoachVoiceProvider(input: { apiKey?: string; fetchIm
   const fetchImpl = input.fetchImpl ?? fetch;
   return {
     async transcribe(audio: Uint8Array, signal: AbortSignal) {
+      return (await this.transcribeWithTimestamps(audio, signal)).text;
+    },
+    async transcribeWithTimestamps(audio: Uint8Array, signal: AbortSignal) {
       const apiKey = input.apiKey ?? process.env.OPENAI_API_KEY;
       if (!apiKey) throw new CoachVoiceProviderError("VOICE_PROVIDER_NOT_CONFIGURED");
       const form = new FormData();
@@ -23,6 +26,7 @@ export function createOpenAICoachVoiceProvider(input: { apiKey?: string; fetchIm
       form.set("model", COACH_TRANSCRIPTION_MODEL);
       form.set("language", "en");
       form.set("response_format", "verbose_json");
+      form.append("timestamp_granularities[]", "word");
       let response: Response;
       try {
         response = await fetchImpl("https://api.openai.com/v1/audio/transcriptions", {
@@ -36,14 +40,19 @@ export function createOpenAICoachVoiceProvider(input: { apiKey?: string; fetchIm
       let payload: unknown;
       try { payload = await response.json(); }
       catch { throw new CoachVoiceProviderError("VOICE_PROVIDER_INVALID_RESPONSE"); }
-      const result = payload as { text?: unknown; segments?: Array<{ no_speech_prob?: unknown }> } | null;
+      const result = payload as { text?: unknown; segments?: Array<{ no_speech_prob?: unknown }>; words?: Array<{ word?: unknown; start?: unknown; end?: unknown }> } | null;
       const text = typeof result?.text === "string" ? result.text.trim() : "";
       if (result?.segments?.length && result.segments.every((segment) => typeof segment.no_speech_prob === "number" && segment.no_speech_prob >= 0.6)) {
         throw new CoachVoiceProviderError("VOICE_NO_SPEECH");
       }
       if (!text) throw new CoachVoiceProviderError("VOICE_NO_SPEECH");
       if (text.length > COACH_VOICE_MAX_TRANSCRIPT_CHARS) throw new CoachVoiceProviderError("VOICE_TRANSCRIPT_TOO_LONG");
-      return text;
+      const words = Array.isArray(result?.words) ? result.words.flatMap((word) => {
+        if (typeof word.word !== "string" || typeof word.start !== "number" || typeof word.end !== "number"
+          || !Number.isFinite(word.start) || !Number.isFinite(word.end) || word.start < 0 || word.end < word.start) return [];
+        return [{ text: word.word, startSeconds: word.start, endSeconds: word.end }];
+      }) : [];
+      return { text, words };
     },
 
     async synthesize(text: string, signal: AbortSignal) {

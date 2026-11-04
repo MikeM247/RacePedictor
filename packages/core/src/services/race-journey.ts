@@ -2,7 +2,7 @@ import type { GoalContextRouteData } from "../contracts/coaching.ts";
 import type { RaceHistoryRecord } from "../contracts/race-history.ts";
 
 export type JourneyTarget = {
-  id: string; title: string; eventName?: string; date: string;
+  comparison?: "lt" | "lte"; id: string; title: string; eventName?: string; date: string;
   distanceMeters: number; targetTimeSeconds?: number; mainGoal: boolean; aliases?: string[];
 };
 export type JourneyAchievement = RaceHistoryRecord & { matchedTarget?: JourneyTarget };
@@ -12,10 +12,11 @@ export function targetUsesStrictTime(title: string) {
 }
 
 export function resultAchievesTarget(result: RaceHistoryRecord, target: JourneyTarget, today: string) {
+  result = { ...result, ...(result.officialResult ? { raceDate: result.officialResult.raceDate, distanceMeters: result.officialResult.distanceMeters, elapsedTimeSeconds: result.officialResult.elapsedTimeSeconds } : {}) };
   if ((result.targetId !== target.id && !target.aliases?.includes(result.targetId ?? "")) || !result.raceDate || result.raceDate !== target.date || result.raceDate > today
     || result.distanceMeters === undefined || Math.abs(result.distanceMeters - target.distanceMeters) > 1
     || result.elapsedTimeSeconds === undefined) return false;
-  return target.targetTimeSeconds === undefined || (targetUsesStrictTime(target.title)
+  return target.targetTimeSeconds === undefined || ((target.comparison ? target.comparison === "lt" : targetUsesStrictTime(target.title))
     ? result.elapsedTimeSeconds < target.targetTimeSeconds
     : result.elapsedTimeSeconds <= target.targetTimeSeconds);
 }

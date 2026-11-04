@@ -39,7 +39,7 @@ test("AudioWorklet resampler emits a one-second 16 kHz stream from 44.1 and 48 k
   for (const sampleRate of [44_100, 48_000]) {
     const sent: Int16Array[] = [];
     let Processor: new () => { port: { onmessage: (event: { data: unknown }) => void }; process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean };
-    class WorkletBase { port = { onmessage: (_event: { data: unknown }) => undefined, postMessage: (message: { frame?: Int16Array }) => { if (message.frame) sent.push(message.frame); } }; }
+    class WorkletBase { port = { onmessage: (_event: { data: unknown }) => undefined, postMessage: (message: { type?: string; frame?: Int16Array }) => { if (message.type === "pcm" && message.frame) sent.push(message.frame); } }; }
     const sandbox = {
       AudioWorkletProcessor: WorkletBase,
       sampleRate,
@@ -60,3 +60,4 @@ test("AudioWorklet resampler emits a one-second 16 kHz stream from 44.1 and 48 k
     assert.equal(sent.reduce((sum, frame) => sum + frame.length, 0), 16_000, `${sampleRate} Hz input`);
   }
 });
+

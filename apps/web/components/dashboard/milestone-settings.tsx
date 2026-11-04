@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMilestoneTimeline } from "../../lib/use-milestone-timeline.ts";
 import { useMilestoneImages } from "../../lib/use-milestone-images.ts";
 import { formatCoachingDate } from "../../lib/coaching-ui-state";
@@ -32,6 +32,23 @@ export function MilestoneSettings() {
       choice: ImageChoice | null;
     } | null>(null),
     [resolving, setResolving] = useState(false);
+  const [reviewCandidates, setReviewCandidates] = useState<any[]>([]);
+  useEffect(() => {
+    if (!enabled) { setReviewCandidates([]); return; }
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/v1/coaching/milestones/reviews", { cache: "no-store" });
+        if (!response.ok) return;
+        const body = await response.json();
+        if (active) setReviewCandidates(body.data?.candidates ?? []);
+      } catch { /* keep saved milestones available when review checks are offline */ }
+    };
+    void load();
+    window.addEventListener("milestones-changed", load);
+    window.addEventListener("focus", load);
+    return () => { active = false; window.removeEventListener("milestones-changed", load); window.removeEventListener("focus", load); };
+  }, [enabled, data?.revision, data?.sourceVersion]);
   const context = data?.context,
     timezone = context?.plan?.timezone ?? "Africa/Johannesburg";
   const current =
@@ -42,6 +59,7 @@ export function MilestoneSettings() {
   function imageControl(entry: MilestoneEntry) {
     if (!enabled) return null;
     const mark = entryImage(images.data?.state, entry);
+    const imageControlDisabled = !!error || !!images.error || !images.data || !!images.data.remoteState;
     return (
       <div className="milestone-image-controls">
         {mark.url ? (
@@ -53,12 +71,8 @@ export function MilestoneSettings() {
         )}
         <button
           className="text-link"
-          disabled={
-            !!error ||
-            !!images.error ||
-            !images.data ||
-            !!images.data.remoteState
-          }
+          disabled={imageControlDisabled}
+          style={imageControlDisabled ? { appearance: "none", background: "transparent", border: 0, color: "#ffffff" } : undefined}
           onClick={() => setSelection(entry)}
         >
           Manage image<span className="sr-only"> for {entry.title}</span>
@@ -260,6 +274,7 @@ export function MilestoneSettings() {
           }}
           onSaved={accept}
           renderImageControl={imageControl}
+          reviewCandidates={reviewCandidates}
           renderLinkImageResolution={enabled ? linkChoices : undefined}
           imageLinkResolution={
             enabled

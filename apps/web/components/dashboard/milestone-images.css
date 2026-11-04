@@ -91,6 +91,21 @@
   min-height: 44px;
   cursor: pointer;
 }
+.milestone-image-controls button.text-link {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--rp-cyan, #20c7f5);
+  padding: 0;
+}
+.milestone-image-controls button.text-link:disabled {
+  appearance: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0;
+  color: var(--rp-text-muted, #a9b6c6) !important;
+  opacity: 1;
+}
 .milestone-image-sync {
   border: 1px solid #cdb65b;
   border-radius: 8px;

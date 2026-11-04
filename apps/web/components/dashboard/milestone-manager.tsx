@@ -15,6 +15,7 @@ import {
   buildRaceJourney,
   type JourneyTarget,
 } from "../../../../packages/core/src/services/race-journey.ts";
+import { entryStatus } from "../../../../packages/core/src/services/home-milestones.ts";
 import type { MilestoneChangeRequest } from "../../../../packages/core/src/services/milestone-management.ts";
 import {
   discardMilestoneChange,
@@ -41,9 +42,7 @@ type View =
   | "unlink"
   | null;
 export function milestoneStatus(entry: MilestoneEntry) {
-  if (entry.completion !== "completed")
-    return entry.completion === "upcoming" ? "Upcoming" : "Result pending";
-  return `Completed${entry.performance === "achieved" ? " · Target achieved" : entry.performance === "missed" ? " · Target missed" : entry.performance === "unassessed" ? " · Target unassessed" : ""}`;
+  return entryStatus(entry);
 }
 export function MilestoneManager({
   timeline,
@@ -53,6 +52,7 @@ export function MilestoneManager({
   renderImageControl,
   imageLinkResolution,
   renderLinkImageResolution,
+  reviewCandidates = [],
 }: {
   renderLinkImageResolution?: (
     entry: MilestoneEntry,
@@ -63,6 +63,7 @@ export function MilestoneManager({
     entry: MilestoneEntry,
     achievementId: string,
   ) => MilestoneMutation["imageResolution"] | false;
+  reviewCandidates?: Array<{ target: JourneyTarget; achievement: RaceHistoryRecord; ambiguous: boolean }>;
   timeline: MilestoneTimeline;
   unavailable: boolean;
   onChange: () => void;
@@ -119,6 +120,12 @@ export function MilestoneManager({
       );
     }
   }, [context]);
+  const openedTarget = useRef<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("milestone");
+    const entry = timeline.entries.find(e => e.target?.id === id);
+    if (id && openedTarget.current !== id && entry?.target && entry.target.date <= today) { openedTarget.current = id; setInitialTarget(entry.target); setAssign(false); setView("achievement"); }
+  }, [timeline.sourceVersion]);
   function reset() {
     setError("");
     setConflict(false);
@@ -157,6 +164,12 @@ export function MilestoneManager({
     setSelection(entry);
     setBase(timeline);
     setView(action);
+  }
+  function openReviewCandidate(candidate: { target: JourneyTarget; achievement: RaceHistoryRecord }) {
+    const entry = timeline.entries.find(item => item.target?.id === candidate.target.id || item.target?.aliases?.includes(candidate.target.id));
+    if (!entry) return;
+    openEntry("link", entry);
+    setLinkId(candidate.achievement.id);
   }
   function finished(text: string) {
     setView(null);
@@ -320,6 +333,14 @@ export function MilestoneManager({
           Add milestone
         </button>
       </div>
+      {reviewCandidates.length ? <aside className="milestone-review-discovery" aria-labelledby="milestone-review-discovery-heading">
+        <h3 id="milestone-review-discovery-heading">Race results awaiting review ({reviewCandidates.length})</h3>
+        <p>These saved results may match a past milestone. Review the race identity before linking.</p>
+        <ul>{reviewCandidates.map(candidate=><li key={`${candidate.target.id}:${candidate.achievement.id}`}>
+          <span><strong>{candidate.target.eventName||candidate.target.title}</strong> · {candidate.achievement.title}{candidate.ambiguous?" · more than one result matches":""}</span>
+          <button className="text-link" disabled={unavailable} onClick={()=>openReviewCandidate(candidate)}>Review suggested result</button>
+        </li>)}</ul>
+      </aside>:null}
       <div
         className="milestone-tabs"
         role="group"
@@ -436,7 +457,7 @@ export function MilestoneManager({
                               editAchievement(undefined, true, entry.target)
                             }
                           >
-                            Record result
+                            Record or align result
                             <span className="sr-only"> for {entry.title}</span>
                           </button>
                         ) : null}

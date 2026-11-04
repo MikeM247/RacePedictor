@@ -11,6 +11,7 @@ export const raceHistoryRecordSchema = z.object({
   id: z.string().trim().min(1).max(128),
   title: z.string().trim().min(1).max(200),
   confirmedBy: z.literal("user"),
+  officialResult: z.object({ confirmedBy: z.literal("user"), raceDate: raceDate.optional(), distanceMeters: z.number().positive().max(500000).optional(), elapsedTimeSeconds: z.number().int().positive().max(604800).optional() }).strict().optional(),
   achievement: z.enum(["personal_best", "goal_achieved"]).optional(),
   raceDate: raceDate.optional(),
   distanceMeters: z.number().positive().max(500_000).optional(),
@@ -20,11 +21,12 @@ export const raceHistoryRecordSchema = z.object({
   targetSnapshot: z.object({
     id: z.string().trim().min(1).max(128), title: z.string().trim().min(1).max(200),
     date: raceDate, distanceMeters: z.number().positive().max(500_000),
+    comparison: z.enum(["lt", "lte"]).optional(),
     targetTimeSeconds: z.number().int().positive().max(604_800).optional(),
   }).strict().optional(),
   revision: z.number().int().positive().optional(),
 }).strict().superRefine((value, ctx) => {
-  if ((!value.achievement && !value.targetId) || (value.targetId && (!value.raceDate || !value.distanceMeters || !value.elapsedTimeSeconds))) {
+  if (!value.officialResult && ((!value.achievement && !value.targetId) || (value.targetId && (!value.raceDate || !value.distanceMeters || !value.elapsedTimeSeconds)))) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A race result needs a linked target, race date, official distance and elapsed time, or an explicitly confirmed historical achievement" });
   }
 });

@@ -14,6 +14,7 @@ export const journeyTargetSchema = z
     date: z.string(),
     distanceMeters: z.number().positive(),
     targetTimeSeconds: z.number().positive().optional(),
+    comparison: z.enum(["lt", "lte"]).optional(),
     mainGoal: z.boolean(),
     aliases: z.array(z.string()).optional(),
   })
@@ -28,6 +29,9 @@ export const milestoneEntrySchema = z
     achievement: raceHistoryRecordSchema.optional(),
     completion: z.enum(["completed", "upcoming", "result_pending"]),
     performance: z.enum(["achieved", "missed", "unassessed", "not_set"]),
+    assessmentBasis: z.enum(["official", "legacy"]).optional(),
+    assessmentReasons: z.array(z.string()).optional(),
+    timeDifferenceSeconds: z.number().optional(),
     removalId: z.string().optional(),
   })
   .strict();
@@ -39,6 +43,7 @@ export const milestoneStateSchema = z
     links: z.array(
       z.object({ target: journeyTargetSchema, achievementId: id }).strict(),
     ),
+    reviews: z.array(z.object({ targetId: id, achievementId: id, decision: z.enum(["deferred", "rejected", "confirmed"]), evidenceVersion: z.string().min(1) }).strict()).default([]),
     removals: z.array(
       z
         .object({
@@ -56,7 +61,8 @@ export const milestoneStateSchema = z
       new Set(state.links.map((link) => link.target.id)).size !==
         state.links.length ||
       new Set(state.removals.map((item) => item.id)).size !==
-        state.removals.length
+        state.removals.length ||
+      new Set(state.reviews.map(item => `${item.targetId}:${item.achievementId}`)).size !== state.reviews.length
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -69,6 +75,7 @@ export const emptyMilestoneState = (): MilestoneState => ({
   schema: "milestone-timeline.v1",
   links: [],
   removals: [],
+  reviews: [],
   unlinkedTargetIds: [],
 });
 export const milestoneTimelineSchema = z
@@ -91,11 +98,14 @@ export const milestoneTimelineResponseSchema = z
   .strict();
 export const milestoneMutationSchema = z
   .object({
-    operation: z.enum(["remove", "restore", "link", "unlink"]),
+    result: z.object({ record: raceHistoryRecordSchema, expectedRevision: z.number().int().nonnegative() }).strict().optional(),
+    previewDigest: z.string().optional(),
+    operation: z.enum(["remove", "restore", "link", "unlink", "review"]),
     expectedRevision: z.number().int().nonnegative(),
     sourceVersion: z.string().min(1).max(128),
     entryId: z.string().min(1).max(300),
     achievementId: id.optional(),
+    reviewDecision: z.enum(["deferred", "rejected"]).optional(),
     confirmedSameRace: z.literal(true).optional(),
     imageResolution: z
       .object({

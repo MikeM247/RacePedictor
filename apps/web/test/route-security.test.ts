@@ -155,7 +155,7 @@ test("every current sensitive API handler uses the route-level security wrapper"
   );
   assert.equal(
     routeFiles.length,
-    95,
+    99,
     "route inventory changed; classify every new route explicitly",
   );
 
@@ -600,3 +600,4 @@ test(
     );
   },
 );
+

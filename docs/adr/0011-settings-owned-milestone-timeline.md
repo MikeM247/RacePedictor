@@ -24,3 +24,23 @@ Apply `20261025190000_milestone_timeline_state` before enabling the new readers.
 Keep stored decisions during rollback. Retain compatible readers, or temporarily hide the timeline; rolling back to the old reader would resurrect removed targets. Old session-storage removal requests are notices only and cannot proceed to plan review.
 
 The one-time owner-confirmed race repair is a separately verified operation: inspect source IDs/revisions and the active approval hash, dry-run the projection, then persist only the membership relationship. Do not commit private production record IDs or results into fixtures or migration SQL.
+
+## Phase 1 completion confirmation amendment — 1 November 2026
+
+Result capture and relationship updates share the milestone command transaction.
+The read-only result preview returns the projected timeline and a digest binding
+its draft, source versions, evaluation date and image revision. Confirmation
+revalidates those inputs and atomically saves result, relationship and images.
+SQLite result writes accept the management transaction connection; PostgreSQL
+uses the existing serializable transaction. Unknown save responses require reload.
+
+Optional `officialResult` facts are explicitly confirmed independently of activity
+measurements. Legacy facts remain readable without a backfill. Partial official
+facts do not inherit missing values from legacy fields. Captured target criteria
+are authoritative over subsequent plan changes, including strict/inclusive time
+comparison. Race completion, target assessment and PB claims remain distinct.
+
+Deploy compatible readers before enabling these additive JSON writes. Rollback
+must retain readers that accept official facts, assessment fields and comparison
+criteria; do not revert to an older strict parser or erase saved relationships.
+No automatic reconciliation or production repair runs during reads or deployment.

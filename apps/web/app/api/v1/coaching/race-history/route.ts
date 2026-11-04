@@ -1,3 +1,4 @@
+import { readMilestones, mutateMilestones } from "../../../../../lib/server/milestone-timeline.ts";
 import { withSensitiveRoute } from "../../_security.ts";
 import { withCoachingService, success } from "../_shared.ts";
 import { readCloudRaceHistory, readLocalRaceHistory, saveCloudRaceHistory, saveLocalRaceHistory, deleteCloudRaceHistory, deleteLocalRaceHistory, raceHistoryActor, captureApprovedRaceTarget } from "../../../../../lib/server/race-history.ts";
@@ -17,6 +18,13 @@ export const GET = withSensitiveRoute(async (security) => {
 export const PUT = withSensitiveRoute(async (security, request) => {
   const input = saveRaceHistorySchema.safeParse(await request.json().catch(() => null));
   if (!input.success) throw new ApiHttpError(400, "VALIDATION_ERROR", "The race result is invalid", input.error.issues);
+  if (input.data.record.targetId) {
+    const view = await readMilestones(security);
+    const entry = view.entries.find(e => e.target?.id === input.data.record.targetId || e.target?.aliases?.includes(input.data.record.targetId!));
+    if (!entry) throw new ApiHttpError(409, "CONFLICT", "Reload the selected target before saving.");
+    const next = await mutateMilestones(security, { operation: "link", entryId: entry.id, achievementId: input.data.record.id, confirmedSameRace: true, expectedRevision: view.revision, sourceVersion: view.sourceVersion, result: input.data });
+    return success(next.history.find(r => r.id === input.data.record.id));
+  }
   if (security.mode === "authenticated") {
     const athleteId = raceHistoryActor(security, true);
     const [history, response] = await Promise.all([readCloudRaceHistory(athleteId), input.data.record.targetId ? handleCloudActiveGoalContext(security) : Promise.resolve(null)]);

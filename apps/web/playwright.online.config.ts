@@ -30,6 +30,8 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
+      RACEPREDICTOR_CLOUD_MODE: "enabled",
+      RACEPREDICTOR_MILESTONE_HOME_ENABLED: "false",
       RACEPREDICTOR_NEXT_DIST_DIR: `.next-e2e-online-${process.env.RACEPREDICTOR_E2E_RUN_ID}`,
       RACEPREDICTOR_DATA_SOURCE: "online-fixture",
       // Keep browser fixtures from inheriting a developer's or deployment's

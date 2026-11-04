@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { encodeCoachVoiceWav, inspectCoachVoiceWav, CoachVoiceAudioFormatError } from "../src/services/coach-voice-audio.ts";
+import { encodeCoachVoiceWav, encodeProgressiveCoachVoiceWav, inspectCoachVoiceWav, inspectProgressiveCoachVoiceWav, CoachVoiceAudioFormatError } from "../src/services/coach-voice-audio.ts";
 
 test("canonical encoder and inspector agree on mono PCM16 WAV metadata and samples", () => {
   const first = new Int16Array(8_000); first[1] = -12; first[2] = 120; first[3] = 32767;
@@ -28,12 +28,18 @@ test("canonical WAV validation rejects short, malformed, oversized and digital-s
   assert.throws(() => encodeCoachVoiceWav([new Int16Array(1_920_001)]), CoachVoiceAudioFormatError);
 });
 
+test("progressive WAV accepts short terminal chunks while legacy dictation keeps its half-second minimum", () => {
+  const audio = encodeProgressiveCoachVoiceWav(new Int16Array(1_600).fill(8));
+  assert.equal(inspectProgressiveCoachVoiceWav(audio, 992_044).durationSeconds, 0.1);
+  assert.throws(() => inspectCoachVoiceWav(audio), CoachVoiceAudioFormatError);
+});
+
 test("AudioWorklet resampler emits a one-second 16 kHz stream from 44.1 and 48 kHz input", async () => {
   const source = await readFile(new URL("../../../apps/web/public/audio/coach-voice-processor.js", import.meta.url), "utf8");
   for (const sampleRate of [44_100, 48_000]) {
     const sent: Int16Array[] = [];
     let Processor: new () => { port: { onmessage: (event: { data: unknown }) => void }; process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean };
-    class WorkletBase { port = { onmessage: (_event: { data: unknown }) => undefined, postMessage: (message: { frame: Int16Array }) => sent.push(message.frame) }; }
+    class WorkletBase { port = { onmessage: (_event: { data: unknown }) => undefined, postMessage: (message: { type?: string; frame?: Int16Array }) => { if (message.type === "pcm" && message.frame) sent.push(message.frame); } }; }
     const sandbox = {
       AudioWorkletProcessor: WorkletBase,
       sampleRate,
@@ -54,3 +60,4 @@ test("AudioWorklet resampler emits a one-second 16 kHz stream from 44.1 and 48 k
     assert.equal(sent.reduce((sum, frame) => sum + frame.length, 0), 16_000, `${sampleRate} Hz input`);
   }
 });
+

@@ -22,7 +22,7 @@ export function captureApprovedRaceTarget(record: RaceHistoryRecord, context: Go
   if (saved) return { ...value, targetSnapshot: saved };
   const target = buildRaceJourney(context, [], "0000-01-01").ahead.find((candidate) => candidate.id === value.targetId || candidate.aliases?.includes(value.targetId!));
   if (!target) throw new ApiHttpError(400, "VALIDATION_ERROR", "Choose a verified approved target, or save this as a historical achievement");
-  return { ...value, targetSnapshot: { id: value.targetId, title: target.title, date: target.date, distanceMeters: target.distanceMeters,
+  return { ...value, targetSnapshot: { id: value.targetId, title: target.title, date: target.date, distanceMeters: target.distanceMeters, comparison: target.comparison ?? (/\b(?:sub[\s-]*\d|under\s+\d)/iu.test(target.title) ? "lt" : "lte"),
     ...(target.targetTimeSeconds ? { targetTimeSeconds: target.targetTimeSeconds } : {}) } };
 }
 
@@ -80,10 +80,11 @@ export function readLocalRaceHistory(databasePath: string, athleteId: string): R
   } finally { db.close(); }
 }
 
-export function saveLocalRaceHistory(databasePath: string, athleteId: string, raw: unknown) {
+export function saveLocalRaceHistory(databasePath: string, athleteId: string, raw: unknown, connection?: DatabaseSync) {
   const input = saveRaceHistorySchema.parse(raw);
   const { revision: _revision, ...record } = input.record;
-  const db = openLocal(databasePath, true);
+  const db = connection ?? openLocal(databasePath, true);
+  db.exec('CREATE TABLE IF NOT EXISTS race_achievements (id TEXT NOT NULL, athlete_id TEXT NOT NULL, record_json TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (athlete_id, id))');
   try {
     if (record.activityId && !db.prepare('SELECT id FROM activities WHERE id = ? AND athlete_id = ?').get(record.activityId, athleteId)) {
       throw new ApiHttpError(404, "NOT_FOUND", "The selected activity could not be found in your history");
@@ -93,7 +94,7 @@ export function saveLocalRaceHistory(databasePath: string, athleteId: string, ra
       : db.prepare('UPDATE race_achievements SET record_json = ?, revision = revision + 1 WHERE id = ? AND athlete_id = ? AND revision = ?').run(JSON.stringify(record), record.id, athleteId, input.expectedRevision);
     if (!result.changes) throw conflict();
     return raceHistoryRecordSchema.parse({ ...record, revision: input.expectedRevision + 1 });
-  } finally { db.close(); }
+  } finally { if (!connection) db.close(); }
 }
 
 export function deleteLocalRaceHistory(databasePath: string, athleteId: string, id: string, revision: number) {

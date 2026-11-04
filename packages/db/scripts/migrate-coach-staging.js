@@ -33,6 +33,10 @@ try {
   if (voiceMigration.length !== 1) throw new Error("Voice usage migration was not recorded as applied");
   await prisma.$queryRaw`SELECT "id" FROM "coach_voice_usage_buckets" LIMIT 0`;
   await prisma.$queryRaw`SELECT "id" FROM "coach_voice_attempts" LIMIT 0`;
+  const progressiveMigration = await prisma.$queryRaw`SELECT migration_name FROM "_prisma_migrations" WHERE migration_name = '20261102090000_progressive_dictation_sessions' AND finished_at IS NOT NULL AND rolled_back_at IS NULL`;
+  if (progressiveMigration.length !== 1) throw new Error("Progressive dictation migration was not recorded as applied");
+  await prisma.$queryRaw`SELECT "athleteId", "generation", "sequence", "leaseExpiresAt" FROM "coach_progressive_dictation_sessions" LIMIT 0`;
+  await prisma.$queryRaw`SELECT "sessionId", "chunkIndex", "retryOrdinal" FROM "coach_voice_attempts" LIMIT 0`;
   const imageMigration = await prisma.$queryRaw`SELECT migration_name FROM "_prisma_migrations" WHERE migration_name = '20261031090000_milestone_images' AND finished_at IS NOT NULL AND rolled_back_at IS NULL`;
   if (imageMigration.length !== 1) throw new Error("Milestone image migration was not recorded as applied");
   await prisma.$queryRaw`SELECT "athleteId", revision FROM milestone_image_state LIMIT 0`;

@@ -27,7 +27,7 @@ async function mockHome(page: Page, options: HomeOptions = {}) {
   const context = { state: "ready", plan: { id: "plan_comrades", version: 3, revision: 2, startsOn: "2026-09-01", endsOn: "2027-06-13", timezone: "Africa/Johannesburg", approvalContentHash: "a".repeat(64) },
     goal: { ...goal }, milestones: milestones.slice(0, options.milestoneCount ?? 5).map((item, index) => options.longMilestoneName && index === 0 ? { ...item, eventName: ("A very long race milestone name " + "that remains readable ".repeat(7)).slice(0, 200) } : item),
     projection: { contextHash: "b".repeat(64), publishedAt: "2026-10-20T08:00:00.000Z" } };
-  await mockMilestoneRead(page, context, achievements.slice(0, options.achievementCount ?? achievements.length));
+  await mockMilestoneRead(page, context, achievements.slice(0, options.achievementCount ?? achievements.length), "presentation");
   if (options.goalUnavailable || options.historyUnavailable) await page.route(/\/api\/v1\/coaching\/milestones(?:\?.*)?$/u, (route) => route.fulfill({ status: 503, json: { error: { message: "Milestones unavailable" } } }));
   await page.route("**/api/v1/dashboard/appearance", (route) => route.fulfill({ json: { data: { heroImageUrl: options.background ?? "/road-to-comrades-v2.webp" } } }));
 }
@@ -106,12 +106,13 @@ test("saved custom scenery is retained and a failed custom image falls back to t
 });
 
 test("Home fails closed when the shared milestone view is unavailable and provides retry", async ({ page }) => {
-  await mockMilestoneRead(page, { state: "no_active_plan", plan: null, goal: null, milestones: null, projection: null }, []);
-  let reads = 0;
-  await page.route(/\/api\/v1\/coaching\/milestones(?:\?.*)?$/u, (route) => ++reads === 1 ? route.fulfill({ status: 503, json: { error: {} } }) : route.fallback());
+  await mockMilestoneRead(page, { state: "no_active_plan", plan: null, goal: null, milestones: null, projection: null }, [], "presentation");
+  let failing = true;
+  await page.route(/\/api\/v1\/coaching\/milestones(?:\?.*)?$/u, (route) => failing ? route.fulfill({ status: 503, json: { error: {} } }) : route.fallback());
   await page.goto("/dashboard");
   await expect(page.getByRole("button", { name: "Reload milestones" })).toBeVisible();
   await expect(page.locator(".road-stop-title")).toHaveCount(0);
+  failing = false;
   await page.getByRole("button", { name: "Reload milestones" }).click();
   await expect(page.getByText("Set a race goal to start your next chapter.")).toBeVisible();
   await expect(page.getByText("No completed milestones yet.")).toBeVisible();

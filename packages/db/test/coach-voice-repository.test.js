@@ -16,6 +16,7 @@ function actor(athleteId) {
 
 function matches(row, where) {
   for (const [key, value] of Object.entries(where ?? {})) {
+    if (key === "OR") { if (!value.some((condition) => matches(row, condition))) return false; continue; }
     if (key === "athleteId_operationId" || key === "athleteId_windowKind_windowStart") {
       if (!matches(row, value)) return false;
       continue;
@@ -24,6 +25,7 @@ function matches(row, where) {
     if (value && typeof value === "object" && !(value instanceof Date)) {
       if ("lte" in value && !(actual <= value.lte)) return false;
       if ("gt" in value && !(actual > value.gt)) return false;
+      if ("not" in value && actual === value.not) return false;
       continue;
     }
     if (actual instanceof Date && value instanceof Date) { if (actual.valueOf() !== value.valueOf()) return false; }
@@ -35,12 +37,13 @@ function matches(row, where) {
 function apply(row, data) {
   for (const [key, value] of Object.entries(data)) {
     if (value && typeof value === "object" && "increment" in value) row[key] = typeof row[key] === "bigint" ? row[key] + BigInt(value.increment) : row[key] + value.increment;
+    else if (value && typeof value === "object" && "decrement" in value) row[key] = typeof row[key] === "bigint" ? row[key] - BigInt(value.decrement) : row[key] - value.decrement;
     else row[key] = value;
   }
 }
 
 function fakePrisma() {
-  const store = { attempts: [], buckets: [], id: 0 };
+  const store = { attempts: [], buckets: [], sessions: [], id: 0 };
   let lock = Promise.resolve();
   const prisma = {
     coachVoiceAttempt: {
@@ -62,6 +65,12 @@ function fakePrisma() {
       },
       update: async ({ where, data }) => { const row = store.buckets.find((item) => matches(item, where)); if (!row) throw new Error("bucket missing"); apply(row, data); return row; },
     },
+    coachProgressiveDictationSession: {
+      findFirst: async ({ where }) => store.sessions.find((row) => matches(row, where)) ?? null,
+      findMany: async ({ where }) => store.sessions.filter((row) => matches(row, where)),
+      create: async ({ data }) => { const row = { id: `session_${++store.id}`, ...data }; store.sessions.push(row); return row; },
+      update: async ({ where, data }) => { const row = store.sessions.find((item) => matches(item, where)); if (!row) throw new Error("session missing"); apply(row, data); return row; },
+    },
     async $executeRaw() { return 1; },
     async $transaction(work) {
       const previous = lock;
@@ -75,10 +84,89 @@ function fakePrisma() {
     },
     store,
   };
+
   return prisma;
 }
 
 const reservation = (operationId, amount = 10_000) => ({ operationId, kind: "transcription", model: "whisper-1", inputUnits: 30, reservedMicroUsd: amount });
+
+test("progressive dictation reserves a pinned monthly budget, leases one session and settles unused funds", async () => {
+  const { CoachProgressiveConflictError, PrismaCoachProgressiveDictationRepository } = await import("../src/cloud/prisma-coach-progressive-dictation-repository.js");
+  const prisma = fakePrisma(); let serial = 0;
+  const november = new Date("2026-11-30T23:59:00.000Z"), december = new Date("2026-12-01T00:01:00.000Z");
+  const repository = new PrismaCoachProgressiveDictationRepository({ prisma, now: () => november, newId: () => `progressive_${++serial}` });
+  const scope = actor("athlete_progressive");
+  const session = await repository.createSession(scope, { conversationId: "conversation_1", generation: 1, sequence: 0, topic: "general", selectedRecord: null, contextFingerprint: "a".repeat(64) });
+  assert.equal(session.expiresAt.valueOf() - november.valueOf(), 30 * 60_000);
+  assert.equal(session.leaseExpiresAt.valueOf() - november.valueOf(), 90_000);
+  assert.equal(await repository.remainingAllowance(scope, november), 4_650_000);
+  assert.equal("audio" in session, false);
+  assert.equal("transcript" in session, false);
+  await assert.rejects(repository.createSession(scope, { conversationId: "conversation_1", generation: 1, sequence: 0, topic: "general", selectedRecord: null, contextFingerprint: "a".repeat(64) }), CoachProgressiveConflictError);
+  const chunk = { chunkIndex: 0, retryOrdinal: 0, audioDurationSeconds: 31, capturedEndSeconds: 30, capturedStartSeconds: 0 };
+  await repository.admitChunk(scope, session.id, { ...chunk, attemptId: "chunk_attempt_0" });
+  await assert.rejects(repository.admitChunk(scope, session.id, { ...chunk, attemptId: "chunk_attempt_busy", chunkIndex: 1, capturedStartSeconds: 30, capturedEndSeconds: 31 }), CoachProgressiveConflictError);
+  await repository.completeChunk(scope, "chunk_attempt_0", { state: "failed" });
+  await repository.admitChunk(scope, session.id, { ...chunk, retryOrdinal: 1, attemptId: "chunk_attempt_retry" });
+  await repository.completeChunk(scope, "chunk_attempt_retry", { state: "completed" });
+  await assert.rejects(repository.admitChunk(scope, session.id, { ...chunk, retryOrdinal: 1, attemptId: "chunk_attempt_retry_again" }), CoachProgressiveConflictError);
+  await assert.rejects(repository.getActiveSession(actor("athlete_progressive_other"), session.id), CoachProgressiveConflictError);
+  const closed = await repository.closeSession(scope, session.id, { now: december });
+  assert.equal(closed.closed, true);
+  const novemberBucket = prisma.store.buckets.find((row) => row.windowKind === "month");
+  assert.equal(novemberBucket.windowStart.toISOString(), "2026-11-01T00:00:00.000Z");
+  assert.equal(novemberBucket.reservedMicroUsd, 10_334n);
+  assert.equal(closed.remainingAllowanceMicroUsd, 4_989_666);
+  assert.equal(await repository.remainingAllowance(scope, december), 5_000_000);
+  await repository.closeSession(scope, session.id, { now: december });
+  assert.equal(novemberBucket.reservedMicroUsd, 10_334n);
+  const cancelled = await repository.createSession(scope, { conversationId: "conversation_1", generation: 1, sequence: 0, topic: "general", selectedRecord: null, contextFingerprint: "a".repeat(64), now: december });
+  await repository.closeSession(scope, cancelled.id, { cancel: true, now: december });
+  assert.equal(prisma.store.sessions.find((row) => row.id === cancelled.id).state, "cancelled");
+});
+
+test("progressive session starts and chunk submissions have independent rate windows", async () => {
+  const { CoachProgressiveLimitError, PrismaCoachProgressiveDictationRepository } = await import("../src/cloud/prisma-coach-progressive-dictation-repository.js");
+  const now = new Date("2026-11-02T10:00:00.000Z"), scope = actor("athlete_progressive_rates");
+  const startDb = fakePrisma(); const starts = new PrismaCoachProgressiveDictationRepository({ prisma: startDb, now: () => now });
+  const binding = { conversationId: "conversation_1", generation: 1, sequence: 0, topic: "general", selectedRecord: null, contextFingerprint: "b".repeat(64) };
+  for (let index = 0; index < 6; index += 1) {
+    const session = await starts.createSession(scope, binding);
+    await starts.closeSession(scope, session.id);
+  }
+  await assert.rejects(starts.createSession(scope, binding), CoachProgressiveLimitError);
+
+  const chunkDb = fakePrisma(); const chunks = new PrismaCoachProgressiveDictationRepository({ prisma: chunkDb, now: () => now });
+  const session = await chunks.createSession(actor("athlete_progressive_chunk_rates"), binding);
+  for (let index = 0; index < 12; index += 1) {
+    const attemptId = `chunk_rate_${index}`;
+    await chunks.admitChunk(actor("athlete_progressive_chunk_rates"), session.id, { attemptId, chunkIndex: index, retryOrdinal: 0, audioDurationSeconds: 1, capturedStartSeconds: index, capturedEndSeconds: index + 1 });
+    await chunks.completeChunk(actor("athlete_progressive_chunk_rates"), attemptId, { state: "completed" });
+  }
+  await assert.rejects(chunks.admitChunk(actor("athlete_progressive_chunk_rates"), session.id, { attemptId: "chunk_rate_13", chunkIndex: 12, retryOrdinal: 0, audioDurationSeconds: 1, capturedStartSeconds: 12, capturedEndSeconds: 13 }), CoachProgressiveLimitError);
+});
+
+test("progressive lease expiry settles unused reservation and rejects late work", async () => {
+  const { CoachProgressiveConflictError, PrismaCoachProgressiveDictationRepository } = await import("../src/cloud/prisma-coach-progressive-dictation-repository.js");
+  let now = new Date("2026-11-02T10:00:00.000Z");
+  const prisma = fakePrisma(); const repository = new PrismaCoachProgressiveDictationRepository({ prisma, now: () => now });
+  const scope = actor("athlete_progressive_expiry");
+  const session = await repository.createSession(scope, { conversationId: null, generation: 1, sequence: 0, topic: "general", selectedRecord: null, contextFingerprint: "c".repeat(64) });
+  now = new Date(now.valueOf() + 90_001);
+  await assert.rejects(repository.getActiveSession(scope, session.id), CoachProgressiveConflictError);
+  assert.equal(prisma.store.sessions[0].state, "expired");
+  assert.equal(prisma.store.buckets.find((bucket) => bucket.windowKind === "month").reservedMicroUsd, 0n);
+});
+
+test("concurrent progressive session creation across repository instances admits only one", async () => {
+  const { CoachProgressiveConflictError, PrismaCoachProgressiveDictationRepository } = await import("../src/cloud/prisma-coach-progressive-dictation-repository.js");
+  const prisma = fakePrisma(), now = new Date("2026-11-02T10:00:00.000Z"), scope = actor("athlete_progressive_concurrent");
+  const repositories = [new PrismaCoachProgressiveDictationRepository({ prisma, now: () => now }), new PrismaCoachProgressiveDictationRepository({ prisma, now: () => now })];
+  const binding = { conversationId: "conversation_1", generation: 1, sequence: 0, topic: "general", selectedRecord: null, contextFingerprint: "d".repeat(64) };
+  const results = await Promise.allSettled(repositories.map((repository) => repository.createSession(scope, binding)));
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected" && result.reason instanceof CoachProgressiveConflictError).length, 1);
+});
 
 test("real PostgreSQL voice admissions execute the lock and serialize separate Prisma clients", {
   skip: !process.env.COACH_VOICE_TEST_DATABASE_URL,

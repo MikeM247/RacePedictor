@@ -270,15 +270,29 @@ export function buildCoachInstructions(context: CoachContext) {
   ].join("\n\n");
 }
 
-export function boundCoachPrompt(instructions: string, history: readonly { role: string; text: string }[], currentText: string) {
+export function boundCoachPrompt(instructions: string, history: readonly { role: string; text: string }[], currentText: string, model = "gpt-5-mini") {
   const boundedHistory = history.slice(-20).map(({ role, text }) => ({ role: role === "assistant" ? "assistant" : "user", content: text }));
-  const maxBytes = 48 * 1024;
+  const maxBytes = modelPromptBudgetBytes(model);
   const current = { role: "user", content: currentText };
   const bytes = (messages: typeof boundedHistory) => Buffer.byteLength(instructions, "utf8")
     + Buffer.byteLength(JSON.stringify([...messages, current]), "utf8");
   while (boundedHistory.length > 0 && bytes(boundedHistory) > maxBytes) boundedHistory.shift();
   if (bytes(boundedHistory) > maxBytes) throw new Error("COACH_CONTEXT_TOO_LARGE");
   return [...boundedHistory, current];
+}
+
+export function modelPromptBudgetBytes(model = "gpt-5-mini") {
+  const contextTokens = model.startsWith("gpt-5") ? 400_000
+    : model.startsWith("gpt-4.1") ? 1_000_000
+      : model.startsWith("gpt-4o") || model.startsWith("gpt-4-turbo") ? 128_000
+        : model.startsWith("gpt-4") ? 8_192
+          : model.startsWith("gpt-3.5") ? 16_385
+            : model.startsWith("o1") || model.startsWith("o3") ? 200_000
+              : null;
+  // For unknown configured models, retain the previous bounded prompt size.
+  if (contextTokens === null) return 48 * 1024;
+  const inputBudget = Math.max(0, contextTokens - 4_000); // output allowance and safety headroom
+  return Math.min(256 * 1024, inputBudget);
 }
 
 function buildOpening(input: {

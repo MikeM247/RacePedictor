@@ -34,7 +34,8 @@ import { CoachProviderError, coachModelFromEnvironment, createOpenAIChatProvider
 import type { SensitiveRouteContext } from "./route-security.ts";
 import { withSensitiveRoute } from "./route-security.ts";
 
-const MAX_BODY_BYTES = 32 * 1024;
+// 30,000 Unicode code points can require up to six JSON bytes each when escaped.
+const MAX_BODY_BYTES = 192 * 1024;
 const publicFailureMessages: Record<string, string> = {
   PROVIDER_NOT_CONFIGURED: "Coach chat is not configured yet. Your message was saved; retry when the service is available.",
   PROVIDER_TIMEOUT: "The reply took too long. Your message was saved and can be retried.",

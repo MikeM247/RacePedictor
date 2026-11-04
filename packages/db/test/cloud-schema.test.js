@@ -41,6 +41,7 @@ test("cloud persistence models are present and athlete scoped", () => {
     "CoachTurn",
     "CoachMessage",
     "CoachUsageBucket",
+    "CoachProgressiveDictationSession",
   ];
 
   for (const model of requiredModels) modelBlock(model);
@@ -48,6 +49,25 @@ test("cloud persistence models are present and athlete scoped", () => {
   for (const model of requiredModels.slice(2)) {
     assert.match(modelBlock(model), /\bathleteId\s+String\b/, `${model} must be athlete scoped`);
   }
+});
+
+test("progressive dictation persists only session and attempt metadata", async () => {
+  const session = modelBlock("CoachProgressiveDictationSession");
+  const attempt = modelBlock("CoachVoiceAttempt");
+  for (const field of ["athleteId", "conversationId", "generation", "sequence", "topic", "contextFingerprint", "state", "expiresAt", "leaseExpiresAt", "admissionMonthStart", "reservedMicroUsd", "chargedMicroUsd", "capturedSeconds", "admittedChunks"]) {
+    assert.match(session, new RegExp(`\\b${field}\\b`));
+  }
+  assert.match(attempt, /\bsessionId\s+String\?/u);
+  assert.match(attempt, /\bchunkIndex\s+Int\?/u);
+  assert.match(attempt, /\bretryOrdinal\s+Int\?/u);
+  assert.doesNotMatch(session, /^\s*(audio|transcript|words|payload)\s+/imu);
+
+  const directories = (await readdir(migrationsUrl, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+  const migration = await readFile(new URL(`${directories.at(-1)}/migration.sql`, migrationsUrl), "utf8");
+  assert.match(migration, /coach_progressive_dictation_sessions/iu);
+  assert.match(migration, /chunk_minute/iu);
+  assert.match(migration, /coach_voice_attempts_progressive_binding_check/iu);
+  assert.doesNotMatch(migration, /"(audio|transcript|words|payload)"\s+(BYTEA|JSONB|TEXT)/iu);
 });
 
 test("tenant identity participates in entity relations and idempotency keys", () => {

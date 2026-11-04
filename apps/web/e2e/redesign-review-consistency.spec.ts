@@ -24,7 +24,7 @@ async function mockReviewSurfaces(page: Page) {
   await page.route("**/api/v1/sync/status", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: syncStatus }) }));
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { athleteId: "f03-athlete", date: "2026-09-15", timezone: "Africa/Johannesburg", state: "rest", status: "rest", message: "Rest scheduled.", goal: null, plan: null, session: null, localCue: "Recover.", stale: { isStale: false }, links: { plan: "/dashboard/plan", calendar: "/dashboard/calendar", session: null } } }) }));
   await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: activePlan }) }));
-  await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { sessions: [], activities: [{ ...activity, localDate: "2026-09-15" }] } }) }));
+  await page.route("**/api/v1/coaching/calendar**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { from: "2026-08-31", to: "2026-10-04", timezone: "Africa/Johannesburg", sessions: [], historicalSessions: [], activitiesReadStatus: "available", activities: [{ ...activity, localDate: "2026-09-15" }] } }) }));
   await page.route("**/api/v1/activities**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith("/coach-review")) {
@@ -37,14 +37,13 @@ async function mockReviewSurfaces(page: Page) {
   return { failFutureReviewReads: () => { failFutureReviewReads = true; } };
 }
 
-test("F03 opens the persisted review from Home and Calendar without a write", async ({ page }) => {
+test("F03 opens the persisted review from Training and Calendar without a write", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => { if (!["GET", "HEAD"].includes(request.method())) writes.push(request.url()); });
   await mockReviewSurfaces(page);
 
-  await page.goto("/dashboard");
+  await page.goto(`/dashboard/activities?activityId=${activity.id}`);
   await expect(page.getByRole("heading", { name: "F03 recorded run" })).toBeVisible();
-  await page.getByRole("link", { name: "Review run →" }).click();
   await expect(page.getByRole("heading", { name: "A controlled recorded run." })).toBeVisible();
   await expect(page.getByText("Suggested plan match — not confirmed", { exact: false })).toBeVisible();
   await expect(page.getByText("Heart-rate data was not supplied.")).toBeVisible();

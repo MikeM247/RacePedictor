@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "tsc --project tsconfig.typecheck.json --noEmit",
     "typecheck": "tsc --project tsconfig.typecheck.json --noEmit",
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node --experimental-strip-types --import ./test/setup-unit-environment.mjs --test test/*.test.ts",
     "test:e2e": "playwright test --config playwright.config.ts",
     "test:e2e:local": "node scripts/assert-e2e-port.mjs 3311 && playwright test --config playwright.config.ts && node scripts/assert-e2e-port.mjs 3314 && playwright test --config playwright.home.local.config.ts && node scripts/assert-e2e-port.mjs 3313 && playwright test --config playwright.readiness.local.config.ts",
     "test:e2e:online": "playwright test --config playwright.online.config.ts",
@@ -20,7 +20,8 @@
     "coaching:propose-goal-structure": "node --experimental-strip-types scripts/propose-goal-structure.ts",
     "coaching:export-active-plan": "node --experimental-strip-types scripts/export-active-plan.ts",
     "coaching:today": "node --experimental-strip-types scripts/read-today-coaching.ts",
-    "test:e2e:milestone-home": "playwright test --config playwright.milestone-home.config.ts"
+    "test:e2e:milestone-home": "playwright test --config playwright.milestone-home.config.ts",
+    "test:e2e:dictation:integration": "playwright test --config playwright.dictation.integration.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

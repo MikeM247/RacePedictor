@@ -38,7 +38,7 @@ export function createOpenAIChatProvider(input: {
     if (!apiKey) throw new CoachProviderError("PROVIDER_NOT_CONFIGURED", "Coach chat is not configured yet.");
     const instructions = buildCoachInstructions(request.context);
     let messages: ReturnType<typeof boundCoachPrompt>;
-    try { messages = boundCoachPrompt(instructions, request.history, request.userText); }
+    try { messages = boundCoachPrompt(instructions, request.history, request.userText, model); }
     catch { throw new CoachProviderError("CONTEXT_TOO_LARGE", "The current coaching context is too large to send safely."); }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);

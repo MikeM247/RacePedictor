@@ -13,7 +13,7 @@ import type { TrainingSection } from "../../../../packages/core/src/contracts/ho
 import {
   homeMilestones,
   entryTargetLabel,
-  entryStatus,
+  entryStatus, milestoneResultTime, milestoneResultDistance,
   daysUntil,
 } from "../../../../packages/core/src/services/home-milestones.ts";
 import { entryImage } from "../../../../packages/core/src/services/milestone-images.ts";
@@ -179,7 +179,7 @@ export function MilestoneMark({
   useEffect(() => setFailed(false), [mark.url]);
   const pb = entry.achievement?.achievement === "personal_best";
   const distance =
-    entry.achievement?.distanceMeters ?? entry.target?.distanceMeters;
+    milestoneResultDistance(entry) ?? entry.target?.distanceMeters;
   const number = distance
     ? String(Math.round(distance / 1000))
     : pb
@@ -236,7 +236,7 @@ function MilestoneStops({
                 : entry.completion === "result_pending"
                   ? "Result pending"
                   : "Milestone";
-        const result = entry.achievement?.elapsedTimeSeconds;
+        const result = milestoneResultTime(entry);
         return (
           <li
             key={entry.id}
@@ -304,6 +304,24 @@ export function OptionNineHome({
     images = useMilestoneImages(true, refreshKey),
     training = useHomeTraining(refreshKey);
   const { coachAvailable } = useDashboardFeatures();
+  const [reviewQueue, setReviewQueue] = useState<any[]>([]), [selectedReviewId, setSelectedReviewId] = useState<string | null>(null), [reviewBusy, setReviewBusy] = useState(false);
+  const reviewReturnFocus = useRef<HTMLHeadingElement | null>(null);
+  const reviewCandidate = reviewQueue[0] ?? null;
+  const reviewOptions = reviewCandidate ? reviewQueue.filter((candidate) => candidate.target.id === reviewCandidate.target.id) : [];
+  const reviewGroupCount = new Set(reviewQueue.map(candidate => candidate.target.id)).size;
+  const selectedReview = selectedReviewId ? reviewOptions.find((candidate) => candidate.achievement.id === selectedReviewId) : undefined;
+  const activeReview = selectedReview ?? reviewCandidate;
+  const officialFacts = activeReview ? activeReview.achievement.officialResult : undefined;
+  const resultFacts = activeReview ? officialFacts ?? activeReview.achievement : undefined;
+  const reviewTargetLabel = activeReview ? entryTargetLabel({ title: activeReview.target.title, target: activeReview.target } as MilestoneEntry) : "Finish goal";
+  const reviewOutcome = activeReview?.assessment?.performance === "achieved"
+    ? `This result appears to meet the ${reviewTargetLabel} target.`
+    : activeReview?.assessment?.performance === "missed"
+      ? `You finished the race; this result appears outside the ${reviewTargetLabel} target.`
+      : activeReview?.assessment?.performance === "not_set"
+        ? "The race can be completed without a time target."
+        : "The finish can be confirmed, but these facts do not yet support a target assessment.";
+  const reviewDifference = activeReview?.assessment?.timeDifferenceSeconds;
   const timezone =
     timeline.data?.context?.plan?.timezone ??
     training.data?.timezone ??
@@ -319,6 +337,43 @@ export function OptionNineHome({
     next = journey.next,
     target = next?.target;
   useEffect(() => {
+    let active=true;
+    let focusTimer:number|undefined;
+    const check=async()=>{
+      if(document.visibilityState!=="visible" || !timeline.data || document.querySelector("dialog[open]"))return;
+      const focused=document.activeElement;
+      if(focused instanceof HTMLElement && focused!==document.body && focused!==document.documentElement && focused.matches("a,button,input,textarea,select,[role=button],[contenteditable=true],[tabindex]:not([tabindex='-1'])"))return;
+      try { const response=await fetch("/api/v1/coaching/milestones/reviews",{cache:"no-store"}); if(!response.ok)return; const data=(await response.json()).data; if(!active)return; setReviewQueue((current)=>current.length?current:data.candidates); }
+      catch { /* keep Home usable when review checks are unavailable */ }
+    };
+    void check(); const refresh=()=>void check(); const timer=window.setInterval(refresh,30_000);
+    const focusout=()=>{window.clearTimeout(focusTimer);focusTimer=window.setTimeout(refresh,0);};
+    window.addEventListener("focus",refresh); document.addEventListener("visibilitychange",refresh);
+    document.addEventListener("focusout",focusout);
+    window.addEventListener("milestones-changed",refresh); window.addEventListener("race-history-changed",refresh); window.addEventListener("activities-changed",refresh); window.addEventListener("activity-sync-complete",refresh);
+    return()=>{active=false;window.clearInterval(timer);window.clearTimeout(focusTimer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);document.removeEventListener("focusout",focusout);window.removeEventListener("milestones-changed",refresh);window.removeEventListener("race-history-changed",refresh);window.removeEventListener("activities-changed",refresh);window.removeEventListener("activity-sync-complete",refresh);};
+  },[timeline.data]);
+  async function decideReview(decision:"confirm"|"deferred"|"rejected") {
+    if(!activeReview||reviewBusy||!timeline.data)return; setReviewBusy(true);
+    try {
+      const target=activeReview.target, result=activeReview.achievement;
+      const entry=timeline.data.entries.find(e=>e.target?.id===target.id) ?? timeline.data.entries.find(e=>e.achievement?.id===result.id);
+      if(!entry)throw new Error("Reload milestones to review this race.");
+      const command={operation:"link",entryId:entry.id,achievementId:result.id,confirmedSameRace:true,expectedRevision:timeline.data.revision,sourceVersion:timeline.data.sourceVersion};
+      if(decision==="confirm") {
+        const previewResponse=await fetch("/api/v1/coaching/milestones/results/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(command)}); const preview=await previewResponse.json(); if(!previewResponse.ok)throw new Error(preview.error?.message??"Could not review this result.");
+        if(preview.data.imageConflict)throw new Error("Choose which milestone image to keep in Settings before linking.");
+        const response=await fetch("/api/v1/coaching/milestones/results/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...command,previewDigest:preview.data.digest})}); if(!response.ok)throw new Error("Milestones changed. Reload before confirming.");
+        timeline.accept((await response.json()).data); window.dispatchEvent(new Event("milestones-changed")); window.dispatchEvent(new Event("milestone-images-changed"));
+      } else {
+        const groupDecision=!!reviewCandidate?.ambiguous&&!selectedReview;
+        const response=await fetch("/api/v1/coaching/milestones/changes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({operation:"review",entryId:target.id,achievementId:groupDecision?"*":result.id,reviewDecision:decision,expectedRevision:timeline.data.revision,sourceVersion:timeline.data.sourceVersion})}); if(!response.ok)throw new Error("Milestones changed. Reload before deciding."); timeline.accept((await response.json()).data);
+      }
+      setReviewQueue((current)=>decision==="confirm"||!!reviewCandidate?.ambiguous&&!selectedReview?current.filter(candidate=>candidate.target.id!==target.id):current.filter(candidate=>candidate.achievement.id!==result.id));
+      setSelectedReviewId(null);
+    } catch(error) { window.alert(error instanceof Error?error.message:"Could not save your review decision."); } finally {setReviewBusy(false);}
+  }
+  useEffect(() => {
     if (!onRefresh) return;
     const timer = window.setTimeout(
       onRefresh,
@@ -326,10 +381,11 @@ export function OptionNineHome({
     );
     return () => window.clearTimeout(timer);
   }, [timezone, today, onRefresh]);
-  const [selection, setSelection] = useState<MilestoneEntry | null>(null),
+  const [savedSelection, setSelection] = useState<MilestoneEntry | null>(null),
     [all, setAll] = useState(false),
     [hero, setHero] = useState("/road-to-comrades-v2.webp"),
     [orbitFailed, setOrbitFailed] = useState(false);
+  const selection = savedSelection ? timeline.data?.entries.find(e => e.id === savedSelection.id || e.sources.some(source => savedSelection.sources.some(old => old.kind === source.kind && old.id === source.id))) ?? null : null;
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/v1/dashboard/appearance", {
@@ -371,7 +427,7 @@ export function OptionNineHome({
       <main className="app-main" id="dashboard-main-content" tabIndex={-1}>
         <header className="page-head">
           <div>
-            <h1>One milestone closer.</h1>
+          <h1 ref={reviewReturnFocus} tabIndex={-1}>One milestone closer.</h1>
             <p>Your next goal in focus. See how far you’ve already come.</p>
           </div>
           <span className="small-note">{date}</span>
@@ -571,6 +627,40 @@ export function OptionNineHome({
           />
         </section>
       </main>
+      <NativeModal open={!!reviewCandidate} titleId="milestone-review-title" onClose={()=>void decideReview("deferred")} busy={reviewBusy} returnFocusRef={reviewReturnFocus} className="app-dialog milestone-review-dialog">
+        {reviewCandidate && activeReview ? <>
+          <p className="overline">Milestone check · {reviewGroupCount} {reviewGroupCount===1?"race review":"race reviews"}</p>
+          <h2 id="milestone-review-title">Review a possible completed milestone</h2>
+          <p className="milestone-review-outcome">{activeReview.assessment.performance==="achieved"?"Congratulations—your result appears to meet this target.":activeReview.assessment.performance==="missed"?"You completed the race. Review the target result.":"Review your race result"}</p>
+          <p>We found a possible race match. Confirm the race identity to record completion; the result comparison below is based only on saved facts.</p>
+          <section className="milestone-review-summary" aria-label="Race and target comparison">
+            <h3>{activeReview.target.eventName||activeReview.target.title}</h3>
+            <p>Milestone date · {formatCoachingDate(activeReview.target.date,timezone)}</p>
+            <p>Target · {formatDistance(activeReview.target.distanceMeters)} · {reviewTargetLabel}</p>
+            <h4>{activeReview.achievement.title}</h4>
+            <p>{officialFacts?"Confirmed official result facts":"Saved historical facts (legacy basis)"}</p>
+            <dl>
+              <div><dt>Race date</dt><dd>{resultFacts?.raceDate?formatCoachingDate(resultFacts.raceDate,timezone):"Not recorded"}</dd></div>
+              <div><dt>Official distance</dt><dd>{resultFacts?.distanceMeters?formatDistance(resultFacts.distanceMeters):"Not recorded"}</dd></div>
+              <div><dt>Elapsed result</dt><dd>{resultFacts?.elapsedTimeSeconds?formatDuration(resultFacts.elapsedTimeSeconds):"Not recorded"}</dd></div>
+              <div><dt>Achievement claim</dt><dd>{activeReview.achievement.achievement==="personal_best"?"Personal best":activeReview.achievement.achievement==="goal_achieved"?"Goal achieved":"Race result"}</dd></div>
+            </dl>
+            <p className="milestone-review-outcome">{reviewOutcome}</p>
+            {reviewDifference!==undefined?<p>{formatDuration(Math.abs(reviewDifference))} {reviewDifference<0?"faster":"slower"} than the target time.</p>:null}
+            {activeReview.assessment.assessmentReasons.map((reason:string)=><p key={reason}>{reason}</p>)}
+          </section>
+          {reviewCandidate.ambiguous?<fieldset className="milestone-review-choices"><legend>Choose the result that belongs to this race</legend>
+            {reviewOptions.map((candidate:any)=><label key={candidate.achievement.id}><input type="radio" name="milestone-review-result" checked={selectedReviewId===candidate.achievement.id} onChange={()=>setSelectedReviewId(candidate.achievement.id)} />{candidate.achievement.title} · {candidate.achievement.officialResult?.elapsedTimeSeconds?formatDuration(candidate.achievement.officialResult.elapsedTimeSeconds):candidate.achievement.elapsedTimeSeconds?formatDuration(candidate.achievement.elapsedTimeSeconds):"Time not recorded"}</label>)}
+          </fieldset>:null}
+          {reviewGroupCount>1?<p>{reviewGroupCount-1} other race {reviewGroupCount-1===1?"review":"reviews"} will follow.</p>:null}
+          <div className="road-form-actions">
+            <button className="button button-primary" disabled={reviewBusy||!!reviewCandidate.ambiguous&&!selectedReview} onClick={()=>void decideReview("confirm")}>Confirm result and complete milestone</button>
+            <button className="button button-secondary" disabled={reviewBusy} onClick={()=>void decideReview("deferred")}>Later</button>
+            <button className="text-link" disabled={reviewBusy} onClick={()=>void decideReview("rejected")}>Not this race</button>
+            <Link className="text-link" href={`/dashboard/settings?section=milestones&milestone=${encodeURIComponent(reviewCandidate.target.id)}`}>Review or correct result</Link>
+          </div>
+        </>:null}
+      </NativeModal>
       <NativeModal
         open={!!selection}
         titleId="home-milestone-title"
@@ -593,19 +683,23 @@ export function OptionNineHome({
               <p>{formatCoachingDate(selection.date, timezone)}</p>
             ) : null}
             <p>
-              {selection.achievement?.distanceMeters
-                ? formatDistance(selection.achievement.distanceMeters)
+              {milestoneResultDistance(selection)
+                ? formatDistance(milestoneResultDistance(selection)!)
                 : selection.target
                   ? formatDistance(selection.target.distanceMeters)
                   : "Distance not recorded"}
             </p>
             <p>
-              {selection.achievement?.elapsedTimeSeconds
-                ? `Recorded ${formatDuration(selection.achievement.elapsedTimeSeconds)}`
+              {milestoneResultTime(selection)
+                ? `Recorded ${formatDuration(milestoneResultTime(selection)!)}`
                 : selection.target
                   ? entryTargetLabel(selection)
                   : "Result time not recorded"}
             </p>
+            {selection.target && selection.achievement ? <p>Original target: {entryTargetLabel(selection)}</p> : null}
+            {selection.timeDifferenceSeconds !== undefined ? <p>{Math.abs(selection.timeDifferenceSeconds)} seconds {selection.timeDifferenceSeconds < 0 ? "under" : "over"} target</p> : null}
+            {selection.assessmentReasons?.map(reason => <p key={reason}>{reason}</p>)}
+            {selection.target && selection.target.date <= today ? <Link className="button" href={`/dashboard/settings?section=milestones&milestone=${encodeURIComponent(selection.target.id)}`}>Record or align result</Link> : null}
             {selection.target?.mainGoal ? (
               <Link className="text-link" href="/dashboard/plan">
                 View approved Plan →
@@ -767,3 +861,4 @@ function HomeTrainingCard({
     </article>
   );
 }
+

@@ -114,6 +114,26 @@
 .option-nine-home .app-dialog .road-dialog-content {
   padding: 0;
 }
+.option-nine-home dialog.milestone-review-dialog { width: min(600px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: clamp(18px, 4vw, 30px); }
+.option-nine-home .milestone-review-dialog h2 { margin-block: 10px; font-size: clamp(23px, 5vw, 30px); line-height: 1.2; }
+.option-nine-home .milestone-review-dialog h3, .option-nine-home .milestone-review-dialog h4 { margin-block: 10px 6px; }
+.option-nine-home .milestone-review-dialog p { margin-block: 8px; line-height: 1.5; }
+.option-nine-home .milestone-review-summary { margin-block: 16px; padding: 14px; border: 1px solid #436573; border-radius: 10px; background: #0b1d28; overflow-wrap: anywhere; }
+.option-nine-home .milestone-review-summary dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 12px 0; }
+.option-nine-home .milestone-review-summary dl div { min-width: 0; }
+.option-nine-home .milestone-review-summary dt { color: #a9bfcb; font-size: 12px; }
+.option-nine-home .milestone-review-summary dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+.option-nine-home .milestone-review-outcome { font-weight: 700; }
+.option-nine-home .milestone-review-choices { display: grid; gap: 8px; margin: 14px 0; padding: 12px; border: 1px solid #436573; border-radius: 8px; }
+.option-nine-home .milestone-review-choices label { display: flex; align-items: start; gap: 10px; min-height: 44px; padding: 8px; border-radius: 6px; background: #0b1d28; overflow-wrap: anywhere; }
+.option-nine-home .milestone-review-choices input { flex: 0 0 auto; min-width: 20px; min-height: 20px; }
+.option-nine-home .milestone-review-dialog .road-form-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.option-nine-home .milestone-review-dialog .road-form-actions > * { min-width: 0; }
+@media (max-width: 480px) {
+  .option-nine-home .milestone-review-summary dl { grid-template-columns: minmax(0, 1fr); }
+  .option-nine-home .milestone-review-dialog .road-form-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .option-nine-home .milestone-review-dialog .road-form-actions > * { width: 100%; }
+}
 .option-nine-home .home-menu-links {
   display: grid;
   gap: 12px;

@@ -259,9 +259,9 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Active");
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Synthetic easy aerobic run" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /View workout|View calendar/ })).toBeVisible();
-  await expect(page.locator('a[href="/dashboard/plan"]').first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your goal and running journey" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Calendar", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
 
   await page.goto("/dashboard/calendar");
   const futureDay = page.locator(".calendar-day").filter({ hasText: "Synthetic future aerobic run" });
@@ -301,7 +301,7 @@ test("manual history becomes an explicitly approved and safely scheduled digital
   await expect(sessionCard.getByLabel("Move to date")).toHaveValue(sameWeekConflictDate);
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Synthetic easy aerobic run" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your goal and running journey" })).toBeVisible();
 
   await page.goto("/dashboard/settings");
   await expect(page.getByLabel("Local time")).toHaveValue("06:30");
@@ -542,9 +542,8 @@ test("the complete digital-coach journey remains usable at the 390px baseline", 
   await expect(mobileSession).toContainText("Run easily for 40 minutes");
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Mobile confidence run" })).toBeVisible();
-  await page.locator(".road-session-details summary").click();
-  await expect(page.getByText("Run easily for 40 minutes at conversational effort.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your goal and running journey" })).toBeVisible();
+  await expect(page.locator(".today-coach-card")).toHaveCount(0);
 
   await page.goto("/dashboard/settings");
   await expect(page.getByRole("button", { name: "Save preferences" })).toBeDisabled();
@@ -595,7 +594,7 @@ test("Plan keeps the active version in focus across Today navigation and hides s
   await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(pageHeading(page, "/dashboard", "Home")).toBeVisible();
-  await page.locator('a[href="/dashboard/plan"]').first().click();
+  await page.goto("/dashboard/plan");
   await expect(page).toHaveURL(/\/dashboard\/plan$/);
   await expect(page.getByRole("region", { name: "Active plan" })).toContainText("Approval record2");
   await expect(page.getByLabel("Goal", { exact: true })).toBeHidden();
@@ -678,54 +677,22 @@ test("Plan treats documented no-plan absence as normal while independently resto
   await expect(page.getByText("coaching-context.v1.json")).toBeVisible();
 });
 
-test("Today distinguishes loading, error recovery, and no-plan", async ({ page }) => {
-  let serveInitialFailure = true;
-  let releaseRequest!: () => void;
-  const pendingRequest = new Promise<void>((resolve) => { releaseRequest = resolve; });
-  await page.route("**/api/v1/coaching/today", async (route) => {
-    if (serveInitialFailure) {
-      await pendingRequest;
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Synthetic Today outage" } }) });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: noPlanToday }) });
-  });
-
+test("minimal Home remains available when the unused Today service fails", async ({ page }) => {
+  let todayReads = 0;
+  await page.route("**/api/v1/coaching/today", (route) => { todayReads += 1; return route.fulfill({ status: 503, json: { error: { message: "Today unavailable" } } }); });
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Loading today's focus…" })).toBeVisible();
-  serveInitialFailure = false;
-  releaseRequest();
-  await expect(page.getByRole("heading", { name: "Today's coaching context is unavailable" })).toBeVisible();
-  await expect(page.getByRole("alert").filter({ hasText: "Synthetic Today outage" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry today" }).click();
-  await expect(page.getByRole("heading", { name: "No active coaching plan yet" })).toBeVisible();
-  await expect(page.getByText("No active plan", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your goal and running journey" })).toBeVisible();
+  await expect(page.locator(".today-coach-card")).toHaveCount(0);
+  expect(todayReads).toBe(0);
 });
 
-test("Today shows stale context and specific links when the local Home snapshot is unavailable", async ({ page }) => {
-  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify(coachingFixtures.today({
-      date: "2026-08-05", sessionId: "session_synthetic", state: "stale", status: "stale",
-      message: "Imported activity history changed after the active plan context was captured.",
-      todayScheduleKind: "prescribed_session",
-      localCue: "Review the latest app-owned context before relying on the approved schedule; no plan change has been made.",
-      goal: { id: "goal_synthetic", title: "Synthetic half marathon", why: "Synthetic purpose", targetDate: "2026-09-16", countdown: { days: 42, label: "42 days to target" } },
-      plan: { id: "plan_synthetic", version: 3, startsOn: "2026-08-03", endsOn: "2026-09-16" },
-      planVersion: 3,
-      session: validCalendarSession({ id: "session_synthetic", title: "Synthetic threshold session", purpose: "Practice controlled effort.", prescription: "Run three controlled threshold intervals.", durationMinutes: 40, scheduledDate: "2026-08-05", prescribedDate: "2026-08-05", effectiveDate: "2026-08-05", originalDate: "2026-08-05" }),
-      scheduleWarnings: ["Imported history is newer than the active plan context."],
-      stale: { isStale: true, reason: "Imported activity history is newer than the active plan context." },
-      links: { plan: "/dashboard/plan#active-plan-heading", calendar: "/dashboard/calendar", session: "/dashboard/calendar?session=session_synthetic&date=2026-08-05#session-session_synthetic" },
-    })),
-  }));
-
+test("minimal Home does not present a stale Today assessment as goal progress", async ({ page }) => {
+  let todayReads = 0;
+  await page.route("**/api/v1/coaching/today", (route) => { todayReads += 1; return route.fulfill({ json: { data: { state: "stale", message: "Synthetic stale daily assessment" } } }); });
   await page.goto("/dashboard");
-  await expect(page.getByText("Synthetic threshold session")).toBeVisible();
-  await expect(page.getByText("Imported activity history changed after the active plan context was captured.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Review session|View workout|View calendar/ })).toBeVisible();
-  await expect(page.locator('a[href*="/dashboard/plan"]').first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your goal and running journey" })).toBeVisible();
+  await expect(page.getByText("Synthetic stale daily assessment")).toHaveCount(0);
+  expect(todayReads).toBe(0);
 });
 
 test("Calendar deep links reveal a prescribed session outside the current week and show stale context", async ({ page }) => {
@@ -1007,36 +974,14 @@ test("Settings rehydrates prepared handoff status and its coaching-context refer
   await expect(page.getByText("Prepared artifact: Coach Exchange/Generated/coaching-context.v1.json")).toBeVisible();
 });
 
-test("Today keeps a missed-session warning and actions usable at the mobile baseline", async ({ page }) => {
+test("minimal Home keeps goal and Calendar navigation usable at the mobile baseline", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route("**/api/v1/coaching/today", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ data: {
-      date: "2026-08-06",
-      timezone: "America/Los_Angeles",
-      state: "missed",
-      todayScheduleKind: "prescribed_session",
-      message: "Synthetic easy run was scheduled for 2026-08-05 and is still marked upcoming.",
-      localCue: "Check the past session in Calendar before choosing today's training; no plan change has been made.",
-      goal: { id: "goal_mobile", title: "Synthetic consistency goal", why: "Synthetic purpose", targetDate: "2026-09-01", countdown: { days: 26, label: "26 days to target" } },
-      plan: { id: "plan_mobile", version: 1, startsOn: "2026-08-03", endsOn: "2026-09-01" },
-      session: { id: "session_missed", status: "upcoming", title: "Synthetic easy run", purpose: "Build aerobic consistency.", durationMinutes: 35, scheduledDate: "2026-08-05", effectiveDate: "2026-08-05" },
-      scheduleWarnings: ["Synthetic easy run is past and still marked upcoming. No automatic run review or plan change has occurred."],
-      links: { plan: "/dashboard/plan#active-plan-heading", calendar: "/dashboard/calendar", session: "/dashboard/calendar?session=session_missed&date=2026-08-05#session-session_missed" },
-    } }),
-  }));
-
   await page.goto("/dashboard");
-  const card = page.getByRole("region", { name: "Past session needs attention" });
-  await expect(card).toBeVisible();
-  await expect(card).toContainText("Missed · unconfirmed");
-  await expect(card.getByRole("link", { name: "Review session →" })).toBeVisible();
-  const bounds = await card.boundingBox();
-  expect(bounds).not.toBeNull();
-  expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await expect(page.getByRole("region", { name: "Your goal and running journey" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await page.getByRole("link", { name: "Calendar", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/calendar/);
 });
 
 test("all current screens keep one active route and no horizontal overflow at desktop and tablet baselines", async ({ page }) => {
@@ -1116,7 +1061,7 @@ test("local Activities filters imported history and restores selected-row focus 
   });
 
   await page.goto("/dashboard/activities");
-  const initialState = page.getByRole("heading", { name: /No activities yet|Unable to load activities/ });
+  const initialState = page.getByRole("heading", { name: /No activities yet|Unable to load activities|Recent activities/ });
   await expect(initialState).toBeVisible();
   if (await page.getByRole("button", { name: "Try again" }).isVisible()) {
     await page.getByRole("button", { name: "Try again" }).click();

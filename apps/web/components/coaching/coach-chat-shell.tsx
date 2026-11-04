@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
+  COACH_CHAT_MAX_MESSAGE_CHARS,
   coachContextSchema,
   coachConversationStateSchema,
   coachArchiveResultSchema,
@@ -16,6 +17,7 @@ import {
 } from "../../../../packages/core/src/contracts/coach-chat";
 import { coachVoiceCapabilitiesSchema, type CoachVoiceCapabilities } from "../../../../packages/core/src/contracts/coach-voice";
 import { CoachVoiceDictation, stopAllCoachVoice } from "./coach-voice-components";
+import { CoachProgressiveVoiceDictation } from "./coach-progressive-voice-dictation";
 import { createRecoveryContext, readRecoveryContext, recoveryReturnHref } from "../../lib/recovery-context";
 import { DailyWellbeingCheckIn } from "./daily-wellbeing-check-in";
 import { DashboardNavigation } from "../dashboard/dashboard-navigation";
@@ -645,13 +647,29 @@ export function CoachChatShell() {
     const start = Math.min(composer?.selectionStart ?? current.length, current.length);
     const end = Math.min(composer?.selectionEnd ?? start, current.length);
     const next = `${current.slice(0, start)}${transcript}${current.slice(end)}`;
-    if (next.length > 4_000) return false;
+    if (next.length > COACH_CHAT_MAX_MESSAGE_CHARS) return false;
     setDraft(next);
     requestAnimationFrame(() => {
       const currentComposer = document.getElementById("coach-message-input") as HTMLTextAreaElement | null;
       if (!currentComposer) return;
       const caret = start + transcript.length;
       currentComposer.focus({ preventScroll: true });
+      currentComposer.setSelectionRange(caret, caret);
+    });
+    return true;
+  }, [draft]);
+
+  const insertProgressiveTranscript = useCallback((transcript: string, mode: "append" | "replace") => {
+    const composer = document.getElementById("coach-message-input") as HTMLTextAreaElement | null;
+    const current = composer?.value ?? draft;
+    const next = mode === "replace" ? transcript : current ? `${current}\n\n${transcript}` : transcript;
+    if (next.length > COACH_CHAT_MAX_MESSAGE_CHARS) return false;
+    setDraft(next);
+    requestAnimationFrame(() => {
+      const currentComposer = document.getElementById("coach-message-input") as HTMLTextAreaElement | null;
+      if (!currentComposer) return;
+      currentComposer.focus({ preventScroll: true });
+      const caret = mode === "replace" ? transcript.length : next.length;
       currentComposer.setSelectionRange(caret, caret);
     });
     return true;
@@ -679,8 +697,8 @@ export function CoachChatShell() {
       : topic === "reflect" ? context.latestActivity?.title ?? "No recent activity"
         : topic === "prepare" ? context.nextSession?.title ?? "No upcoming session" : "General training"
     : loadState === "error" ? "Training context unavailable" : "Loading training context";
-  const messageInput = <textarea id="coach-message-input" value={draft} maxLength={4_000} rows={2} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />;
-  const composerFooter = <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/4,000</span><button className="coach-send-button" type="submit" disabled={voiceBusy || archiving || Boolean(archiveError || discardError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>;
+  const messageInput = <textarea id="coach-message-input" value={draft} maxLength={COACH_CHAT_MAX_MESSAGE_CHARS} rows={2} placeholder={topic === "reflect" ? "What stood out in your last training?" : topic === "prepare" ? "What would you like to know before your session?" : "Ask about your training…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={onComposerKey} disabled={archiving || loadState !== "ready" || !context?.canSend || sending} />;
+  const composerFooter = <div className="coach-composer-footer"><span>Enter to send · Shift + Enter for a new line <span aria-hidden="true">·</span> {draft.length}/30,000</span><button className="coach-send-button" type="submit" disabled={voiceBusy || archiving || Boolean(archiveError || discardError) || !draft.trim() || !context?.canSend || loadState !== "ready" || sending || pending}>{sending ? "Sending…" : "Send message"}<span aria-hidden="true">↑</span></button></div>;
   const showHistoryFromActions = () => {
     historyReturnFocusRef.current = mobileActionsTriggerRef.current;
     setConversationActionsOpen(false);
@@ -749,7 +767,23 @@ export function CoachChatShell() {
         {context?.actions.length ? <div className="coach-action-row" aria-label="Training details">{context.actions.filter((action) => action.kind !== "wellbeing").map((action) => { const href = action.href; const record = action.kind === "activity" && context.latestActivity ? { type: "activity" as const, id: context.latestActivity.id } : action.kind === "session" && context.nextSession ? { type: "session" as const, id: context.nextSession.id } : selectedRecord; return <Link className={`coach-action-link coach-action-link--${action.kind}`} id={`coach-action-${action.kind}`} key={`${action.kind}-${href}`} href={href} onClick={(event) => navigateWithCoachContext(event, href, record)} onAuxClick={(event) => navigateWithCoachContext(event, href, record)}>{action.label} <span aria-hidden="true">↗</span></Link>; })}</div> : null}
         <form className="coach-composer" onSubmit={(event) => { if (voiceBusy) { event.preventDefault(); return; } void submitMessage(event); }}>
           <label className="coach-composer-label sr-only" htmlFor="coach-message-input">Message ORBIT</label>
-          {voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
+          {voiceCapabilities?.progressiveDictation?.available && context ? <CoachProgressiveVoiceDictation
+              available={voiceCapabilities.progressiveDictation.available}
+              disabled={archiving || sending || pending || loadState !== "ready" || !context.canSend || voiceCapabilities.limits.remainingAllowanceMicroUsd === 0}
+              disclosureVersion={voiceCapabilities.disclosureVersion}
+              providerDataControlsUrl={voiceCapabilities.providerDataControlsUrl}
+              remainingAllowanceMicroUsd={voiceCapabilities.limits.remainingAllowanceMicroUsd}
+              monthlyAllowanceMicroUsd={voiceCapabilities.limits.monthlyAllowanceMicroUsd}
+              resetsAt={voiceCapabilities.limits.resetsAt}
+              scopeKey={[actorId ?? "", conversation.generation, conversation.sequence, topic, selectedRecord?.type ?? "", selectedRecord?.id ?? "", context.fingerprint].join(":")}
+              draft={draft}
+              onInsertTranscript={insertProgressiveTranscript}
+              onBusyChange={setVoiceBusy}
+              prepareTranscription={prepareVoiceTranscription}
+              onStart={() => window.dispatchEvent(new Event("orbit:voice-playback-stop"))}
+              onAllowanceChanged={onVoiceAllowanceChanged}
+              footer={composerFooter}
+            >{messageInput}</CoachProgressiveVoiceDictation> : voiceCapabilities?.dictation.available && context ? <CoachVoiceDictation
               available={voiceCapabilities.dictation.available}
               disabled={archiving || sending || pending || loadState !== "ready" || !context.canSend || voiceCapabilities.limits.remainingAllowanceMicroUsd === 0}
               disclosureVersion={voiceCapabilities.disclosureVersion}

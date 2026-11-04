@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @racepredictor/web",
     "build": "npm run build --workspace @racepredictor/web",
-    "vercel-build": "npm run db:generate && if [ \"$VERCEL_ENV\" = \"production\" ]; then npm run db:migrate:deploy; fi && npm run build --workspace @racepredictor/web",
+    "vercel-build": "npm run vercel-build --workspace @racepredictor/web",
     "start": "npm run start --workspace @racepredictor/web",
     "lint": "npm run lint --workspace @racepredictor/web",
     "test:cloud": "npm test --workspace @racepredictor/core && npm run db:test:cloud && npm test --workspace @racepredictor/web && npm run lint --workspace @racepredictor/web",
@@ -37,6 +37,9 @@
     "db:seed": "npm run db:seed --workspace @racepredictor/db --",
     "db:test:seed": "npm run db:test:seed --workspace @racepredictor/db",
     "db:test:contracts": "npm run db:test:contracts --workspace @racepredictor/db",
-    "db:test:gate": "npm run db:test:gate --workspace @racepredictor/db"
+    "db:test:gate": "npm run db:test:gate --workspace @racepredictor/db",
+    "db:test:voice:setup": "npm run db:test:voice:setup --workspace @racepredictor/db",
+    "db:test:voice": "npm run db:test:voice --workspace @racepredictor/db",
+    "verify:staging": "node scripts/verify-staging.mjs"
   }
 }

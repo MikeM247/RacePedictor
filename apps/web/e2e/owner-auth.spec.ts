@@ -50,6 +50,7 @@ test("alternate-host login keeps the PKCE cookie on the OAuth callback origin", 
     request.url().startsWith("https://github.com/login/oauth/authorize"));
   await page.getByRole("button", { name: "Continue with GitHub" }).click();
   const authorization = new URL((await authorizationRequest).url());
+  await expect(page.getByText("OAuth authorization intercepted for the test.")).toBeVisible();
   expect(authorization.searchParams.get("redirect_uri")).toBe(`${canonical.origin}/api/auth/callback/github`);
   expect(authorization.searchParams.get("code_challenge_method")).toBe("S256");
 

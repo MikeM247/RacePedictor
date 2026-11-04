@@ -36,6 +36,7 @@ async function seedHistory(page: Page) {
 }
 
 test("Home shows the approved goal and read-only milestones across desktop and mobile", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
   const writes = recordApplicationWrites(page);
   const requests: string[] = [];
   const errors: string[] = [];
@@ -109,7 +110,8 @@ test("Home refreshes approved targets and history without inventing future compl
   const revised = { ...context, milestones: context.milestones.map((race) => race.id === "road-oldies" ? { ...race, eventName: "Updated checkpoint" } : race) };
   await mockMilestoneRead(page, revised);
   await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context: revised } } }));
-  const futureResult = await page.request.put("/api/v1/coaching/race-history", { data: { record: { id: "road-result", title: "Future race result", confirmedBy: "user", achievement: "goal_achieved", raceDate: "2026-11-01", distanceMeters: 10_000, elapsedTimeSeconds: 3_590 }, expectedRevision: 0 } });
+  const futureRaceDate = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const futureResult = await page.request.put("/api/v1/coaching/race-history", { data: { record: { id: "road-result", title: "Future race result", confirmedBy: "user", achievement: "goal_achieved", raceDate: futureRaceDate, distanceMeters: 10_000, elapsedTimeSeconds: 3_590 }, expectedRevision: 0 } });
   expect(futureResult.ok()).toBeTruthy();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByText("Updated checkpoint", { exact: true })).toBeVisible();

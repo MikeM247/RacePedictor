@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { millisecondsUntilLocalMidnight } from "../lib/home-midnight.ts";
-import { milestoneHomeEnabled } from "../lib/server/milestone-home-feature.ts";
+import { milestoneHomeEnabled, milestoneRecognitionEnabled } from "../lib/server/milestone-home-feature.ts";
 test("midnight refresh follows the saved timezone and the 25-hour DST day", () => {
   const almostMidnight = millisecondsUntilLocalMidnight(
     "Africa/Johannesburg",
@@ -24,4 +24,10 @@ test("one switch defaults off for Home, image UI, image API and device API", () 
     milestoneHomeEnabled({ RACEPREDICTOR_MILESTONE_HOME_ENABLED: "true" }),
     true,
   );
+});
+test("automatic recognition can be paused independently while milestone management remains enabled", () => {
+  const enabled = { RACEPREDICTOR_MILESTONE_HOME_ENABLED: "true" };
+  assert.equal(milestoneRecognitionEnabled(enabled), true);
+  assert.equal(milestoneRecognitionEnabled({ ...enabled, RACEPREDICTOR_MILESTONE_RECOGNITION_ENABLED: "false" }), false);
+  assert.equal(milestoneHomeEnabled(enabled), true);
 });

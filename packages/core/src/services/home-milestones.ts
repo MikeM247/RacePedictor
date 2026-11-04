@@ -54,7 +54,7 @@ export function targetTimeLabel(seconds?: number, strict = false) {
 export function entryTargetLabel(entry: MilestoneEntry) {
   return targetTimeLabel(
     entry.target?.targetTimeSeconds,
-    targetUsesStrictTime(entry.target?.title ?? entry.title),
+    entry.target?.comparison ? entry.target.comparison === "lt" : targetUsesStrictTime(entry.target?.title ?? entry.title),
   );
 }
 export function entryStatus(entry: MilestoneEntry) {
@@ -65,6 +65,10 @@ export function entryStatus(entry: MilestoneEntry) {
   if (entry.performance === "missed") return "Completed · target missed";
   if (entry.performance === "unassessed")
     return "Completed · target unassessed";
+  if (entry.performance === "not_set") {
+    if (entry.target) return "Completed · no time target";
+    return entry.achievement?.achievement === "personal_best" || entry.achievement?.achievement === "goal_achieved" ? "Achieved" : "Completed · no linked target";
+  }
   return entry.achievement?.achievement === "personal_best" ||
     entry.performance === "achieved" ||
     entry.achievement?.achievement === "goal_achieved"
@@ -80,3 +84,6 @@ export function daysUntil(date: string, today: string) {
     ),
   );
 }
+
+export const milestoneResultTime = (entry: MilestoneEntry) => entry.achievement?.officialResult ? entry.achievement.officialResult.elapsedTimeSeconds : entry.achievement?.elapsedTimeSeconds;
+export const milestoneResultDistance = (entry: MilestoneEntry) => entry.achievement?.officialResult ? entry.achievement.officialResult.distanceMeters : entry.achievement?.distanceMeters;

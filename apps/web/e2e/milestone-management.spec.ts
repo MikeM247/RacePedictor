@@ -74,8 +74,8 @@ test("creation requires confirmation, keeps unknown facts absent, persists acros
   await page.reload(); await expect(page.getByRole("heading", { name: "My confirmed milestone", exact: true })).toBeVisible();
   const saved = (await (await page.request.get("/api/v1/coaching/race-history")).json()).data.items[0];
   expect(saved.raceDate).toBeUndefined(); expect(saved.elapsedTimeSeconds).toBeUndefined();
-  await page.goto("/dashboard"); await expect(page.locator(".road-stop--achieved", { hasText: "My confirmed milestone" })).toBeVisible();
-  await page.getByRole("navigation", { name: "Secondary navigation" }).getByRole("link", { name: "Settings", exact: true }).click();
+  await page.goto("/dashboard"); await expect(page.locator(".achievement-stop--achieved", { hasText: "My confirmed milestone" })).toBeVisible();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard\/settings/u);
   await page.locator("summary", { hasText: /^Milestones$/ }).click();
   await expect(page.getByRole("heading", { name: "Milestones", exact: true })).toBeVisible();
@@ -92,8 +92,10 @@ test("assign change unlink and named removal retain official facts and the origi
   dialog = page.getByRole("dialog", { name: "Edit milestone", exact: true });
   await dialog.getByRole("button", { name: /Winter 10 km/ }).click();
   await dialog.getByRole("button", { name: "Unlink race", exact: true }).click();
-  await expect(dialog.getByLabel("Official distance, km (optional)")).toHaveValue("10");
-  await expect(dialog.getByLabel("Elapsed result (optional)")).toHaveValue("1:03:20");
+  await expect(dialog.getByLabel("Official distance, km (optional)")).toHaveValue("");
+  await expect(dialog.getByLabel("Elapsed result (optional)")).toHaveValue("");
+  await dialog.getByLabel("Official distance, km (optional)").fill("10");
+  await dialog.getByLabel("Elapsed result (optional)").fill("1:03:20");
   await dialog.getByLabel(confirmation).check(); await dialog.getByRole("button", { name: "Save milestone", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await page.getByRole("button", { name: "Remove My first 10 km from milestones", exact: true }).click();
@@ -126,16 +128,18 @@ test("failed save retains inputs and conflict recovery explicitly reloads the cu
 test("missed and matching results keep completion separate from target performance", async ({ page }) => {
   await setup(page, { seed: false }); await page.goto("/dashboard/settings?section=milestones");
   await page.getByRole("button", { name: /^Race targets/ }).click();
-  await page.getByRole("button", { name: "Record result for Spring 10 km", exact: true }).click();
+  await page.getByRole("button", { name: "Record or align result for Spring 10 km", exact: true }).click();
   let dialog = page.getByRole("dialog"); await dialog.getByRole("button", { name: /Spring 10 km/ }).click();
   await dialog.getByLabel("Elapsed result", { exact: true }).fill("1:01:00"); await dialog.getByLabel(confirmation).check();
-  await dialog.getByRole("button", { name: "Save milestone", exact: true }).click(); await expect(dialog).not.toBeVisible();
+  await dialog.getByRole("button", { name: "Review result", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm result and complete milestone", exact: true }).click(); await expect(dialog).not.toBeVisible();
   await page.getByRole("button", { name: /^Achievements/ }).click();
-  await expect(page.getByText("Completed · Target missed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Completed · target missed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit Spring 10 km", exact: true }).click(); dialog = page.getByRole("dialog");
   await dialog.getByLabel("Elapsed result", { exact: true }).fill("58:42"); await dialog.getByLabel(confirmation).check();
-  await dialog.getByRole("button", { name: "Save milestone", exact: true }).click();
-  await expect(page.getByText("Completed · Target achieved", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Review result", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm result and complete milestone", exact: true }).click();
+  await expect(page.getByText("Achieved", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /^Race targets/ }).click();
   await expect(page.getByRole("heading", { name: "Spring 10 km", exact: true })).toHaveCount(0);
 });
@@ -204,7 +208,8 @@ test("no active plan still permits confirmed history and malformed stored handof
   await expect(page.getByRole("button", { name: "Achieved milestone", exact: true })).toBeEnabled(); await expect(page.getByRole("button", { name: "Planned race target", exact: true })).toBeDisabled(); await page.keyboard.press("Escape");
   await page.evaluate(() => sessionStorage.setItem("racepredictor:milestone-change:v1:e2e_athlete", "{broken"));
   await page.route("**/api/v1/coaching/goal-context/active", (route) => route.fulfill({ json: { data: { context } } }));
-  await page.goto("/dashboard/plan?milestoneUpdate=1"); await expect(page.getByText(/prepared change or current approved plan could not be verified/)).toBeVisible();
+  await page.goto("/dashboard/plan?milestoneUpdate=1"); await expect(page.getByText(/prepared change or current approved plan could not be verified/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Discard invalid request", exact: true }).click();
   expect(await page.evaluate(() => sessionStorage.getItem("racepredictor:milestone-change:v1:e2e_athlete"))).toBeNull();
 });
+

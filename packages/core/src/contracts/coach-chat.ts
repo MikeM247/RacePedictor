@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 const stableId = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9:_-]*$/u);
-const boundedText = z.string().trim().min(1).max(4_000);
+export const COACH_CHAT_MAX_MESSAGE_CHARS = 30_000;
+const boundedText = z.string().trim().min(1).max(COACH_CHAT_MAX_MESSAGE_CHARS);
 
 export const coachTopicSchema = z.enum(["reflect", "prepare", "general"]);
 export const coachRecordReferenceSchema = z.object({
@@ -37,7 +38,7 @@ export const coachConversationMessageSchema = z.object({
   sequence: z.number().int().positive(),
   generation: z.number().int().positive(),
   role: z.enum(["user", "assistant"]),
-  text: z.string().min(1).max(8_000),
+  text: z.string().min(1).max(COACH_CHAT_MAX_MESSAGE_CHARS),
   createdAt: z.string().datetime(),
   topic: coachTopicSchema.nullable(),
   selectedRecord: coachRecordReferenceSchema.nullable(),

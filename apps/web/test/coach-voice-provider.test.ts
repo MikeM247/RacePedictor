@@ -21,6 +21,18 @@ test("OpenAI speech adapter sends only bounded canonical audio and requests Engl
   assert.equal((form.get("file") as File).type, "audio/wav");
 });
 
+test("progressive transcription requests word timestamps and returns validated timings", async () => {
+  let init: RequestInit | undefined;
+  const provider = createOpenAICoachVoiceProvider({ apiKey: "synthetic", fetchImpl: async (_input, request) => {
+    init = request;
+    return json({ text: "Easy pace.", words: [{ word: "Easy", start: 0.1, end: 0.3 }, { word: "pace.", start: 0.31, end: 0.6 }, { word: "bad", start: "x", end: 1 }] });
+  } });
+  const result = await provider.transcribeWithTimestamps(new Uint8Array([1]), new AbortController().signal);
+  assert.equal(result.text, "Easy pace.");
+  assert.deepEqual(result.words, [{ text: "Easy", startSeconds: 0.1, endSeconds: 0.3 }, { text: "pace.", startSeconds: 0.31, endSeconds: 0.6 }]);
+  assert.equal((init?.body as FormData).get("timestamp_granularities[]"), "word");
+});
+
 test("speech adapter rejects silence, empty and oversized transcripts without returning provider text", async () => {
   const noSpeech = createOpenAICoachVoiceProvider({ apiKey: "synthetic", fetchImpl: async () => json({ text: " ", segments: [{ no_speech_prob: 0.9 }] }) });
   await assert.rejects(noSpeech.transcribe(new Uint8Array([1]), new AbortController().signal), (error: unknown) => error instanceof CoachVoiceProviderError && error.safeCode === "VOICE_NO_SPEECH");

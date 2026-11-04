@@ -64,7 +64,7 @@ test("health is non-sensitive and redacts configuration secrets", { concurrency:
         status: "ok",
         runtime: "test",
         cloudMode: "enabled",
-        features: { stravaIngestion: true, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: false, coachPlayback: false },
+        features: { stravaIngestion: true, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: false, coachProgressiveDictation: false, coachPlayback: false },
         ownerAuthConfigured: false,
         release: "release-123",
       },
@@ -163,7 +163,7 @@ test("environment validation rejects invalid flags and public projection never a
   assert.deepEqual(publicCloudEnvironmentStatus(environment), {
     runtime: "test",
     cloudMode: "enabled",
-    features: { stravaIngestion: false, secondBrainSync: true, coachUi: false, coachChat: false, coachDictation: false, coachPlayback: false },
+    features: { stravaIngestion: false, secondBrainSync: true, coachUi: false, coachChat: false, coachDictation: false, coachProgressiveDictation: false, coachPlayback: false },
     ownerAuthConfigured: false,
     release: "safe-release",
   });
@@ -171,21 +171,25 @@ test("environment validation rejects invalid flags and public projection never a
 
 test("Coach UI and generation switches are independent and default off", () => {
   assert.deepEqual(readCloudEnvironment({ NODE_ENV: "test" }).features, {
-    stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: false, coachPlayback: false,
+    stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: false, coachProgressiveDictation: false, coachPlayback: false,
   });
   assert.deepEqual(readCloudEnvironment({
     NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled", RACEPREDICTOR_COACH_UI_ENABLED: "true",
-  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: true, coachChat: false, coachDictation: false, coachPlayback: false });
+  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: true, coachChat: false, coachDictation: false, coachProgressiveDictation: false, coachPlayback: false });
   assert.deepEqual(readCloudEnvironment({
     NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled", RACEPREDICTOR_COACH_CHAT_ENABLED: "true",
-  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: true, coachDictation: false, coachPlayback: false });
+  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: true, coachDictation: false, coachProgressiveDictation: false, coachPlayback: false });
 });
 
 test("Coach speech release switches are independent and default off", () => {
   assert.deepEqual(readCloudEnvironment({ NODE_ENV: "test" }).features, {
-    stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: false, coachPlayback: false,
+    stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: false, coachProgressiveDictation: false, coachPlayback: false,
   });
   assert.deepEqual(readCloudEnvironment({
     NODE_ENV: "test", RACEPREDICTOR_COACH_DICTATION_ENABLED: "true", RACEPREDICTOR_COACH_PLAYBACK_ENABLED: "true",
-  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: true, coachPlayback: true });
+  }).features, { stravaIngestion: false, secondBrainSync: false, coachUi: false, coachChat: false, coachDictation: true, coachProgressiveDictation: false, coachPlayback: true });
+  assert.equal(readCloudEnvironment({
+    NODE_ENV: "test", RACEPREDICTOR_CLOUD_MODE: "enabled", RACEPREDICTOR_COACH_PROGRESSIVE_DICTATION_ENABLED: "true",
+  }).features.coachProgressiveDictation, true);
+  assert.equal(readCloudEnvironment({ NODE_ENV: "test" }).features.coachProgressiveDictation, false);
 });

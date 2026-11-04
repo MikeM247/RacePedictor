@@ -75,6 +75,7 @@ const seedRows = async (importId, athleteId) => {
 const run = async () => {
   const stamp = Date.now().toString();
   const athleteId = `ath_db3_${stamp}`;
+  await prisma.athlete.create({ data: { id: athleteId } });
   const importRow = await prisma.import.create({
     data: {
       athleteId,
@@ -163,6 +164,7 @@ const run = async () => {
     await prisma.stagingActivity.deleteMany({ where: { importId: importRow.id } });
     await prisma.rawFile.deleteMany({ where: { importId: importRow.id } });
     await prisma.import.deleteMany({ where: { id: importRow.id } });
+    await prisma.athlete.delete({ where: { id: athleteId } });
   }
 };
 

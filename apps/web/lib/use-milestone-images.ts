@@ -13,9 +13,11 @@ export function useMilestoneImages(enabled = true, refreshKey = 0) {
     if (!enabled) return;
     const onChange = () => refresh();
     window.addEventListener("milestone-images-changed", onChange);
+    window.addEventListener("milestones-changed", onChange);
     window.addEventListener("focus", onChange);
     return () => {
       window.removeEventListener("milestone-images-changed", onChange);
+      window.removeEventListener("milestones-changed", onChange);
       window.removeEventListener("focus", onChange);
     };
   }, [enabled, refresh]);

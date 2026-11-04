@@ -23,6 +23,7 @@ export interface CloudEnvironment {
     coachUi: boolean;
     coachChat: boolean;
     coachDictation: boolean;
+    coachProgressiveDictation: boolean;
     coachPlayback: boolean;
   };
   /**
@@ -87,6 +88,7 @@ export function readCloudEnvironment(source: EnvironmentSource = process.env): C
       coachUi: parseBoolean("RACEPREDICTOR_COACH_UI_ENABLED", source.RACEPREDICTOR_COACH_UI_ENABLED, false),
       coachChat: parseBoolean("RACEPREDICTOR_COACH_CHAT_ENABLED", source.RACEPREDICTOR_COACH_CHAT_ENABLED, false),
       coachDictation: parseBoolean("RACEPREDICTOR_COACH_DICTATION_ENABLED", source.RACEPREDICTOR_COACH_DICTATION_ENABLED, false),
+      coachProgressiveDictation: parseBoolean("RACEPREDICTOR_COACH_PROGRESSIVE_DICTATION_ENABLED", source.RACEPREDICTOR_COACH_PROGRESSIVE_DICTATION_ENABLED, false),
       coachPlayback: parseBoolean("RACEPREDICTOR_COACH_PLAYBACK_ENABLED", source.RACEPREDICTOR_COACH_PLAYBACK_ENABLED, false),
     },
     // This is a declaration for the future composition root only. It does not

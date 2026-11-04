@@ -11,7 +11,7 @@ import {
 } from "../../../../packages/core/src/contracts/coaching.ts";
 import type { RaceHistoryRecord } from "../../../../packages/core/src/contracts/race-history.ts";
 import {
-  changeMilestoneState,
+  changeMilestoneState, milestoneReviewCandidates,
   composeMilestoneTimeline,
   MilestoneChangeError,
 } from "../../../../packages/core/src/services/milestone-timeline.ts";
@@ -26,7 +26,9 @@ import {
 } from "../../../../packages/db/src/milestone-timeline.ts";
 import { getCloudPrismaClient } from "../../../../packages/db/src/cloud/prisma-client.js";
 import { createLocalCoachingService } from "../local-coaching-service.ts";
+import { milestoneRecognitionEnabled } from "./milestone-home-feature.ts";
 import {
+  saveCloudRaceHistory, saveLocalRaceHistory, captureApprovedRaceTarget,
   readCloudRaceHistory,
   readLocalRaceHistory,
   raceHistoryActor,
@@ -36,7 +38,6 @@ import { createCloudGoalContextReadComposition } from "./cloud-read-composition.
 import { localDateInTimezone } from "../coaching-ui-state.ts";
 import { ApiHttpError } from "./api-response.ts";
 import type { SensitiveRouteContext } from "./route-security.ts";
-import { milestoneHomeEnabled } from "./milestone-home-feature.ts";
 import {
   readCloudImages,
   writeCloudImages,
@@ -187,6 +188,37 @@ export async function readMilestones(
     service.close();
   }
 }
+function prepareResult(change: MilestoneMutation, sources: Sources) {
+  if (!change.result) return sources;
+  if (sources.history.some(r => r.id !== change.achievementId && change.result?.record.activityId && r.activityId === change.result.record.activityId)) throw new ApiHttpError(409, "CONFLICT", "This activity already has a saved result. Select that achievement instead.");
+  if (change.operation !== "link" || change.result.record.id !== change.achievementId) throw new ApiHttpError(400, "VALIDATION_ERROR", "Invalid result assignment");
+  const existing = sources.history.find(r => r.id === change.achievementId);
+  if ((existing?.revision ?? 0) !== change.result.expectedRevision) throw new ApiHttpError(409, "CONFLICT", "Result changed. Reload before saving.");
+  const targetId = change.entryId.startsWith("target:") ? change.entryId.slice(7) : change.result.record.targetId;
+  const facts = change.result.record.officialResult ?? change.result.record;
+  const today = localDateInTimezone(sources.context?.plan?.timezone ?? "Africa/Johannesburg");
+  if (facts.raceDate && facts.raceDate > today) throw new ApiHttpError(400, "VALIDATION_ERROR", "A future race result cannot complete a milestone.");
+  const record = captureApprovedRaceTarget({ ...change.result.record, targetId }, sources.context, sources.history);
+  change.result.record = record;
+  return { ...sources, history: [...sources.history.filter(r => r.id !== record.id), { ...record, revision: change.result.expectedRevision + 1 }] };
+}
+const resultDigest = (change: MilestoneMutation, view: MilestoneTimeline, imageRevision: number) => createHash("sha256").update(JSON.stringify({ ...change, result: change.result ? { ...change.result, record: { ...change.result.record, targetSnapshot: undefined } } : undefined, previewDigest: undefined, today: view.today, imageRevision })).digest("hex");
+export async function previewMilestoneResult(security: SensitiveRouteContext, raw: unknown) {
+  const change = milestoneMutationSchema.parse(raw);
+  const view = await readMilestones(security);
+  verifyMilestoneChange(change, view);
+  // Preview reads never initialise management tables.
+  const images = security.mode === "authenticated" ? await readCloudImages(raceHistoryActor(security), getCloudPrismaClient()) : (() => { const service = createLocalCoachingService({ athleteId: process.env.RACEPREDICTOR_ATHLETE_ID || "athlete_001" }); try { return readLocalImages(service.databasePath, service.athleteId); } finally { service.close(); } })();
+  const state = security.mode === "authenticated" ? await readCloudMilestoneState(raceHistoryActor(security), getCloudPrismaClient()) : (() => { const service = createLocalCoachingService({ athleteId: process.env.RACEPREDICTOR_ATHLETE_ID || "athlete_001" }); try { return readLocalMilestoneState(service.databasePath, service.athleteId); } finally { service.close(); } })();
+  if (state.revision !== view.revision) throw new ApiHttpError(409, "CONFLICT", "Reload milestones before reviewing.");
+  if (change.operation === "link" && !view.entries.find(e => e.id === change.entryId)?.target) throw new ApiHttpError(409, "CONFLICT", "Restore or reload the selected milestone before linking.");
+  const digest = resultDigest(change, view, images.revision);
+  const sources = prepareResult(change, view);
+  const next = changeMilestoneState({ ...sources, state: state.state, change, today: view.today, now: new Date().toISOString(), removalId: randomUUID() });
+  let imageConflict = false;
+  try { reconcileEntryImages(images.state, images.revision, view, change); } catch (error) { if (error instanceof MilestoneImageConflict) imageConflict = true; else throw error; }
+  return { digest, before: view, after: milestoneView(sources, { revision: state.revision + 1, state: next }), imageConflict };
+}
 export async function mutateMilestones(
   security: SensitiveRouteContext,
   raw: unknown,
@@ -200,12 +232,21 @@ export async function mutateMilestones(
       parsed.error.issues,
     );
   const change = parsed.data;
+  const requestedChange = structuredClone(change);
   const now = new Date();
   const update = (sources: Sources, current: TimelineStateRecord) => {
     const view = milestoneView(sources, current, now);
     verifyMilestoneChange(change, view);
+    if (change.operation === "link") {
+      const selected = view.entries.find(e => e.id === change.entryId);
+      if (!selected?.target) throw new ApiHttpError(409, "CONFLICT", "Restore or reload the selected milestone before linking.");
+      const previous = view.entries.find(e => e.achievement?.id === change.achievementId);
+      if (selected?.achievement && selected.achievement.id !== change.achievementId) throw new ApiHttpError(409, "CONFLICT", "Unlink the existing result first.");
+      if (previous?.sources.some(source => source.kind === "target" && source.id !== selected?.target?.id && !selected?.target?.aliases?.includes(source.id))) throw new ApiHttpError(409, "CONFLICT", "Unlink the other milestone first.");
+    }
+    const prepared = prepareResult(change, sources);
     return changeMilestoneState({
-      ...sources,
+      ...prepared,
       state: current.state,
       change,
       today: view.today,
@@ -225,8 +266,11 @@ export async function mutateMilestones(
           );
           const current = await readCloudMilestoneState(athleteId, tx);
           const nextState = update(sources, current);
+          if (change.previewDigest) {
+            const images = await readCloudImages(athleteId, tx);
+            if (resultDigest(requestedChange, milestoneView(sources, current, now), images.revision) !== change.previewDigest) throw new ApiHttpError(409, "CONFLICT", "Review the changed result again.");
+          }
           if (
-            milestoneHomeEnabled() &&
             (change.operation === "link" || change.operation === "unlink")
           ) {
             const images = await readCloudImages(athleteId, tx);
@@ -255,6 +299,7 @@ export async function mutateMilestones(
                 tx,
               );
           }
+          if (change.result) await saveCloudRaceHistory(athleteId, change.result, tx as ReturnType<typeof getCloudPrismaClient>);
           const next = await writeCloudMilestoneState(
             athleteId,
             current.revision,
@@ -266,13 +311,13 @@ export async function mutateMilestones(
             tx as ReturnType<typeof getCloudPrismaClient>,
           );
           if (
-            milestoneSourceVersion(refreshed) !==
+            !change.result && milestoneSourceVersion(refreshed) !==
             milestoneSourceVersion(sources)
           )
             throw new MilestoneRevisionConflict(
               "Source records changed. Reload before deciding again.",
             );
-          return milestoneView(sources, next, now);
+          return milestoneView(refreshed, next, now);
         },
         { isolationLevel: "Serializable" },
       );
@@ -289,8 +334,11 @@ export async function mutateMilestones(
             db,
           );
           const nextState = update(sources, current);
+          if (change.previewDigest) {
+            const images = readLocalImages(service.databasePath, service.athleteId, db);
+            if (resultDigest(requestedChange, milestoneView(sources, current, now), images.revision) !== change.previewDigest) throw new ApiHttpError(409, "CONFLICT", "Review the changed result again.");
+          }
           if (
-            milestoneHomeEnabled() &&
             (change.operation === "link" || change.operation === "unlink")
           ) {
             db.exec(localImageSchema);
@@ -335,8 +383,9 @@ export async function mutateMilestones(
                 },
               );
           }
+          if (change.result) saveLocalRaceHistory(service.databasePath, service.athleteId, change.result, db);
           return milestoneView(
-            sources,
+            prepareResultForView(sources, change),
             writeLocalMilestoneState(
               db,
               service.athleteId,
@@ -383,4 +432,12 @@ export async function mutateMilestones(
       );
     throw error;
   }
+}
+
+function prepareResultForView(sources: Sources, change: MilestoneMutation): Sources { return change.result ? { ...sources, history: [...sources.history.filter(r => r.id !== change.result!.record.id), { ...change.result.record, revision: change.result.expectedRevision + 1 }] } : sources; }
+
+export async function readMilestoneReviews(security: SensitiveRouteContext) {
+ const view=await readMilestones(security);
+ const state=security.mode==="authenticated" ? await readCloudMilestoneState(raceHistoryActor(security),getCloudPrismaClient()) : (()=>{const service=createLocalCoachingService({athleteId:process.env.RACEPREDICTOR_ATHLETE_ID||"athlete_001"});try{return readLocalMilestoneState(service.databasePath,service.athleteId);}finally{service.close();}})();
+ return { revision:view.revision, sourceVersion:view.sourceVersion, today:view.today, candidates:milestoneRecognitionEnabled()?milestoneReviewCandidates(view.context,view.history,state.state,view.today):[] };
 }

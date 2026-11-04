@@ -23,6 +23,11 @@
 .milestone-notice p { margin: 7px 0; }
 .milestone-error { color: var(--rp-danger); }
 .milestone-feedback { color: var(--rp-text); margin-top: 16px; }
+.milestone-review-discovery { display: grid; gap: 10px; margin-block: 16px; padding: 16px; border: 1px solid var(--rp-border-strong); border-left: 3px solid var(--rp-cyan); border-radius: 8px; background: var(--rp-surface-raised); }
+.milestone-review-discovery h3, .milestone-review-discovery p { margin: 0; }
+.milestone-review-discovery ul { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.milestone-review-discovery li { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.milestone-review-discovery li > span { min-width: 0; overflow-wrap: anywhere; }
 .milestone-type-choice { display: grid; gap: 8px; padding-top: 12px; }
 .milestone-type-choice p { margin: 4px 0 12px; }
 .milestone-dialog .road-dialog-heading { align-items: start; margin-bottom: 20px; }
@@ -39,6 +44,7 @@
 .milestone-instructions textarea { width: 100%; min-width: 0; resize: vertical; color: var(--rp-text); background: var(--rp-surface-soft); border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius-sm); padding: 12px; font: inherit; }
 @media (max-width: 600px) {
   .milestone-manager-toolbar > .button { width: 100%; }
+  .milestone-review-discovery li { align-items: start; }
   .milestone-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
   .milestone-dialog .road-dialog-content { padding: 20px 16px; }
   .milestone-dialog .road-form-row { grid-template-columns: minmax(0, 1fr); }

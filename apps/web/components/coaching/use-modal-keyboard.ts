@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { acquireBodyScrollLock } from "../../lib/body-scroll-lock";
 
 const selector = ["button:not([disabled])", "input:not([disabled])", "textarea:not([disabled])", "select:not([disabled])", "summary", "a[href]", "[contenteditable='true']", "[tabindex]:not([tabindex='-1'])"].join(",");
 
@@ -22,14 +23,13 @@ export function useModalKeyboard<T extends HTMLElement>(open: boolean, close: ()
     if (!open) return;
     requestedCloseFocus.current = null;
     const returnTarget = returnFocusRef?.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScrollLock = acquireBodyScrollLock();
     const frame = window.requestAnimationFrame(() => {
       const target = dialogRef.current?.querySelector<HTMLElement>("[autofocus]") ?? focusableElements(dialogRef.current)[0] ?? dialogRef.current;
       target?.focus();
     });
     return () => {
-      document.body.style.overflow = previousOverflow;
+      releaseScrollLock();
       window.cancelAnimationFrame(frame);
       window.requestAnimationFrame(() => {
         // A restored list may replace the row node while the dialog is open.

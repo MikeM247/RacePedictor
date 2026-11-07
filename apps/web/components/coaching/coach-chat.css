@@ -229,11 +229,13 @@
   .coach-send-button { gap: 6px; font-size: .73rem; }
 }
 /* ORBIT responsive conversation surface. */
-.dashboard-layout.coach-v2-layout { box-sizing: border-box; height: 100dvh; min-height: 100dvh; overflow: hidden; }
-.dashboard-main.coach-v2-main { box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; height: 100dvh; padding: 20px 24px; }
+/* Clamp stale viewport measurements during resize until the observer runs. */
+.dashboard-layout.coach-v2-layout { --coach-layout-height: min(100dvh, var(--coach-viewport-height, 100dvh)); }
+.dashboard-layout.coach-v2-layout { box-sizing: border-box; height: var(--coach-layout-height); min-height: 0; overflow: hidden; }
+.dashboard-main.coach-v2-main { box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; height: 100%; padding: 20px 24px; }
 .coach-v2-toolbar,
 .coach-v2-goal-strip { display: none; }
-.coach-chat-panel { box-sizing: border-box; width: 100%; height: auto; flex: 1 1 0; min-height: 0; margin: 0 auto; border-radius: 20px; }
+.coach-chat-panel { box-sizing: border-box; width: 100%; height: auto; flex: 1 1 0; min-height: 0; margin: 0 auto; overflow-y: auto; overscroll-behavior: contain; border-radius: 20px; }
 .coach-chat-heading { min-height: 70px; flex-wrap: nowrap; padding: 10px 24px; }
 .coach-history-actions { flex: 0 0 auto; }
 .coach-history-actions button { min-height: 44px; font-size: .84rem; }
@@ -249,8 +251,9 @@
 .coach-context-row { min-height: 48px; align-items: center; }
 .coach-context-label { white-space: nowrap; }
 .coach-context-row > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.coach-transcript-wrap { position: relative; display: flex; flex: 1 1 0; min-height: 0; }
-.coach-transcript { flex: 1 1 0; min-height: 0; }
+.coach-transcript-wrap { position: relative; display: flex; flex: 1 0 96px; min-height: 96px; min-width: 0; }
+/* At transcript boundaries, short-screen overflow can continue into the panel. */
+.coach-transcript { flex: 1 1 0; min-height: 0; overscroll-behavior: auto; }
 .coach-message,
 .coach-opening-message { max-width: min(850px, 92%); }
 .coach-bubble { max-width: 100%; }
@@ -331,9 +334,9 @@
 .coach-wellbeing-dialog .daily-check-in-form { color: var(--coach-ink); }
 
 @media (max-width: 1199px) and (min-width: 768px) {
-  .dashboard-layout.coach-v2-layout { display: grid; height: 100dvh; min-height: 0; }
-  .dashboard-layout.coach-v2-layout > .dashboard-nav { position: sticky; align-self: start; width: auto; height: 100dvh; }
-  .dashboard-main.coach-v2-main { height: 100dvh; padding: 12px; }
+  .dashboard-layout.coach-v2-layout { display: grid; height: var(--coach-layout-height); min-height: 0; }
+  .dashboard-layout.coach-v2-layout > .dashboard-nav { position: sticky; align-self: start; width: auto; height: 100%; }
+  .dashboard-main.coach-v2-main { height: 100%; padding: 12px; }
 }
 
 @media (min-width: 768px) and (max-width: 900px) {
@@ -384,8 +387,8 @@
 }
 
 @media (max-width: 767px) {
-  .dashboard-layout.coach-v2-layout { display: block; height: 100dvh; min-height: 0; padding-top: var(--dashboard-mobile-header-height, calc(64px + env(safe-area-inset-top))); padding-bottom: 0; }
-  .dashboard-main.coach-v2-main { height: calc(100dvh - var(--dashboard-mobile-header-height, calc(64px + env(safe-area-inset-top)))); min-height: 0; padding: 0; overflow: hidden; }
+  .dashboard-layout.coach-v2-layout { display: block; height: var(--coach-layout-height); min-height: 0; padding-top: var(--dashboard-mobile-header-height, calc(64px + env(safe-area-inset-top))); padding-bottom: 0; }
+  .dashboard-main.coach-v2-main { height: calc(var(--coach-layout-height) - var(--dashboard-mobile-header-height, calc(64px + env(safe-area-inset-top)))); min-height: 0; padding: 0; overflow: hidden; }
   .coach-v2-return-note,
   .coach-v2-return-link { flex: 0 0 auto; margin: 0; }
   .coach-chat-panel { width: 100%; max-width: none; height: 100%; flex: 1 1 0; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }

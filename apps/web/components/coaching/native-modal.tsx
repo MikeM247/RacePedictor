@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { acquireBodyScrollLock } from "../../lib/body-scroll-lock";
 
 export function NativeModal({ open, titleId, onClose, busy = false, children, className = "", returnFocusRef }: {
   open: boolean; titleId: string; onClose: () => void; busy?: boolean; children: ReactNode; className?: string;
@@ -11,12 +12,11 @@ export function NativeModal({ open, titleId, onClose, busy = false, children, cl
     if (!open || !ref.current) return;
     const dialog = ref.current;
     const returnTarget = returnFocusRef?.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScrollLock = acquireBodyScrollLock();
     if (!dialog.open) dialog.showModal();
     return () => {
       dialog.close();
-      document.body.style.overflow = overflow;
+      releaseScrollLock();
       const requestedTarget = returnFocusRef?.current;
       const target = requestedTarget?.isConnected ? requestedTarget : returnTarget;
       const targetIsUsable = target?.isConnected && target !== document.body && !target.closest("[inert]") && target.getClientRects().length > 0;

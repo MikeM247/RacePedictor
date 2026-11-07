@@ -13,6 +13,12 @@ const activity = {
 };
 
 async function installCalendarFixtures(page: import("@playwright/test").Page) {
+  await page.addInitScript(() => {
+    // Fixed fixture dates can raise the existing shared-header hydration warning.
+    // Keep the development overlay from intercepting application navigation.
+    new MutationObserver(() => document.querySelectorAll<HTMLElement>("nextjs-portal").forEach((node) => { node.style.display = "none"; }))
+      .observe(document, { childList: true, subtree: true });
+  });
   await page.clock.setFixedTime(new Date("2026-11-01T05:00:00.000Z"));
   const reply = (data: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify({ data }) });
   await page.route("**/api/v1/coaching/calendar?**", (route) => {
@@ -120,6 +126,10 @@ test("session links retain their detail target and browser return reveals today'
   await page.goto("/dashboard/calendar?date=2026-11-01&session=summary-session");
   await expect(page.getByRole("dialog")).toContainText("Easy supporting run");
   await page.getByRole("button", { name: "Close details" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Normal-entry history must not retain the explicit session deep link, which
+  // correctly opens its details again when revisited.
+  await page.goto("/dashboard/calendar");
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByLabel("Choose month and year")).toHaveValue("2026-12");
   await expect(page.locator("#calendar-day-2026-12-01")).toBeVisible();
@@ -129,6 +139,7 @@ test("session links retain their detail target and browser return reveals today'
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByLabel("Choose month and year")).toHaveValue("2026-12");
   await page.getByRole("navigation", { name: "Mobile navigation" }).getByRole("link", { name: "Home" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
   await page.goBack();
   await expect(page).toHaveURL(/\/dashboard\/calendar/);
   await expect(page.locator("#calendar-day-2026-11-01")).toBeVisible();

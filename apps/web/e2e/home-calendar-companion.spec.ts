@@ -25,7 +25,7 @@ async function mockCompanion(page: Page, options: { planned?: Array<Omit<typeof 
     new MutationObserver(hideDevIndicator).observe(document, { childList: true, subtree: true });
   });
   await page.clock.setFixedTime(new Date("2026-10-03T08:00:00.000Z"));
-  const planned = options.planned ?? sessions;
+  const planned = (options.planned ?? sessions).map(session => ({ ...session, scheduledDate: session.effectiveDate }));
   const recorded = options.recorded ?? activities;
   const reply = (data: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify({ data }) });
   await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill(reply({ from: "2026-09-28", to: "2026-11-01", timezone: options.timezone ?? "Africa/Johannesburg", sessions: planned, activities: recorded, historicalSessions: [], activitiesReadStatus: options.activityFailure ? "unavailable" : "available" })));
@@ -501,4 +501,42 @@ test("Home keeps only the approved goal, complete milestone journey and Coach en
     expect(layout.horizontalOverflow, "The photographic journey must reflow without horizontal scrolling").toBe(false);
   }
   expectNoApplicationWrites(writes);
+});
+
+
+test.describe("planned-only calendar details", () => {
+  test.use({ hasTouch: true });
+  for (const width of [390, 1199, 1200, 1440]) {
+    test(`planned-only calendar details at ${width}px`, async ({ page }) => {
+      const writes = recordApplicationWrites(page);
+      await page.setViewportSize({ width, height: 900 });
+      const future = "2026-10-04";
+      await mockCompanion(page, { planned: [sessions[0], { ...sessions[1], effectiveDate: future }], recorded: [] });
+      await page.goto(`/dashboard/calendar?date=${date}`);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      for (const targetDate of [date, future]) {
+        const cell = dayCell(page, targetDate);
+        await expect(cell).toHaveAttribute("aria-haspopup", "dialog");
+        for (const activation of ["click", "touch", "Enter", "Space"]) {
+          await cell.scrollIntoViewIfNeeded();
+          const scroll = await page.evaluate(() => window.scrollY);
+          if (activation === "click") {
+            await cell.locator(width >= 1200 ? ".calendar-entry--planned" : ".calendar-compact-metric--planned").click();
+          } else if (activation === "touch") await cell.tap();
+          else { await cell.focus(); await cell.press(activation); }
+          const dialog = page.getByRole("dialog", { name: /^Day details/ });
+          await expect(dialog).toBeVisible();
+          await expect(dialog).toContainText("Run easily for 45 minutes.");
+          await expect(dialog).toContainText("No recorded activity.");
+          await expect(dialog.locator(".session-card")).toHaveCount(1);
+          expect(await dialog.evaluate(element => Number(getComputedStyle(element.parentElement!).zIndex))).toBe(100);
+          if (activation === "click") await dialog.getByRole("button", { name: "Close details" }).click();
+          else await page.keyboard.press("Escape");
+          await expect(cell).toBeFocused();
+          expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+        }
+      }
+      expectNoApplicationWrites(writes);
+    });
+  }
 });

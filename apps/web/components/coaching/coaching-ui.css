@@ -318,6 +318,7 @@
 .sync-credential-panel{grid-column:1/-1}
 
 .coach-dialog-backdrop{background:color-mix(in srgb,var(--rp-bg,#07111d) 82%,transparent);backdrop-filter:blur(3px)}
+.coaching-content--calendar>.coach-dialog-backdrop{z-index:100}
 .coach-dialog{border:1px solid var(--rp-border-strong,#3c5268);background:var(--rp-surface-raised,#132438);box-shadow:0 22px 60px rgba(0,0,0,.45);color:var(--rp-text,#f5f8fc)}
 .coach-dialog p{color:var(--rp-text-muted,#a9b6c6)}
 

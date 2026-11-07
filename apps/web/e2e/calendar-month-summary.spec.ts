@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.skip(process.env.RACEPREDICTOR_CALENDAR_MONTH_SUMMARY_ENABLED !== "true", "Requires the month-summary presentation");
+
 const plan = { id: "summary-plan", version: 1, startsOn: "2026-10-01", endsOn: "2026-12-31", timezone: "Africa/Johannesburg" };
 const workout = {
   id: "summary-session", kind: "run", scheduledDate: "2026-11-01", prescribedDate: "2026-11-01", originalDate: "2026-11-01", effectiveDate: "2026-11-01",

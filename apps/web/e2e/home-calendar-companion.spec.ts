@@ -28,7 +28,12 @@ async function mockCompanion(page: Page, options: { planned?: Array<Omit<typeof 
   const planned = (options.planned ?? sessions).map(session => ({ ...session, scheduledDate: session.effectiveDate }));
   const recorded = options.recorded ?? activities;
   const reply = (data: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify({ data }) });
-  await page.route("**/api/v1/coaching/calendar?**", (route) => route.fulfill(reply({ from: "2026-09-28", to: "2026-11-01", timezone: options.timezone ?? "Africa/Johannesburg", sessions: planned, activities: recorded, historicalSessions: [], activitiesReadStatus: options.activityFailure ? "unavailable" : "available" })));
+  await page.route("**/api/v1/coaching/calendar?**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const from = params.get("from")!;
+    const to = params.get("to")!;
+    return route.fulfill(reply({ from, to, timezone: options.timezone ?? "Africa/Johannesburg", sessions: planned.filter((session) => session.effectiveDate >= from && session.effectiveDate <= to), activities: recorded.filter((activity) => activity.localDate >= from && activity.localDate <= to), historicalSessions: [], activitiesReadStatus: options.activityFailure ? "unavailable" : "available" }));
+  });
   await page.route("**/api/v1/coaching/plans/active", (route) => route.fulfill(reply(options.longNarrative ? { ...plan, approval: { ...plan.approval, rationale: "Maintain consistency while respecting recovery and the approved training constraints. ".repeat(12) } } : plan)));
   await page.route("**/api/v1/coaching/today", (route) => route.fulfill(reply({ date, timezone: options.timezone ?? "Africa/Johannesburg", state: "upcoming", status: "upcoming", todayScheduleKind: "prescribed_session", plan: { id: plan.id, version: plan.version }, session: planned[0] ?? null, nextWorkout: null, links: { calendar: "/dashboard/calendar", session: planned[0] ? `/dashboard/calendar?date=${date}&session=${planned[0].id}` : null }, stale: { isStale: false } })));
   const goalReply = { context: { state: "ready", plan: { id: plan.id, version: plan.version, revision: plan.revision, startsOn: plan.startsOn, endsOn: plan.endsOn, timezone: "Africa/Johannesburg", approvalContentHash: plan.approval.contentHash }, goal: { id: plan.goalId, athleteId: "e2e_athlete", revision: plan.goalRevision, title: "Approved autumn goal", why: options.longNarrative ? "Build confidence through consistent training without ignoring recovery or the approved constraints. ".repeat(12) : "Build confidence through consistent training.", target: { kind: "performance", distanceMeters: 21100, targetTimeSeconds: 7200, targetDate: "2026-10-12" } }, milestones: [{ id: "race-milestone", title: "Approved race milestone", distanceMeters: 10000, targetTimeSeconds: 3300, targetDate: "2026-10-04" }], projection: { contextHash: hash, publishedAt: "2026-10-03T08:00:00.000Z" } } };
@@ -51,6 +56,101 @@ async function mockCompanion(page: Page, options: { planned?: Array<Omit<typeof 
   await page.route("**/api/v1/coaching/race-history", route => route.fulfill(reply({ items: [], publishedAt: null })));
   await page.route("**/api/v1/dashboard/appearance", route => route.fulfill(reply({ heroImageUrl: "/road-to-comrades-v2.webp" })));
 }
+
+// Run with playwright.calendar-layering.config.ts: the legacy companion journeys
+// below intentionally exercise the calendar without the shared theme.
+test.describe("shared calendar overlays", () => {
+  test.beforeEach(async ({}, testInfo) => {
+    test.skip(testInfo.project.metadata.calendarMonthSummary !== true, "Requires the shared calendar theme configuration");
+  });
+
+  for (const width of [1440, 390]) {
+    test(`session deep link stays above sticky headers at ${width}px`, async ({ page }) => {
+      const writes = recordApplicationWrites(page);
+      await page.setViewportSize({ width, height: 900 });
+      await mockCompanion(page, { recorded: [] });
+      await page.goto(`/dashboard/calendar?date=${date}&session=planned-1`);
+      await expect(page.locator(".shared-dashboard-theme")).toBeVisible();
+      const dialog = page.getByRole("dialog", { name: "Plan details" });
+      const session = dialog.locator("#session-planned-1");
+      await expect(session).toBeFocused();
+      await expect(dialog).toContainText("Run easily for 45 minutes.");
+      await expect(page.locator(".calendar-controls")).toHaveAttribute("inert", "");
+      await expect(page.locator(".shared-topnav")).toHaveAttribute("inert", "");
+      await dialog.getByRole("button", { name: "Close details" }).click();
+      const cell = dayCell(page, date);
+      await expect(cell).toBeFocused();
+      await expect(page).not.toHaveURL(/session=/);
+
+      // Reopen after scrolling far enough to pin the calendar toolbar.
+      const launcher = width >= 1200
+        ? page.getByRole("button", { name: "View planned session: Planned session 1" })
+        : cell;
+      await launcher.scrollIntoViewIfNeeded();
+      await page.evaluate(() => window.scrollBy(0, 120));
+      await launcher.click();
+      const reopened = page.getByRole("dialog", { name: width >= 1200 ? "Plan details" : /^Day details/ });
+      await expect(reopened).toContainText("Run easily for 45 minutes.");
+      const geometry = await page.locator(".calendar-controls").evaluate((element) => ({
+        top: element.getBoundingClientRect().top,
+        stickyTop: Number.parseFloat(getComputedStyle(element).top),
+        scroll: window.scrollY,
+      }));
+      expect(geometry.scroll).toBeGreaterThan(0);
+      expect(geometry.top).toBeCloseTo(geometry.stickyTop, 0);
+      await expect(page).toHaveScreenshot(`calendar-run-overlay-${width}.png`, {
+        clip: { x: 0, y: 0, width, height: 400 },
+        animations: "disabled",
+      });
+      await reopened.getByRole("button", { name: "Close details" }).focus();
+      await page.keyboard.press("Shift+Tab");
+      expect(await reopened.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Tab");
+      expect(await reopened.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(launcher).toBeFocused();
+      expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(geometry.scroll, 0);
+      await expect(page.locator(".calendar-controls")).not.toHaveAttribute("inert");
+      await page.getByRole("button", { name: "Next month" }).click();
+      await expect(page.getByLabel("Choose month and year")).toHaveValue("2026-11");
+      expectNoApplicationWrites(writes);
+    });
+
+    test(`amendment and confirmation stay above sticky headers at ${width}px`, async ({ page }) => {
+      const writes = recordApplicationWrites(page);
+      await page.setViewportSize({ width, height: 900 });
+      const future = "2026-10-04";
+      await mockCompanion(page, { planned: [{ ...sessions[0], scheduledDate: future, effectiveDate: future }], recorded: [] });
+      await page.goto(`/dashboard/calendar?date=${future}`);
+      const cell = dayCell(page, future);
+      const launcher = width >= 1200
+        ? page.getByRole("button", { name: "View planned session: Planned session 1" })
+        : cell;
+      await launcher.click();
+      await page.getByRole("dialog").getByRole("button", { name: "Amend session" }).click();
+      const amend = page.getByRole("dialog", { name: "Amend future session" });
+      await expect(amend.getByLabel("Reason for this amendment")).toBeVisible();
+      await expect(amend.getByRole("button", { name: "Save reasoned amendment" })).toBeDisabled();
+      await expect(page).toHaveScreenshot(`calendar-amend-overlay-${width}.png`, {
+        clip: { x: 0, y: 0, width, height: 400 }, animations: "disabled",
+      });
+      await amend.getByRole("button", { name: "Cancel" }).click();
+      await expect(launcher).toBeFocused();
+      await launcher.click();
+      await page.getByRole("dialog").getByRole("button", { name: "Review move" }).click();
+      const confirmation = page.getByRole("alertdialog", { name: "Confirm reschedule" });
+      await expect(confirmation.getByLabel("Reason for this change")).toBeFocused();
+      await expect(page).toHaveScreenshot(`calendar-confirm-overlay-${width}.png`, {
+        clip: { x: 0, y: 0, width, height: 400 }, animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await expect(confirmation).toHaveCount(0);
+      await expect(launcher).toBeFocused();
+      expectNoApplicationWrites(writes);
+    });
+  }
+});
 
 test("mixed multiple records open independently with original/history and feedback intact", async ({ page }) => {
   const writes = recordApplicationWrites(page);

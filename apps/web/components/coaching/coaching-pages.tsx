@@ -1071,8 +1071,6 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     const media = window.matchMedia("(max-width: 1199px)");
     const update = () => {
       setCompactCalendar(media.matches);
-      // A day selection becomes the desktop sidebar at this same CSS boundary.
-      if (!media.matches) setSelectedDetail((current) => current?.kind === "day" ? null : current);
     };
     update();
     media.addEventListener("change", update);
@@ -1430,11 +1428,9 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       initialDateResolved.current = true;
       setSelectedDate(date);
       setFocusMessage(undefined);
-      if (window.matchMedia("(max-width: 1199px)").matches) {
-        detailLauncherRef.current = event.currentTarget;
-        focusedRecordRef.current = null;
-        setSelectedDetail({ kind: "day", date });
-      }
+      detailLauncherRef.current = event.currentTarget;
+      focusedRecordRef.current = null;
+      setSelectedDetail({ kind: "day", date });
     };
     const compactActivity = dayActivities[0];
     const activityMetrics = compactActivity ? [
@@ -1447,7 +1443,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
     const recordedCompact = compactActivity ? compactCalendarMetric(compactActivity.distanceMeters, compactActivity.elapsedTimeSeconds) : "";
     const metricLabel = compactCalendar ? `${primarySession ? `; planned ${plannedCompact}${primarySession.status === "skipped" ? ", skipped" : ""}` : ""}${compactActivity ? `; recorded ${recordedCompact}` : ""}` : "";
     return <div className="calendar-day-cell" key={date}>
-      <button id={`calendar-day-${date}`} className={`calendar-day${isToday ? " calendar-day--today" : ""}${inMonth ? "" : " calendar-day--outside"}`} type="button" onClick={openDay} aria-pressed={selectedDate === date} aria-current={isToday ? "date" : undefined} aria-haspopup={compactCalendar ? "dialog" : undefined} aria-label={`Select ${formatCoachingDate(date, "UTC")}${isToday ? ", today" : ""}; ${daySessions.length} planned, ${dayActivities.length} recorded${metricLabel}`}>
+      <button id={`calendar-day-${date}`} className={`calendar-day${isToday ? " calendar-day--today" : ""}${inMonth ? "" : " calendar-day--outside"}`} type="button" onClick={openDay} aria-pressed={selectedDate === date} aria-current={isToday ? "date" : undefined} aria-haspopup="dialog" aria-label={`Select ${formatCoachingDate(date, "UTC")}${isToday ? ", today" : ""}; ${daySessions.length} planned, ${dayActivities.length} recorded${metricLabel}`}>
         <span className="calendar-day-heading"><time dateTime={date}>{Number(date.slice(-2))}</time>{isToday ? <span className="today-marker">Today</span> : null}</span>
         <span className="calendar-day-entries calendar-day-entries--full">
           {primarySession ? <span className={`calendar-entry calendar-entry--planned${primarySession.kind === "rest" ? " calendar-entry--rest" : ""}`}><b>PLANNED</b><strong>{plannedLabel}</strong>{plannedMetrics ? <small>{plannedMetrics}</small> : null}</span> : null}

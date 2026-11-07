@@ -389,20 +389,22 @@ test("month navigation, adjacent dates, Today, year boundary and close retain mo
   await expect(page.getByText(/Dates use Africa\/Johannesburg/)).toBeVisible();
 });
 
-test("month interaction responds to resizing and retains record deep links", async ({ page }) => {
+test("day details open at every width, remain open on resize and retain record deep links", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockCompanion(page);
   await page.goto(`/dashboard/calendar?date=${date}`);
   const cell = dayCell(page, date);
-  await cell.click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("complementary", { name: "Selected day" })).toBeVisible();
-  await page.setViewportSize({ width: 1199, height: 900 });
   await expect(cell).toHaveAttribute("aria-haspopup", "dialog");
   await cell.click();
-  await expect(page.getByRole("dialog", { name: "Day details — 03 Oct 2026" })).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Day details — 03 Oct 2026" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(".session-card")).toHaveCount(2);
+  await expect(dialog.locator(".calendar-activity-summary")).toHaveCount(2);
+  await page.setViewportSize({ width: 1199, height: 900 });
+  await expect(dialog).toBeVisible();
   await page.setViewportSize({ width: 1200, height: 900 });
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(cell).toBeFocused();
   await expect(cell).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("complementary", { name: "Selected day" }).getByRole("button", { name: "View planned session: Planned session 2" }).click();

@@ -122,7 +122,7 @@ export function CoachChatShell() {
   const olderScrollAnchorRef = useRef<{ height: number; top: number } | null>(null);
   const lastTranscriptRef = useRef<{ generation: number; count: number } | null>(null);
   const loadedRef = useRef(false);
-  const panelRef = useRef<HTMLElement | null>(null);
+  const layoutRef = useRef<HTMLDivElement | null>(null);
   const epochRef = useRef(0);
   const generationRef = useRef(1);
   const actorRef = useRef<string | null>(null);
@@ -176,24 +176,29 @@ export function CoachChatShell() {
   }, [loadState, actorId]);
 
   useEffect(() => {
-    const panel = panelRef.current;
-    if (!panel) return;
+    const layout = layoutRef.current;
+    if (!layout) return;
     const fit = () => {
-      if (window.innerWidth >= 768) { panel.style.height = ""; return; }
       const viewport = window.visualViewport;
-      const top = panel.getBoundingClientRect().top;
       const bottom = (viewport?.height ?? window.innerHeight) + (viewport?.offsetTop ?? 0);
-      panel.style.height = `${Math.max(0, bottom - top)}px`;
+      const height = Math.max(0, bottom - Math.max(0, layout.getBoundingClientRect().top));
+      const bottomNav = layout.querySelector<HTMLElement>(".shared-mobile-nav");
+      layout.style.setProperty("--coach-viewport-height", `${height}px`);
+      layout.style.setProperty("--coach-bottom-nav-height", `${bottomNav?.getBoundingClientRect().height ?? 0}px`);
     };
     const observer = new ResizeObserver(fit);
-    if (panel.parentElement) observer.observe(panel.parentElement);
-    Array.from(panel.children).forEach((child) => observer.observe(child));
+    layout.querySelectorAll(".dashboard-nav, .shared-topnav, .shared-mobile-nav").forEach((nav) => observer.observe(nav));
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("scroll", fit);
     fit();
-    return () => { observer.disconnect(); window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit); };
-  }, [loadState, failure, archiveError, discardError, archiveStatus, context]);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("scroll", fit);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
@@ -714,7 +719,7 @@ export function CoachChatShell() {
     window.requestAnimationFrame(() => setWellbeingOpen(true));
   };
 
-  return <div className="dashboard-layout coach-v2-layout">
+  return <div ref={layoutRef} className="dashboard-layout coach-v2-layout">
     <DashboardNavigation
       activePage="coach"
       mobileIdentity={<div className="coach-mobile-identity"><span className="coach-mobile-avatar">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={30} height={30} onError={() => setOrbitAvailable(false)} /> : "O"}</span><span className="coach-mobile-name"><strong>ORBIT</strong><span><i className={`coach-mobile-status coach-mobile-status--${context?.canSend ? "ready" : context ? "paused" : loadState === "error" ? "unavailable" : "loading"}`} aria-hidden="true" />AI coach · {orbitStatus}</span></span></div>}
@@ -722,7 +727,7 @@ export function CoachChatShell() {
     />
     <main id="dashboard-main-content" className="dashboard-main coach-v2-main" tabIndex={-1} aria-label="Coach chat">
       {recoveryReturn ? <div className="coach-v2-return-note"><span>You’re back from a training record.</span><button type="button" onClick={() => setRecoveryReturn(null)} aria-label="Dismiss return message">×</button></div> : null}
-      <section className="coach-chat-panel" ref={panelRef} aria-label="Conversation with ORBIT">
+      <section className="coach-chat-panel" aria-label="Conversation with ORBIT">
         <header className="coach-chat-heading">
           <div className="orbit-portrait-wrap">{orbitAvailable ? <Image src="/images/orbit-avatar.webp" alt="" width={48} height={48} onError={() => setOrbitAvailable(false)} /> : <span aria-hidden="true">O</span>}</div>
           <div><h2>ORBIT <span>AI COACH</span></h2><p>{context ? `Here with you · ${context.localDate}` : "Your training companion"}</p></div>

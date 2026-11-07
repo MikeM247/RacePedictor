@@ -40,6 +40,7 @@ import { CalendarDaySummary } from "./calendar-day-summary";
 import { calendarDayRecords, compactCalendarMetric } from "../../lib/calendar-display";
 import { calculateCalendarTotals } from "../../lib/calendar-totals";
 import { useModalKeyboard } from "./use-modal-keyboard";
+import { acquireBodyScrollLock } from "../../lib/body-scroll-lock";
 import {
   calendarRouteDataSchema,
   activePlanApiResponseSchema,
@@ -1157,8 +1158,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
 
   useEffect(() => {
     if (!selectedDetail) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScrollLock = acquireBodyScrollLock();
     // A successful retry can remove the focused control. Escape must still close
     // the active details when focus temporarily falls back to the document.
     const escape = (event: KeyboardEvent) => {
@@ -1168,7 +1168,7 @@ export function CalendarPage({ initialDate, focusSessionId, onlineMode = false }
       }
     };
     window.addEventListener("keydown", escape);
-    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", escape); };
+    return () => { releaseScrollLock(); window.removeEventListener("keydown", escape); };
   }, [selectedDetail]);
 
   useEffect(() => {

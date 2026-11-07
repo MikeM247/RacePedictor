@@ -120,7 +120,13 @@ test("desktop and mobile chat screens render without horizontal overflow", async
     expect(bounds.width).toBeLessThanOrEqual(bounds.viewport);
     expect(bounds.panelTop).toBeGreaterThanOrEqual(0);
     expect(bounds.panelBottom).toBeLessThanOrEqual(viewport.height);
-    expect(bounds.sendBottom).toBeLessThanOrEqual(viewport.height);
+    if (viewport.height < 540) {
+      // Short windows intentionally scroll the panel when fixed controls and the
+      // readable transcript minimum cannot fit together.
+      await page.locator(".coach-chat-panel").hover({ position: { x: 5, y: 5 } });
+      await page.mouse.wheel(0, 2000);
+    }
+    await expect.poll(() => page.locator(".coach-send-button").evaluate((node) => node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(viewport.height);
   }
 });
 test("mobile Coach keeps the chat edge to edge and exposes navigation, context, and conversation actions", async ({ page }) => {

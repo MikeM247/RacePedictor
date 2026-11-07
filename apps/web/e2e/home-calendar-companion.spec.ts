@@ -77,6 +77,10 @@ test.describe("shared calendar overlays", () => {
       await expect(dialog).toContainText("Run easily for 45 minutes.");
       await expect(page.locator(".calendar-controls")).toHaveAttribute("inert", "");
       await expect(page.locator(".shared-topnav")).toHaveAttribute("inert", "");
+      await expect(page).toHaveScreenshot(`calendar-run-overlay-${width}.png`, {
+        clip: { x: 0, y: 0, width, height: 400 },
+        animations: "disabled",
+      });
       await dialog.getByRole("button", { name: "Close details" }).click();
       const cell = dayCell(page, date);
       await expect(cell).toBeFocused();
@@ -98,10 +102,6 @@ test.describe("shared calendar overlays", () => {
       }));
       expect(geometry.scroll).toBeGreaterThan(0);
       expect(geometry.top).toBeCloseTo(geometry.stickyTop, 0);
-      await expect(page).toHaveScreenshot(`calendar-run-overlay-${width}.png`, {
-        clip: { x: 0, y: 0, width, height: 400 },
-        animations: "disabled",
-      });
       await reopened.getByRole("button", { name: "Close details" }).focus();
       await page.keyboard.press("Shift+Tab");
       expect(await reopened.evaluate((element) => element.contains(document.activeElement))).toBe(true);

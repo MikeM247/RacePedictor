@@ -64,12 +64,15 @@ export function DashboardNavigation({ activePage, mobileIdentity, mobileActions 
       <Link
         key={link.page}
         href={link.href}
+        className={link.page === "settings" && !drawer ? "shared-settings-control" : undefined}
+        aria-label={link.page === "settings" && !drawer ? "Settings" : undefined}
+        title={link.page === "settings" && !drawer ? "Settings" : undefined}
         id={link.page === "readiness" ? drawer ? "mobile-view-readiness" : "view-readiness" : undefined}
         aria-current={current ? "page" : undefined}
         onClick={drawer ? () => setMobileMenuOpen(false) : undefined}
       >
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d={path} /></svg>
-        <span>{link.label}</span>
+        {link.page === "settings" && !drawer ? null : <span>{link.label}</span>}
       </Link>
     );
   }

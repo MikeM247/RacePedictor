@@ -4,6 +4,7 @@ import { readCloudEnvironment } from "../../lib/server/cloud-environment";
 import { shouldRenderOnlineUi } from "../../lib/server/online-ui-mode";
 import { milestoneHomeEnabled } from "../../lib/server/milestone-home-feature";
 import { calendarMonthSummaryEnabled } from "../../lib/server/calendar-month-summary-feature";
+import { readDeploymentEnvironment } from "../../lib/server/deployment-environment";
 import "./shared-dashboard-theme.css";
 export const dynamic = "force-dynamic";
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -12,6 +13,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     shouldRenderOnlineUi(environment) && environment.features.coachUi;
   return (
     <DashboardFeaturesProvider
+      deploymentEnvironment={readDeploymentEnvironment()}
       coachAvailable={coachAvailable}
       milestoneHomeEnabled={milestoneHomeEnabled()}
       calendarMonthSummaryEnabled={calendarMonthSummaryEnabled()}

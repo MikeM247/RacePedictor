@@ -14,6 +14,7 @@
     "test:e2e": "playwright test --config playwright.config.ts",
     "test:e2e:local": "node scripts/assert-e2e-port.mjs 3311 && playwright test --config playwright.config.ts && node scripts/assert-e2e-port.mjs 3314 && playwright test --config playwright.home.local.config.ts && node scripts/assert-e2e-port.mjs 3313 && playwright test --config playwright.readiness.local.config.ts",
     "test:e2e:online": "playwright test --config playwright.online.config.ts",
+    "test:e2e:calendar-layering": "playwright test --config playwright.calendar-layering.config.ts",
     "test:e2e:coach:online": "playwright test --config playwright.coach.online.config.ts",
     "test:e2e:viewport-scroll": "playwright test --config playwright.viewport-scroll.config.ts",
     "test:e2e:auth": "playwright test --config playwright.auth.config.ts",

@@ -48,6 +48,41 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.deployment-environment {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: fit-content;
+  padding: 3px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: #172333;
+  color: #d4dfeb;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.deployment-environment[data-environment="production"] {
+  background: #102d22;
+  color: #a7f3c5;
+}
+
+.deployment-environment[data-environment="staging"],
+.deployment-environment[data-environment="preview"] {
+  background: #33260e;
+  color: #ffd27a;
+}
+
+.dashboard-brand > .deployment-environment,
+.dashboard-mobile-identity > .deployment-environment {
+  display: flex;
+  margin-top: 3px;
+}
+
 button,
 input,
 select,

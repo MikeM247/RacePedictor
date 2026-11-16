@@ -18,7 +18,12 @@ type NavigationLink = { page: DashboardPage; href: string; label: string };
 
 export function DashboardNavigation({ activePage, mobileIdentity, mobileActions }: DashboardNavigationProps) {
   const pathname = usePathname();
-  const { coachAvailable, calendarMonthSummaryEnabled } = useDashboardFeatures();
+  const { coachAvailable, calendarMonthSummaryEnabled, deploymentEnvironment = "Unknown" } = useDashboardFeatures();
+  const environmentBadge = (
+    <span className="deployment-environment" data-environment={deploymentEnvironment.toLowerCase()} aria-label={`Environment: ${deploymentEnvironment}`}>
+      {deploymentEnvironment}
+    </span>
+  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const primaryLinks: NavigationLink[] = [
@@ -40,7 +45,7 @@ export function DashboardNavigation({ activePage, mobileIdentity, mobileActions 
       <header className="shared-topnav">
         <button ref={menuTriggerRef} type="button" className="shared-menu-trigger" aria-label="Open navigation" aria-haspopup="dialog" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
         <nav className="shared-nav-links" aria-label="Main navigation">{primaryLinks.map(link => renderLink(link))}</nav>
-        <div className="shared-nav-utility"><time>{date}</time>{secondaryLinks.map(link => renderLink(link))}</div>
+        <div className="shared-nav-utility">{environmentBadge}<time>{date}</time>{secondaryLinks.map(link => renderLink(link))}</div>
       </header>
       <nav className="shared-mobile-nav" aria-label="Mobile navigation">{primaryLinks.map(link => renderLink(link))}</nav>
       <NativeModal open={mobileMenuOpen} titleId="dashboard-mobile-navigation-title" onClose={() => setMobileMenuOpen(false)} returnFocusRef={menuTriggerRef} className="dashboard-mobile-nav-dialog">
@@ -95,12 +100,14 @@ export function DashboardNavigation({ activePage, mobileIdentity, mobileActions 
           </button>
           <div className="dashboard-mobile-identity">
             {mobileIdentity ?? <strong>{pageName}</strong>}
+            {environmentBadge}
           </div>
           {mobileActions}
           <Link className="dashboard-mobile-home" href="/dashboard" aria-label="Race Predictor Home">Home</Link>
         </div>
         <Link className="dashboard-brand" href="/dashboard" aria-label="Race Predictor Home">
           Race Predictor
+          {environmentBadge}
         </Link>
         <nav className="dashboard-nav-primary" aria-label="Primary navigation">
           {primaryLinks.map((link) => renderLink(link))}

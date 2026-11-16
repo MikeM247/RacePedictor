@@ -33,6 +33,14 @@ The existing Vercel project is `racepedictor`, with staging configured as Previe
 on Git branch `work`. The staging origin is
 `https://racepedictor-road-to-comrades.vercel.app`.
 
+The dashboard navigation displays an environment badge on desktop and mobile:
+amber **Staging** for Preview/work, green **Production** for production, and
+**Preview** for other preview branches. The server reads `VERCEL_TARGET_ENV`
+first, then `VERCEL_ENV`; a custom `staging` target is also recognized. Local
+development displays **Development**. Missing or unrecognized deployment
+metadata displays **Unknown**, including a production build run locally.
+The badge identifies the app deployment, not the database connected to a local run.
+
 On 2026-11-03, Vercel metadata confirmed the branch-scoped isolated
 `RACEPREDICTOR_V2_DATABASE_URL` and `RACEPREDICTOR_V2_DATABASE_URL_UNPOOLED` variables,
 preview authentication settings and the existing Coach/provider variables.
